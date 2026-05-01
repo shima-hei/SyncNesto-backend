@@ -1,15 +1,21 @@
-"""
-メインアプリケーション
-"""
-
 from fastapi import FastAPI
 import uvicorn
 
-app = FastAPI()
+from app.core.config import settings
+from app.core.middleware import register_middleware
+from app.routers import health
 
-@app.get("/")
-async def read_root():
-    return {"Hello": "World"}
+
+def create_app() -> FastAPI:
+    app = FastAPI(title=settings.app_name)
+
+    register_middleware(app)
+    app.include_router(health.router)
+    return app
+
+
+app = create_app()
+
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
