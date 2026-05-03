@@ -23,6 +23,7 @@ class UserService:
     ユーザー作成時のバリデーションやパスワードハッシュ化などの
     アプリケーションロジックを担う。
     """
+
     def __init__(self, repository: UserRepository | None = None) -> None:
         self.repository = repository or UserRepository()
 

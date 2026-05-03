@@ -6,6 +6,7 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from alembic import context
+from dotenv import load_dotenv
 
 import app.models  # noqa: F401
 from app.db.base import Base
@@ -15,25 +16,8 @@ from app.db.base import Base
 config = context.config
 
 
-def load_dotenv() -> None:
-    """Load simple KEY=VALUE pairs from the project .env file."""
-    if config.config_file_name is None:
-        return
-
-    env_path = Path(config.config_file_name).resolve().parent / ".env"
-    if not env_path.exists():
-        return
-
-    for line in env_path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-
-        key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip())
-
-
-load_dotenv()
+if config.config_file_name is not None:
+    load_dotenv(Path(config.config_file_name).resolve().parent / ".env")
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

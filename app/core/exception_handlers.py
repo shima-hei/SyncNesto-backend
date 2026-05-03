@@ -12,7 +12,6 @@ from app.core.exceptions import (
     UnauthorizedError,
 )
 
-
 ERROR_STATUS_MAP: dict[type[AppError], int] = {
     BadRequestError: status.HTTP_400_BAD_REQUEST,
     UnauthorizedError: status.HTTP_401_UNAUTHORIZED,

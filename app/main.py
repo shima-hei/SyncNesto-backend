@@ -8,8 +8,9 @@ import uvicorn
 
 from app.core.config import settings
 from app.core.exception_handlers import register_exception_handlers
+from app.core.logging import configure_logging
 from app.core.middleware import register_middleware
-from app.routers import health
+from app.routers import register_routers
 
 
 def create_app() -> FastAPI:
@@ -18,11 +19,13 @@ def create_app() -> FastAPI:
     Returns:
         初期設定済みのFastAPIアプリケーション。
     """
+    configure_logging()
+
     fastapi_app = FastAPI(title=settings.app_name)
 
     register_middleware(fastapi_app)
     register_exception_handlers(fastapi_app)
-    fastapi_app.include_router(health.router)
+    register_routers(fastapi_app)
     return fastapi_app
 
 
