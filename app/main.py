@@ -7,6 +7,7 @@ from fastapi import FastAPI
 import uvicorn
 
 from app.core.config import settings
+from app.core.exception_handlers import register_exception_handlers
 from app.core.middleware import register_middleware
 from app.routers import health
 
@@ -20,6 +21,7 @@ def create_app() -> FastAPI:
     fastapi_app = FastAPI(title=settings.app_name)
 
     register_middleware(fastapi_app)
+    register_exception_handlers(fastapi_app)
     fastapi_app.include_router(health.router)
     return fastapi_app
 
