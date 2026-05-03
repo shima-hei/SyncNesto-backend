@@ -288,6 +288,31 @@ CRUD のうち、まずは `create` と `get_by_id` だけ実装します。
 
 最初から全部作ろうとすると、FastAPI、Pydantic、SQLAlchemy、Alembic を同時に追うことになって負荷が高いです。最小の 1 本を通してから広げる方が学習効率は高いです。
 
+## Docstring の書き方
+
+関数やメソッドには Google style の Docstring を使います。
+
+```python
+def get_password_hash(password: str) -> str:
+    """平文パスワードをbcryptでハッシュ化する。
+
+    Args:
+        password: ハッシュ化する平文パスワード。
+
+    Returns:
+        bcryptでハッシュ化されたパスワード文字列。
+    """
+```
+
+`models` や `schemas` のクラスには、`Args` や `Returns` は基本的に不要です。クラスの役割が分かる短い説明だけを書きます。
+
+```python
+class UserCreate(UserBase):
+    """ユーザー登録リクエストで受け取るschema。"""
+```
+
+フィールドは型名と変数名で意味が分かる場合、個別に説明を書きすぎないようにします。説明が多すぎると、型定義とコメントの二重管理になりやすいためです。
+
 ## 実装時の意識ポイント
 
 - `routers` に業務ロジックを書きすぎない

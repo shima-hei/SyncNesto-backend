@@ -12,12 +12,10 @@ from app.routers import health
 
 
 def create_app() -> FastAPI:
-    """
-    FastAPIアプリを生成し、ルーティングを登録する関数。
-        - ミドルウェアの登録
-        - ルーターの登録
-        - アプリの設定
-        - その他、必要な初期化処理
+    """FastAPIアプリを生成し、ルーティングを登録する。
+
+    Returns:
+        初期設定済みのFastAPIアプリケーション。
     """
     fastapi_app = FastAPI(title=settings.app_name)
 
