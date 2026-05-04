@@ -1,5 +1,7 @@
 """アプリケーション共通の例外ハンドラーを定義するモジュール。"""
 
+import logging
+
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
@@ -11,6 +13,8 @@ from app.core.exceptions import (
     NotFoundError,
     UnauthorizedError,
 )
+
+logger = logging.getLogger(__name__)
 
 ERROR_STATUS_MAP: dict[type[AppError], int] = {
     BadRequestError: status.HTTP_400_BAD_REQUEST,
@@ -59,7 +63,15 @@ def register_exception_handlers(app: FastAPI) -> None:
         Returns:
             JSON形式のエラーレスポンス。
         """
+        status_code = get_status_code(exc)
+        if status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
+            logger.error(
+                "Unhandled application error: type=%s message=%s",
+                type(exc).__name__,
+                exc.message,
+            )
+
         return JSONResponse(
-            status_code=get_status_code(exc),
+            status_code=status_code,
             content={"detail": exc.message},
         )

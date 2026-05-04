@@ -6,6 +6,8 @@ Repository層を通じてデータアクセスを行う。
 パスワードのハッシュ化や重複チェックなどの処理を担当する。
 """
 
+import logging
+
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import EmailAlreadyRegisteredError
@@ -13,6 +15,9 @@ from app.core.security import get_password_hash
 from app.models.user import User
 from app.repositories.user import UserRepository
 from app.schemas.user import UserCreate
+
+
+logger = logging.getLogger(__name__)
 
 
 class UserService:
@@ -25,6 +30,11 @@ class UserService:
     """
 
     def __init__(self, repository: UserRepository | None = None) -> None:
+        """UserServiceを初期化する。
+
+        Args:
+            repository: ユーザーRepository。未指定の場合はデフォルトを使用する。
+        """
         self.repository = repository or UserRepository()
 
     def create_user(self, db: Session, user_in: UserCreate) -> User:
@@ -42,7 +52,10 @@ class UserService:
         """
         existing_user = self.repository.get_by_email(db, user_in.email)
         if existing_user is not None:
+            logger.warning("Email already registered: email=%s", user_in.email)
             raise EmailAlreadyRegisteredError()
 
         hashed_password = get_password_hash(user_in.password)
-        return self.repository.create(db, user_in, hashed_password)
+        user = self.repository.create(db, user_in, hashed_password)
+        logger.info("User created: id=%s email=%s", user.id, user.email)
+        return user

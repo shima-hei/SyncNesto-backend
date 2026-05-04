@@ -30,4 +30,9 @@ class User(Base):
     )
 
     def __repr__(self) -> str:
+        """デバッグ用のユーザー表現を返す。
+
+        Returns:
+            ユーザーIDとemailを含む文字列表現。
+        """
         return f"<User id={self.id} email={self.email}>"
