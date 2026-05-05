@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.user import UserCreate, UserRead
+from app.schemas.user import UserCreate, UserLogin, UserLoginResponse, UserRead
 from app.services.user import UserService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -31,3 +31,24 @@ def register_user(
         作成されたユーザー情報。
     """
     return user_service.create_user(db, user_in)
+
+
+@router.post(
+    "/login",
+    response_model=UserLoginResponse,
+)
+def login_user(
+    user_in: UserLogin,
+    db: Session = Depends(get_db),
+) -> UserLoginResponse:
+    """ユーザーログインを行う。
+
+    Args:
+        user_in: ユーザーログインリクエストの入力値。
+        db: DBセッション。
+
+    Returns:
+        ログイン成功レスポンス。
+    """
+    user_service.authenticate_user(db, user_in.email, user_in.password)
+    return UserLoginResponse()

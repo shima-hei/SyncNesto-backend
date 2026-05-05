@@ -33,3 +33,24 @@ class UserRead(UserBase):
     id: int
 
     model_config = {"from_attributes": True}
+
+
+class UserLogin(BaseModel):
+    """
+    ユーザーログインリクエストで受け取るschema。
+    password は平文で受け取る。
+    """
+
+    email: EmailStr
+    password: str
+
+
+class UserLoginResponse(BaseModel):
+    """
+    ログイン成功時のレスポンスschema。
+    """
+
+    # access_token: str
+    # token_type: str = "bearer"
+
+    message: str = "Login successful"

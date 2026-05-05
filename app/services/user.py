@@ -10,8 +10,8 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import EmailAlreadyRegisteredError
-from app.core.security import get_password_hash
+from app.core.exceptions import EmailAlreadyRegisteredError, InvalidCredentialsError
+from app.core.security import get_password_hash, verify_password
 from app.models.user import User
 from app.repositories.user import UserRepository
 from app.schemas.user import UserCreate
@@ -58,4 +58,30 @@ class UserService:
         hashed_password = get_password_hash(user_in.password)
         user = self.repository.create(db, user_in, hashed_password)
         logger.info("User created: id=%s email=%s", user.id, user.email)
+        return user
+
+    def authenticate_user(self, db: Session, email: str, password: str) -> User:
+        """ユーザーを認証する。
+
+        Args:
+            db: DBセッション。
+            email: 認証に使用するメールアドレス。
+            password: 認証に使用するパスワード。
+
+        Returns:
+            認証されたユーザー。
+
+        Raises:
+            InvalidCredentialsError: emailまたはpasswordが正しくない場合。
+        """
+        user = self.repository.get_by_email(db, email)
+        if user is None:
+            logger.warning("Invalid login attempt: email=%s", email)
+            raise InvalidCredentialsError()
+
+        if not verify_password(password, user.hashed_password):
+            logger.warning("Invalid login attempt: email=%s", email)
+            raise InvalidCredentialsError()
+
+        logger.info("User authenticated: id=%s email=%s", user.id, user.email)
         return user
