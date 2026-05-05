@@ -1,6 +1,11 @@
 """securityモジュールのテスト。"""
 
-from app.core.security import get_password_hash, verify_password
+from app.core.security import (
+    create_access_token,
+    decode_access_token,
+    get_password_hash,
+    verify_password,
+)
 
 
 def test_get_password_hash_returns_different_value_from_plain_password() -> None:
@@ -32,3 +37,21 @@ def test_verify_password_returns_false_for_wrong_password() -> None:
     hashed_password = get_password_hash("password123")
 
     assert not verify_password("wrong-password", hashed_password)
+
+
+def test_create_access_token_returns_token_string() -> None:
+    """アクセストークンを文字列として作成できることを確認する。"""
+    token = create_access_token(subject="user@example.com")
+
+    assert isinstance(token, str)
+    assert token
+
+
+def test_decode_access_token_returns_subject() -> None:
+    """アクセストークンからsubjectを取得できることを確認する。"""
+    token = create_access_token(subject="user@example.com")
+
+    payload = decode_access_token(token)
+
+    assert payload["sub"] == "user@example.com"
+    assert "exp" in payload
