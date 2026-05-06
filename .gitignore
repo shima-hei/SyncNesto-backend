@@ -210,3 +210,4 @@ __marimo__/
 docker/postgres/pgdata/
 docker/pgadmin/
 .env.*
+.vscode/

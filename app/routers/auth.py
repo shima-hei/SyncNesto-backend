@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
+from app.core.security import create_access_token
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate, UserLogin, UserLoginResponse, UserRead
@@ -50,5 +51,6 @@ def login_user(
     Returns:
         ログイン成功レスポンス。
     """
-    user_service.authenticate_user(db, user_in.email, user_in.password)
-    return UserLoginResponse()
+    user = user_service.authenticate_user(db, user_in.email, user_in.password)
+    access_token = create_access_token(subject=user.email)
+    return UserLoginResponse(access_token=access_token)

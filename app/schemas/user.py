@@ -50,7 +50,5 @@ class UserLoginResponse(BaseModel):
     ログイン成功時のレスポンスschema。
     """
 
-    # access_token: str
-    # token_type: str = "bearer"
-
-    message: str = "Login successful"
+    access_token: str
+    token_type: str = "bearer"

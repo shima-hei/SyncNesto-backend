@@ -46,6 +46,23 @@ def get_required_env(name: str) -> str:
     return value
 
 
+def get_int_env(name: str, default: int) -> int:
+    """環境変数をint値として取得する。
+
+    Args:
+        name: 環境変数名。
+        default: 環境変数が未設定の場合の値。
+
+    Returns:
+        環境変数のint値。
+    """
+    value = os.getenv(name)
+    if value is None:
+        return default
+
+    return int(value)
+
+
 @dataclass
 class Settings:
     """環境変数から読み込むアプリケーション設定。"""
@@ -57,6 +74,12 @@ class Settings:
     log_format: str = os.getenv("LOG_FORMAT", "text")
     log_file: str | None = os.getenv("LOG_FILE")
     sql_echo: bool = get_bool_env("SQL_ECHO")
+    secret_key: str = get_required_env("SECRET_KEY")
+    algorithm: str = os.getenv("ALGORITHM", "HS256")
+    access_token_expire_minutes: int = get_int_env(
+        "ACCESS_TOKEN_EXPIRE_MINUTES",
+        30,
+    )
     cors_origins: list[str] = field(
         default_factory=lambda: [
             "http://localhost:3000",
