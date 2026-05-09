@@ -118,6 +118,9 @@ class Settings:
         "ALLOW_AUTHORIZATION_HEADER",
         True,
     )
+    initial_admin_email: str | None = os.getenv("INITIAL_ADMIN_EMAIL")
+    initial_admin_password: str | None = os.getenv("INITIAL_ADMIN_PASSWORD")
+    initial_admin_name: str = os.getenv("INITIAL_ADMIN_NAME", "Initial Admin")
     cors_origins: list[str] = field(
         default_factory=lambda: [
             "http://localhost:3000",

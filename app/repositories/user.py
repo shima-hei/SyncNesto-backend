@@ -1,5 +1,5 @@
 """
-ユーザーに関するデータアクセス処理（Repository）を定義するモジュール。
+ユーザーRepositoryを定義するモジュール。
 
 Userテーブルに対するCRUD操作を提供する。
 """
@@ -13,19 +13,30 @@ from app.schemas.user import UserCreate
 class UserRepository:
     """Userテーブルへのデータアクセス処理を提供するRepository。"""
 
-    def create(self, db: Session, user_in: UserCreate, hashed_password: str) -> User:
+    def create(
+        self,
+        db: Session,
+        user_in: UserCreate,
+        hashed_password: str,
+        *,
+        is_admin: bool = False,
+    ) -> User:
         """ユーザーを作成する。
 
         Args:
             db: DBセッション。
             user_in: ユーザー作成リクエストの入力値。
             hashed_password: ハッシュ化されたパスワード。
+            is_admin: 管理者ユーザーとして作成する場合はTrue。
 
         Returns:
             作成されたユーザー。
         """
         user = User(
-            email=user_in.email, name=user_in.name, hashed_password=hashed_password
+            email=user_in.email,
+            name=user_in.name,
+            hashed_password=hashed_password,
+            is_admin=is_admin,
         )
         db.add(user)
         db.commit()

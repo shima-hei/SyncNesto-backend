@@ -1,6 +1,6 @@
 """pytest共通設定。"""
 
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from pathlib import Path
 import subprocess
 import sys
@@ -126,3 +126,37 @@ def db() -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
+
+
+@pytest.fixture
+def create_test_user(db: Session) -> Callable[..., "User"]:
+    """テスト用ユーザーをDBへ直接作成するfixture。
+
+    Args:
+        db: テスト用DBセッション。
+
+    Returns:
+        任意のemail/name/passwordでユーザーを作成する関数。
+    """
+    from app.core.security import get_password_hash
+    from app.models.user import User
+
+    def _create_test_user(
+        *,
+        email: str = "user@example.com",
+        name: str = "User Name",
+        password: str = "password123",
+        is_admin: bool = False,
+    ) -> User:
+        user = User(
+            email=email,
+            name=name,
+            hashed_password=get_password_hash(password),
+            is_admin=is_admin,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return user
+
+    return _create_test_user

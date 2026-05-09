@@ -2,7 +2,7 @@
 
 Syncnesto のバックエンドAPIです。FastAPI、SQLAlchemy、Alembic、PostgreSQL を使って実装しています。
 
-現在は認証機能の土台として、ユーザー登録API、パスワードハッシュ化、共通例外ハンドラー、ロギング、テスト用PostgreSQL環境を整備しています。
+現在は認証機能の土台として、ログインAPI、管理者向けユーザー作成API、パスワードハッシュ化、共通例外ハンドラー、ロギング、テスト用PostgreSQL環境を整備しています。
 
 ## 技術スタック
 
@@ -51,11 +51,17 @@ APP_ENV=development
 LOG_LEVEL=INFO
 LOG_FORMAT=text
 SQL_ECHO=false
+SECRET_KEY=change-me-at-least-32-bytes
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
 AUTH_COOKIE_NAME=access_token
 AUTH_COOKIE_SECURE=false
 AUTH_COOKIE_SAMESITE=lax
 ALLOW_BEARER_TOKEN_RESPONSE=true
 ALLOW_AUTHORIZATION_HEADER=true
+INITIAL_ADMIN_EMAIL=admin@example.com
+INITIAL_ADMIN_PASSWORD=change-me
+INITIAL_ADMIN_NAME=Initial Admin
 ```
 
 テスト用の設定は `.env.test` に置きます。`tests/conftest.py` がテスト実行時に読み込みます。
@@ -64,6 +70,7 @@ ALLOW_AUTHORIZATION_HEADER=true
 DATABASE_URL=postgresql://admin:admin@localhost:5433/syncnesto_test
 APP_ENV=test
 LOG_LEVEL=WARNING
+SECRET_KEY=test-secret-key-at-least-32-bytes
 ```
 
 主な設定:
@@ -79,6 +86,9 @@ LOG_LEVEL=WARNING
 - `AUTH_COOKIE_SAMESITE`: Cookie の SameSite 属性
 - `ALLOW_BEARER_TOKEN_RESPONSE`: `true` の場合ログインレスポンスbodyにもaccess tokenを返す
 - `ALLOW_AUTHORIZATION_HEADER`: `true` の場合Authorizationヘッダー認証を許可する
+- `INITIAL_ADMIN_EMAIL`: 初期管理者seedで作成する管理者email
+- `INITIAL_ADMIN_PASSWORD`: 初期管理者seedで使用する管理者password
+- `INITIAL_ADMIN_NAME`: 初期管理者seedで使用する管理者名
 
 ## セットアップ
 
@@ -143,6 +153,16 @@ uv run alembic revision --autogenerate -m "message"
 
 Alembic は `.env` の `DATABASE_URL` を読み込みます。
 
+## 初期管理者seed
+
+管理者用APIを使い始めるため、最初の管理者ユーザーはseedで作成します。
+
+```bash
+uv run python -m scripts.seed_admin
+```
+
+`INITIAL_ADMIN_EMAIL` と `INITIAL_ADMIN_PASSWORD` が必要です。既に同じemailのユーザーが存在する場合は、そのユーザーを管理者に昇格します。
+
 ## アプリ起動
 
 ```bash
@@ -173,11 +193,13 @@ GET /
 
 ログイン成功時はHttpOnly Cookieにもaccess tokenをセットします。開発環境ではSwagger UIや手動検証をしやすくするため、レスポンスbodyにも `access_token` を返します。本番では `ALLOW_BEARER_TOKEN_RESPONSE=false` にして、bodyにはaccess tokenを返さない運用を想定しています。
 
-### User Register
+### User Create
 
 ```text
-POST /auth/register
+POST /users
 ```
+
+管理者認証が必要です。
 
 リクエスト:
 
@@ -215,6 +237,14 @@ POST /auth/login
   "password": "password123"
 }
 ```
+
+### Current User
+
+```text
+GET /auth/me
+```
+
+認証Cookie、または許可設定時のAuthorization Bearer tokenから現在のユーザー情報を返します。
 
 レスポンス:
 
@@ -328,6 +358,6 @@ def get_password_hash(password: str) -> str:
 
 ## 今後の主なTODO
 
-- 認証必須API用dependencyを追加
-- `GET /auth/me` を追加
-- JWT decode失敗時の例外処理を追加
+- role/permission を `is_admin` から拡張する
+- logout APIで認証Cookieを削除する
+- JWT decode失敗時の例外種別を細分化する

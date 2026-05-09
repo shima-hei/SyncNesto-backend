@@ -5,7 +5,7 @@ from fastapi import Cookie, Depends, Header
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.exceptions import InvalidCredentialsError
+from app.core.exceptions import ForbiddenError, InvalidCredentialsError
 from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.models.user import User
@@ -70,3 +70,23 @@ def get_current_user(
         raise InvalidCredentialsError()
 
     return user
+
+
+def get_current_admin_user(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """現在のログインユーザーが管理者であることを確認する。
+
+    Args:
+        current_user: 認証済みユーザー。
+
+    Returns:
+        管理者ユーザー。
+
+    Raises:
+        ForbiddenError: 認証済みユーザーが管理者ではない場合。
+    """
+    if not current_user.is_admin:
+        raise ForbiddenError()
+
+    return current_user
