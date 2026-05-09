@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 import os
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 
@@ -63,6 +64,29 @@ def get_int_env(name: str, default: int) -> int:
     return int(value)
 
 
+CookieSameSite = Literal["lax", "strict", "none"]
+
+
+def get_cookie_samesite_env(name: str, default: CookieSameSite) -> CookieSameSite:
+    """Cookie SameSite属性の環境変数を取得する。
+
+    Args:
+        name: 環境変数名。
+        default: 環境変数が未設定の場合の値。
+
+    Returns:
+        Cookie SameSite属性値。
+
+    Raises:
+        RuntimeError: 値が許可されていない場合。
+    """
+    value = os.getenv(name, default).lower()
+    if value not in {"lax", "strict", "none"}:
+        raise RuntimeError(f"{name} must be one of: lax, strict, none")
+
+    return value  # type: ignore[return-value]
+
+
 @dataclass
 class Settings:
     """環境変数から読み込むアプリケーション設定。"""
@@ -79,6 +103,20 @@ class Settings:
     access_token_expire_minutes: int = get_int_env(
         "ACCESS_TOKEN_EXPIRE_MINUTES",
         30,
+    )
+    auth_cookie_name: str = os.getenv("AUTH_COOKIE_NAME", "access_token")
+    auth_cookie_secure: bool = get_bool_env("AUTH_COOKIE_SECURE")
+    auth_cookie_samesite: CookieSameSite = get_cookie_samesite_env(
+        "AUTH_COOKIE_SAMESITE",
+        "lax",
+    )
+    allow_bearer_token_response: bool = get_bool_env(
+        "ALLOW_BEARER_TOKEN_RESPONSE",
+        True,
+    )
+    allow_authorization_header: bool = get_bool_env(
+        "ALLOW_AUTHORIZATION_HEADER",
+        True,
     )
     cors_origins: list[str] = field(
         default_factory=lambda: [

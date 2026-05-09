@@ -1,8 +1,10 @@
 """認証APIのテスト。"""
 
 from fastapi.testclient import TestClient
+import pytest
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.security import verify_password
 from app.models.user import User
 
@@ -64,7 +66,10 @@ def test_register_user_rejects_duplicate_email(client: TestClient) -> None:
 
     assert first_response.status_code == 201
     assert second_response.status_code == 400
-    assert second_response.json() == {"detail": "Email already registered"}
+    assert second_response.json() == {
+        "message": "Email already registered",
+        "code": "EMAIL_ALREADY_REGISTERED",
+    }
 
 
 def test_register_user_requires_password(client: TestClient) -> None:
@@ -80,10 +85,14 @@ def test_register_user_requires_password(client: TestClient) -> None:
     assert response.status_code == 422
 
 
-def test_login_user_returns_access_token_for_valid_credentials(
+def test_login_user_returns_access_token_and_cookie_in_development(
     client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ログインAPIが正しい認証情報でアクセストークンを返すことを確認する。"""
+    """開発環境ではログインAPIがbodyとCookieにアクセストークンを返すことを確認する。"""
+    monkeypatch.setattr(settings, "allow_bearer_token_response", True)
+    monkeypatch.setattr(settings, "auth_cookie_secure", False)
+
     password = "password123"
     register_response = client.post(
         "/auth/register",
@@ -106,8 +115,45 @@ def test_login_user_returns_access_token_for_valid_credentials(
     assert response.status_code == 200
     assert isinstance(response.json()["access_token"], str)
     assert response.json()["token_type"] == "bearer"
+    assert response.cookies.get(settings.auth_cookie_name)
+    assert "httponly" in response.headers["set-cookie"].lower()
     assert "password" not in response.text
     assert "hashed_password" not in response.text
+
+
+def test_login_user_does_not_return_access_token_in_production(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """本番相当設定ではログインAPIがbodyにアクセストークンを返さないことを確認する。"""
+    monkeypatch.setattr(settings, "allow_bearer_token_response", False)
+    monkeypatch.setattr(settings, "auth_cookie_secure", True)
+
+    password = "password123"
+    register_response = client.post(
+        "/auth/register",
+        json={
+            "email": "cookie-only@example.com",
+            "name": "Cookie Only User",
+            "password": password,
+        },
+    )
+
+    response = client.post(
+        "/auth/login",
+        json={
+            "email": "cookie-only@example.com",
+            "password": password,
+        },
+    )
+
+    assert register_response.status_code == 201
+    assert response.status_code == 200
+    assert "access_token" not in response.json()
+    assert response.json()["token_type"] == "bearer"
+    assert response.cookies.get(settings.auth_cookie_name)
+    assert "httponly" in response.headers["set-cookie"].lower()
+    assert "secure" in response.headers["set-cookie"].lower()
 
 
 def test_login_user_rejects_unknown_email(client: TestClient) -> None:
@@ -121,7 +167,10 @@ def test_login_user_rejects_unknown_email(client: TestClient) -> None:
     )
 
     assert response.status_code == 401
-    assert response.json() == {"detail": "Invalid email or password"}
+    assert response.json() == {
+        "message": "Invalid email or password",
+        "code": "INVALID_CREDENTIALS",
+    }
 
 
 def test_login_user_rejects_wrong_password(client: TestClient) -> None:
@@ -145,7 +194,10 @@ def test_login_user_rejects_wrong_password(client: TestClient) -> None:
 
     assert register_response.status_code == 201
     assert response.status_code == 401
-    assert response.json() == {"detail": "Invalid email or password"}
+    assert response.json() == {
+        "message": "Invalid email or password",
+        "code": "INVALID_CREDENTIALS",
+    }
 
 
 def test_login_user_requires_password(client: TestClient) -> None:

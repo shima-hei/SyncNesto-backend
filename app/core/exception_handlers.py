@@ -66,12 +66,16 @@ def register_exception_handlers(app: FastAPI) -> None:
         status_code = get_status_code(exc)
         if status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
             logger.error(
-                "Unhandled application error: type=%s message=%s",
+                "Unhandled application error: type=%s code=%s message=%s",
                 type(exc).__name__,
+                exc.code,
                 exc.message,
             )
 
         return JSONResponse(
             status_code=status_code,
-            content={"detail": exc.message},
+            content={
+                "message": exc.message,
+                "code": exc.code,
+            },
         )

@@ -51,6 +51,11 @@ APP_ENV=development
 LOG_LEVEL=INFO
 LOG_FORMAT=text
 SQL_ECHO=false
+AUTH_COOKIE_NAME=access_token
+AUTH_COOKIE_SECURE=false
+AUTH_COOKIE_SAMESITE=lax
+ALLOW_BEARER_TOKEN_RESPONSE=true
+ALLOW_AUTHORIZATION_HEADER=true
 ```
 
 テスト用の設定は `.env.test` に置きます。`tests/conftest.py` がテスト実行時に読み込みます。
@@ -69,6 +74,11 @@ LOG_LEVEL=WARNING
 - `LOG_FORMAT`: `text` または `json`
 - `LOG_FILE`: 指定した場合はファイルにもログ出力
 - `SQL_ECHO`: `true` の場合 SQLAlchemy のSQLログを出力
+- `AUTH_COOKIE_NAME`: 認証Cookie名
+- `AUTH_COOKIE_SECURE`: `true` の場合 Secure Cookie として発行
+- `AUTH_COOKIE_SAMESITE`: Cookie の SameSite 属性
+- `ALLOW_BEARER_TOKEN_RESPONSE`: `true` の場合ログインレスポンスbodyにもaccess tokenを返す
+- `ALLOW_AUTHORIZATION_HEADER`: `true` の場合Authorizationヘッダー認証を許可する
 
 ## セットアップ
 
@@ -161,6 +171,8 @@ GET /
 }
 ```
 
+ログイン成功時はHttpOnly Cookieにもaccess tokenをセットします。開発環境ではSwagger UIや手動検証をしやすくするため、レスポンスbodyにも `access_token` を返します。本番では `ALLOW_BEARER_TOKEN_RESPONSE=false` にして、bodyにはaccess tokenを返さない運用を想定しています。
+
 ### User Register
 
 ```text
@@ -223,6 +235,16 @@ POST /auth/login
 - `decode_access_token()`: JWT access tokenをdecode
 
 ハッシュ方式は `pwdlib` の `PasswordHash.recommended()` を使い、現在は Argon2id が使用されます。
+
+本番環境の認証Cookie設定例:
+
+```env
+APP_ENV=production
+AUTH_COOKIE_SECURE=true
+AUTH_COOKIE_SAMESITE=lax
+ALLOW_BEARER_TOKEN_RESPONSE=false
+ALLOW_AUTHORIZATION_HEADER=false
+```
 
 ## 例外ハンドリング
 
