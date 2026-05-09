@@ -1,5 +1,6 @@
 """pytest共通設定。"""
 
+from collections.abc import Generator
 from pathlib import Path
 import subprocess
 import sys
@@ -8,6 +9,7 @@ import time
 from dotenv import load_dotenv
 from fastapi.testclient import TestClient
 import pytest
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 
@@ -72,28 +74,16 @@ def run_migrations() -> None:
     run_command([sys.executable, "-m", "alembic", "upgrade", "head"])
 
 
-def pytest_sessionstart(session: pytest.Session) -> None:
-    """pytestセッション開始時にテストDBを準備する。
-
-    Args:
-        session: pytestセッション。
-    """
+def pytest_sessionstart() -> None:
+    """pytestセッション開始時にテストDBを準備する。"""
     load_dotenv(PROJECT_ROOT / ".env.test", override=True)
     start_test_database()
     wait_for_test_database()
     run_migrations()
 
 
-def pytest_sessionfinish(
-    session: pytest.Session,
-    exitstatus: int | pytest.ExitCode,
-) -> None:
-    """pytestセッション終了時にテストDBを破棄する。
-
-    Args:
-        session: pytestセッション。
-        exitstatus: pytestの終了ステータス。
-    """
+def pytest_sessionfinish() -> None:
+    """pytestセッション終了時にテストDBを破棄する。"""
     stop_test_database()
 
 
@@ -111,17 +101,19 @@ def client() -> TestClient:
 
 @pytest.fixture(autouse=True)
 def clean_database() -> None:
-    """各テストの前にDB内のデータを削除する。"""
+    """各テストの前にDB内のデータと採番をリセットする。"""
     from app.db.base import Base
     from app.db.session import engine
 
     with engine.begin() as connection:
         for table in reversed(Base.metadata.sorted_tables):
-            connection.execute(table.delete())
+            connection.execute(
+                text(f'TRUNCATE TABLE "{table.name}" RESTART IDENTITY CASCADE')
+            )
 
 
 @pytest.fixture
-def db() -> Session:
+def db() -> Generator[Session, None, None]:
     """テスト用DBセッションを作成する。
 
     Yields:

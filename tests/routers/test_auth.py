@@ -210,3 +210,99 @@ def test_login_user_requires_password(client: TestClient) -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_get_me_returns_current_user_with_cookie_token(client: TestClient) -> None:
+    """Cookieのアクセストークンで現在のユーザーを取得できることを確認する。"""
+    password = "password123"
+    register_response = client.post(
+        "/auth/register",
+        json={
+            "email": "me-cookie@example.com",
+            "name": "Me Cookie User",
+            "password": password,
+        },
+    )
+    login_response = client.post(
+        "/auth/login",
+        json={
+            "email": "me-cookie@example.com",
+            "password": password,
+        },
+    )
+
+    response = client.get("/auth/me")
+
+    assert register_response.status_code == 201
+    assert login_response.status_code == 200
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": 1,
+        "email": "me-cookie@example.com",
+        "name": "Me Cookie User",
+    }
+
+
+def test_get_me_returns_current_user_with_authorization_header(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """許可設定時にBearerトークンで現在のユーザーを取得できることを確認する。"""
+    monkeypatch.setattr(settings, "allow_authorization_header", True)
+    password = "password123"
+    register_response = client.post(
+        "/auth/register",
+        json={
+            "email": "me-bearer@example.com",
+            "name": "Me Bearer User",
+            "password": password,
+        },
+    )
+    login_response = client.post(
+        "/auth/login",
+        json={
+            "email": "me-bearer@example.com",
+            "password": password,
+        },
+    )
+    access_token = login_response.json()["access_token"]
+    client.cookies.clear()
+
+    response = client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert register_response.status_code == 201
+    assert login_response.status_code == 200
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": 1,
+        "email": "me-bearer@example.com",
+        "name": "Me Bearer User",
+    }
+
+
+def test_get_me_rejects_missing_token(client: TestClient) -> None:
+    """アクセストークンがない場合に現在のユーザー取得を拒否することを確認する。"""
+    response = client.get("/auth/me")
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "message": "Invalid email or password",
+        "code": "INVALID_CREDENTIALS",
+    }
+
+
+def test_get_me_rejects_invalid_token(client: TestClient) -> None:
+    """不正なアクセストークンで現在のユーザー取得を拒否することを確認する。"""
+    response = client.get(
+        "/auth/me",
+        headers={"Authorization": "Bearer invalid-token"},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "message": "Invalid email or password",
+        "code": "INVALID_CREDENTIALS",
+    }

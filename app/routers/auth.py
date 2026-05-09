@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
+from app.core.auth import get_current_user
 from app.core.config import settings
 from app.core.security import create_access_token
 from app.db.session import get_db
@@ -70,3 +71,21 @@ def login_user(
         return UserLoginResponse(access_token=access_token)
 
     return UserLoginResponse()
+
+
+@router.get(
+    "/me",
+    response_model=UserRead,
+)
+def read_current_user(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """現在のログインユーザーを取得する。
+
+    Args:
+        current_user: 認証済みユーザー。
+
+    Returns:
+        現在のログインユーザー情報。
+    """
+    return current_user
