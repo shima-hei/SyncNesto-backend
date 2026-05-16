@@ -238,7 +238,7 @@ def test_get_me_rejects_after_logout(
     client: TestClient,
     create_test_user: Callable[..., User],
 ) -> None:
-    """ログアウト後に現在ユーザー取得を拒否することを確認する。"""
+    """ログアウト後に現在ユーザー取得を拒否する。"""
     user = create_test_user(email="logout-me@example.com")
     access_token = create_access_token(subject=user.email)
     client.cookies.set(

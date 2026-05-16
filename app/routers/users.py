@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_admin_user
+from app.core.auth import require_system_permission
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate, UserRead
@@ -21,7 +21,7 @@ user_service = UserService()
 )
 def create_user(
     user_in: UserCreate,
-    _: User = Depends(get_current_admin_user),
+    _: User = Depends(require_system_permission("user:create")),
     db: Session = Depends(get_db),
 ) -> User:
     """管理者としてユーザーを作成する。

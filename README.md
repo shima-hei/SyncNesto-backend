@@ -2,7 +2,7 @@
 
 Syncnesto のバックエンドAPIです。FastAPI、SQLAlchemy、Alembic、PostgreSQL を使って実装しています。
 
-現在は認証機能の土台として、ログインAPI、管理者向けユーザー作成API、パスワードハッシュ化、共通例外ハンドラー、ロギング、テスト用PostgreSQL環境を整備しています。
+現在は認証・認可機能の土台として、ログインAPI、RBACによる管理者向けユーザー作成API、パスワードハッシュ化、共通例外ハンドラー、ロギング、テスト用PostgreSQL環境を整備しています。
 
 ## 技術スタック
 
@@ -155,13 +155,13 @@ Alembic は `.env` の `DATABASE_URL` を読み込みます。
 
 ## 初期管理者seed
 
-管理者用APIを使い始めるため、最初の管理者ユーザーはseedで作成します。
+管理者用APIを使い始めるため、RBAC初期データと最初の `system_admin` ユーザーはseedで作成します。
 
 ```bash
-uv run python -m scripts.seed_admin
+uv run python -m scripts.seed_rbac
 ```
 
-`INITIAL_ADMIN_EMAIL` と `INITIAL_ADMIN_PASSWORD` が必要です。既に同じemailのユーザーが存在する場合は、そのユーザーを管理者に昇格します。
+`INITIAL_ADMIN_EMAIL` と `INITIAL_ADMIN_PASSWORD` が必要です。既に同じemailのユーザーが存在する場合は、そのユーザーに `system_admin` ロールを付与します。
 
 ## アプリ起動
 
@@ -294,6 +294,21 @@ ALLOW_BEARER_TOKEN_RESPONSE=false
 ALLOW_AUTHORIZATION_HEADER=false
 ```
 
+## 認可
+
+認可はRBACをベースにしています。ロール、権限、ロール権限はDBで管理し、初期値は `scripts.seed_rbac` で投入します。
+
+主なテーブル:
+
+- `roles`: `system_admin`, `project_admin`, `manager`, `member`, `viewer` など
+- `permissions`: `user:create`, `project:read`, `task:update` など
+- `role_permissions`: ロールと権限の対応
+- `user_roles`: ユーザーとシステムロールの対応
+- `projects`: プロジェクト
+- `project_members`: プロジェクト所属とプロジェクト内ロール
+
+現時点では `POST /users` に `user:create` 権限を要求しています。未ログインは `401`、権限不足は `403` を返します。
+
 ## 例外ハンドリング
 
 アプリ独自例外は `app/core/exceptions.py` に定義します。
@@ -376,5 +391,6 @@ def get_password_hash(password: str) -> str:
 
 ## 今後の主なTODO
 
-- role/permission を `is_admin` から拡張する
+- project APIを追加し、project member roleによる認可を実装する
+- resourceごとの操作権限を各APIに適用する
 - JWT decode失敗時の例外種別を細分化する

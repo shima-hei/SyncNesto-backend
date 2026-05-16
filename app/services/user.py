@@ -22,18 +22,17 @@ logger = logging.getLogger(__name__)
 
 class UserService:
     """
-    ユーザーに関するビジネスロジックを提供するサービスクラス。
+    ユーザーに関するビジネスロジックを提供する。
 
     Repository層を利用してデータアクセスを行い、
-    ユーザー作成時のバリデーションやパスワードハッシュ化などの
-    アプリケーションロジックを担う。
+    ユーザー作成時のバリデーションなどを担う。
     """
 
     def __init__(self, repository: UserRepository | None = None) -> None:
         """UserServiceを初期化する。
 
         Args:
-            repository: ユーザーRepository。未指定の場合はデフォルトを使用する。
+            repository: ユーザーRepository。
         """
         self.repository = repository or UserRepository()
 

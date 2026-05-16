@@ -10,6 +10,7 @@ from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.models.user import User
 from app.repositories.user import UserRepository
+from app.services.authorization import AuthorizationService
 
 
 def extract_bearer_token(authorization: str | None) -> str | None:
@@ -72,21 +73,39 @@ def get_current_user(
     return user
 
 
-def get_current_admin_user(
-    current_user: User = Depends(get_current_user),
-) -> User:
-    """現在のログインユーザーが管理者であることを確認する。
+def require_system_permission(permission_code: str):
+    """システム権限を要求するDependencyを作成する。
 
     Args:
-        current_user: 認証済みユーザー。
+        permission_code: 要求する権限コード。
 
     Returns:
-        管理者ユーザー。
-
-    Raises:
-        ForbiddenError: 認証済みユーザーが管理者ではない場合。
+        認可済みユーザーを返すDependency。
     """
-    if not current_user.is_admin:
-        raise ForbiddenError()
 
-    return current_user
+    def dependency(
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> User:
+        """システム権限を持つことを確認する。
+
+        Args:
+            current_user: 認証済みユーザー。
+            db: DBセッション。
+
+        Returns:
+            認可済みユーザー。
+
+        Raises:
+            ForbiddenError: 権限がない場合。
+        """
+        if not AuthorizationService().has_system_permission(
+            db,
+            user=current_user,
+            permission_code=permission_code,
+        ):
+            raise ForbiddenError()
+
+        return current_user
+
+    return dependency

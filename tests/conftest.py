@@ -112,6 +112,19 @@ def clean_database() -> None:
             )
 
 
+@pytest.fixture(autouse=True)
+def seed_rbac_data(clean_database: None) -> None:
+    """各テストの前にRBAC初期データを投入する。
+
+    Args:
+        clean_database: DBリセットfixture。
+    """
+    from app.repositories.rbac import RbacRepository
+    from scripts.seed_rbac import seed_roles_and_permissions
+
+    seed_roles_and_permissions(RbacRepository())
+
+
 @pytest.fixture
 def db() -> Generator[Session, None, None]:
     """テスト用DBセッションを作成する。
@@ -139,6 +152,7 @@ def create_test_user(db: Session) -> Callable[..., "User"]:
         任意のemail/name/passwordでユーザーを作成する関数。
     """
     from app.core.security import get_password_hash
+    from app.repositories.rbac import RbacRepository
     from app.models.user import User
 
     def _create_test_user(
@@ -146,15 +160,27 @@ def create_test_user(db: Session) -> Callable[..., "User"]:
         email: str = "user@example.com",
         name: str = "User Name",
         password: str = "password123",
-        is_admin: bool = False,
+        system_role: str | None = None,
     ) -> User:
         user = User(
             email=email,
             name=name,
             hashed_password=get_password_hash(password),
-            is_admin=is_admin,
         )
         db.add(user)
+        db.flush()
+
+        if system_role is not None:
+            repository = RbacRepository()
+            role = repository.get_role_by_name_scope(
+                db,
+                name=system_role,
+                scope="system",
+            )
+            if role is None:
+                raise RuntimeError(f"system role not found: {system_role}")
+            repository.assign_role_to_user(db, user=user, role=role)
+
         db.commit()
         db.refresh(user)
         return user

@@ -29,7 +29,10 @@ def test_create_user_returns_created_user(
     create_test_user: Callable[..., User],
 ) -> None:
     """管理者がユーザーを作成できることを確認する。"""
-    admin_user = create_test_user(email="admin@example.com", is_admin=True)
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
     authorize_as(client, admin_user)
 
     response = client.post(
@@ -57,7 +60,10 @@ def test_create_user_stores_hashed_password(
     db: Session,
 ) -> None:
     """作成APIがハッシュ済みpasswordを保存することを確認する。"""
-    admin_user = create_test_user(email="admin@example.com", is_admin=True)
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
     authorize_as(client, admin_user)
     plain_password = "password123"
 
@@ -82,7 +88,10 @@ def test_create_user_rejects_duplicate_email(
     create_test_user: Callable[..., User],
 ) -> None:
     """ユーザー作成APIが重複emailを拒否することを確認する。"""
-    admin_user = create_test_user(email="admin@example.com", is_admin=True)
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
     create_test_user(email="duplicate@example.com")
     authorize_as(client, admin_user)
 
@@ -107,7 +116,10 @@ def test_create_user_requires_password(
     create_test_user: Callable[..., User],
 ) -> None:
     """作成APIがpassword未指定時に422を返すことを確認する。"""
-    admin_user = create_test_user(email="admin@example.com", is_admin=True)
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
     authorize_as(client, admin_user)
 
     response = client.post(
@@ -144,7 +156,7 @@ def test_create_user_requires_admin(
     create_test_user: Callable[..., User],
 ) -> None:
     """作成APIが一般ユーザーを拒否することを確認する。"""
-    normal_user = create_test_user(email="normal@example.com", is_admin=False)
+    normal_user = create_test_user(email="normal@example.com")
     authorize_as(client, normal_user)
 
     response = client.post(
