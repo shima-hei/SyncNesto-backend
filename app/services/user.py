@@ -14,11 +14,12 @@ from app.core.exceptions import (
     EmailAlreadyRegisteredError,
     InvalidCredentialsError,
     NotFoundError,
+    VersionConflictError,
 )
 from app.core.security import get_password_hash, verify_password
 from app.models.user import User
 from app.repositories.user import UserRepository
-from app.schemas.user import UserCreate, UserUpdate
+from app.schemas.user import UserCreate, UserRead, UserUpdate
 
 
 logger = logging.getLogger(__name__)
@@ -107,8 +108,13 @@ class UserService:
         Raises:
             EmailAlreadyRegisteredError: emailが既に登録されている場合。
             NotFoundError: ユーザーが存在しない場合。
+            VersionConflictError: リクエストのversionが最新ではない場合。
         """
         user = self.get_user(db, user_id)
+        if user.version != user_in.version:
+            current = UserRead.model_validate(user).model_dump()
+            raise VersionConflictError(current=current)
+
         if user_in.email is not None and user_in.email != user.email:
             existing_user = self.repository.get_by_email(db, user_in.email)
             if existing_user is not None:

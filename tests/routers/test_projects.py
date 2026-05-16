@@ -50,6 +50,7 @@ def test_create_project_returns_project_for_system_admin(
         "id": 1,
         "name": "Project A",
         "description": "Description A",
+        "version": 1,
     }
 
 
@@ -110,6 +111,7 @@ def test_list_projects_returns_joined_projects_for_project_member(
             "id": joined_project.id,
             "name": "Joined",
             "description": "Project Description",
+            "version": 1,
         }
     ]
 
@@ -159,10 +161,66 @@ def test_update_project_allows_project_admin(
     assign_project_role(user=user, project=project, role_key="project_admin")
     authorize_as(client, user)
 
-    response = client.patch(f"/projects/{project.id}", json={"name": "After"})
+    response = client.patch(
+        f"/projects/{project.id}",
+        json={"name": "After", "version": project.version},
+    )
 
     assert response.status_code == 200
     assert response.json()["name"] == "After"
+    assert response.json()["version"] == project.version + 1
+
+
+def test_update_project_rejects_stale_version_with_current_project(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    db: Session,
+) -> None:
+    """古いversionでのプロジェクト更新を409で拒否し、最新情報を返す。"""
+    user = create_test_user(email="admin@example.com")
+    project = create_test_project(name="Current")
+    assign_project_role(user=user, project=project, role_key="project_admin")
+    project.name = "Latest"
+    project.version = 2
+    db.commit()
+    db.refresh(project)
+    authorize_as(client, user)
+
+    response = client.patch(
+        f"/projects/{project.id}",
+        json={"name": "Stale Update", "version": 1},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "message": "Resource version conflict",
+        "code": "VERSION_CONFLICT",
+        "current": {
+            "id": project.id,
+            "name": "Latest",
+            "description": "Project Description",
+            "version": 2,
+        },
+    }
+
+
+def test_update_project_requires_version(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+) -> None:
+    """プロジェクト更新時にversionが必須であることを確認する。"""
+    user = create_test_user(email="admin@example.com")
+    project = create_test_project(name="Before")
+    assign_project_role(user=user, project=project, role_key="project_admin")
+    authorize_as(client, user)
+
+    response = client.patch(f"/projects/{project.id}", json={"name": "After"})
+
+    assert response.status_code == 422
 
 
 def test_update_project_rejects_viewer(
@@ -177,7 +235,10 @@ def test_update_project_rejects_viewer(
     assign_project_role(user=user, project=project, role_key="viewer")
     authorize_as(client, user)
 
-    response = client.patch(f"/projects/{project.id}", json={"name": "After"})
+    response = client.patch(
+        f"/projects/{project.id}",
+        json={"name": "After", "version": project.version},
+    )
 
     assert response.status_code == 403
 
@@ -271,6 +332,7 @@ def test_list_project_members_allows_project_viewer(
             "project_id": project.id,
             "user_id": viewer.id,
             "role_id": member.role_id,
+            "version": 1,
         }
     ]
 
@@ -293,12 +355,77 @@ def test_update_project_member_allows_project_admin(
 
     response = client.patch(
         f"/projects/{project.id}/members/{target_user.id}",
-        json={"role_id": role_id},
+        json={"role_id": role_id, "version": member.version},
     )
 
     assert response.status_code == 200
     assert response.json()["id"] == member.id
     assert response.json()["role_id"] == role_id
+    assert response.json()["version"] == member.version + 1
+
+
+def test_update_project_member_rejects_stale_version_with_current_member(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    db: Session,
+) -> None:
+    """古いversionでのメンバー更新を409で拒否し、最新情報を返す。"""
+    admin_user = create_test_user(email="admin@example.com")
+    target_user = create_test_user(email="target@example.com")
+    project = create_test_project(name="Project")
+    assign_project_role(user=admin_user, project=project, role_key="project_admin")
+    member = assign_project_role(user=target_user, project=project, role_key="viewer")
+    member_role_id = get_project_role_id(db, "member")
+    manager_role_id = get_project_role_id(db, "manager")
+    member.role_id = manager_role_id
+    member.version = 2
+    db.commit()
+    db.refresh(member)
+    authorize_as(client, admin_user)
+
+    response = client.patch(
+        f"/projects/{project.id}/members/{target_user.id}",
+        json={"role_id": member_role_id, "version": 1},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "message": "Resource version conflict",
+        "code": "VERSION_CONFLICT",
+        "current": {
+            "id": member.id,
+            "project_id": project.id,
+            "user_id": target_user.id,
+            "role_id": manager_role_id,
+            "version": 2,
+        },
+    }
+
+
+def test_update_project_member_requires_version(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    db: Session,
+) -> None:
+    """メンバー更新時にversionが必須であることを確認する。"""
+    admin_user = create_test_user(email="admin@example.com")
+    target_user = create_test_user(email="target@example.com")
+    project = create_test_project(name="Project")
+    assign_project_role(user=admin_user, project=project, role_key="project_admin")
+    assign_project_role(user=target_user, project=project, role_key="viewer")
+    authorize_as(client, admin_user)
+    role_id = get_project_role_id(db, "member")
+
+    response = client.patch(
+        f"/projects/{project.id}/members/{target_user.id}",
+        json={"role_id": role_id},
+    )
+
+    assert response.status_code == 422
 
 
 def test_remove_project_member_allows_project_admin(

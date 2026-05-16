@@ -28,6 +28,7 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     """ユーザー更新リクエストで受け取るschema。"""
 
+    version: int
     email: EmailStr | None = None
     name: str | None = None
     password: str | None = None
@@ -39,6 +40,7 @@ class UserRead(UserBase):
     """
 
     id: int
+    version: int
 
     model_config = {"from_attributes": True}
 

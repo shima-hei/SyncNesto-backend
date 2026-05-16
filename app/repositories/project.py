@@ -105,6 +105,7 @@ class ProjectRepository:
             project.name = project_in.name
         if project_in.description is not None:
             project.description = project_in.description
+        project.version += 1
 
         db.commit()
         db.refresh(project)
@@ -223,6 +224,7 @@ class ProjectMemberRepository:
             更新されたプロジェクトメンバー。
         """
         member.role_id = role_id
+        member.version += 1
         db.commit()
         db.refresh(member)
         return member

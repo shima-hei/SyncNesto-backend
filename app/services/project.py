@@ -2,7 +2,7 @@
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions import ConflictError, NotFoundError, VersionConflictError
 from app.models.project import Project, ProjectMember
 from app.models.user import User
 from app.repositories.project import ProjectMemberRepository, ProjectRepository
@@ -11,7 +11,9 @@ from app.repositories.user import UserRepository
 from app.schemas.project import (
     ProjectCreate,
     ProjectMemberCreate,
+    ProjectMemberRead,
     ProjectMemberUpdate,
+    ProjectRead,
     ProjectUpdate,
 )
 from app.services.authorization import AuthorizationService
@@ -99,8 +101,15 @@ class ProjectService:
 
         Returns:
             更新されたプロジェクト。
+
+        Raises:
+            VersionConflictError: リクエストのversionが最新ではない場合。
         """
         project = self.get_project(db, project_id)
+        if project.version != project_in.version:
+            current = ProjectRead.model_validate(project).model_dump()
+            raise VersionConflictError(current=current)
+
         return self.repository.update(db, project=project, project_in=project_in)
 
     def delete_project(self, db: Session, project_id: int) -> None:
@@ -206,8 +215,15 @@ class ProjectMemberService:
 
         Returns:
             更新されたプロジェクトメンバー。
+
+        Raises:
+            VersionConflictError: リクエストのversionが最新ではない場合。
         """
         member = self._get_member(db, project_id=project_id, user_id=user_id)
+        if member.version != member_in.version:
+            current = ProjectMemberRead.model_validate(member).model_dump()
+            raise VersionConflictError(current=current)
+
         self._ensure_project_role_exists(db, member_in.role_id)
         return self.repository.update_role(db, member=member, role_id=member_in.role_id)
 

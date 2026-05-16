@@ -155,6 +155,7 @@ def test_get_me_returns_current_user_with_cookie_token(
         "id": 1,
         "email": "me-cookie@example.com",
         "name": "Me Cookie User",
+        "version": 1,
         "system_roles": [],
     }
 
@@ -183,6 +184,7 @@ def test_get_me_returns_current_user_with_authorization_header(
         "id": 1,
         "email": "me-bearer@example.com",
         "name": "Me Bearer User",
+        "version": 1,
         "system_roles": [],
     }
 
@@ -212,6 +214,7 @@ def test_get_me_returns_system_roles(
         "id": user.id,
         "email": "admin@example.com",
         "name": "Admin",
+        "version": 1,
         "system_roles": [
             {
                 "key": "system_admin",

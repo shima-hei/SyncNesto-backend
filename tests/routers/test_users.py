@@ -49,6 +49,7 @@ def test_create_user_returns_created_user(
         "id": 2,
         "email": "user@example.com",
         "name": "User Name",
+        "version": 1,
     }
     assert "password" not in response.json()
     assert "hashed_password" not in response.json()
@@ -228,6 +229,7 @@ def test_read_user_returns_user_for_system_admin(
         "id": target_user.id,
         "email": "target@example.com",
         "name": "Target User",
+        "version": 1,
     }
 
 
@@ -245,7 +247,11 @@ def test_update_user_updates_user_for_system_admin(
 
     response = client.patch(
         f"/users/{target_user.id}",
-        json={"email": "after@example.com", "name": "After"},
+        json={
+            "email": "after@example.com",
+            "name": "After",
+            "version": target_user.version,
+        },
     )
 
     assert response.status_code == 200
@@ -253,7 +259,63 @@ def test_update_user_updates_user_for_system_admin(
         "id": target_user.id,
         "email": "after@example.com",
         "name": "After",
+        "version": target_user.version + 1,
     }
+
+
+def test_update_user_rejects_stale_version_with_current_user(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """古いversionでのユーザー更新を409で拒否し、最新情報を返す。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    target_user = create_test_user(email="before@example.com", name="Before")
+    target_user.name = "Latest"
+    target_user.version = 2
+    db.commit()
+    db.refresh(target_user)
+    authorize_as(client, admin_user)
+
+    response = client.patch(
+        f"/users/{target_user.id}",
+        json={"name": "Stale", "version": 1},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "message": "Resource version conflict",
+        "code": "VERSION_CONFLICT",
+        "current": {
+            "id": target_user.id,
+            "email": "before@example.com",
+            "name": "Latest",
+            "version": 2,
+        },
+    }
+
+
+def test_update_user_requires_version(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """ユーザー更新時にversionが必須であることを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    target_user = create_test_user(email="target@example.com")
+    authorize_as(client, admin_user)
+
+    response = client.patch(
+        f"/users/{target_user.id}",
+        json={"name": "Updated"},
+    )
+
+    assert response.status_code == 422
 
 
 def test_update_user_requires_user_update_permission(
@@ -267,7 +329,7 @@ def test_update_user_requires_user_update_permission(
 
     response = client.patch(
         f"/users/{target_user.id}",
-        json={"name": "Updated"},
+        json={"name": "Updated", "version": target_user.version},
     )
 
     assert response.status_code == 403

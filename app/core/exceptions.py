@@ -52,6 +52,23 @@ class ConflictError(AppError):
     code = "CONFLICT"
 
 
+class VersionConflictError(ConflictError):
+    """更新対象のバージョンが最新ではない場合の例外。"""
+
+    message = "Resource version conflict"
+    code = "VERSION_CONFLICT"
+
+    def __init__(self, current: dict[str, object], message: str | None = None) -> None:
+        """バージョン競合例外を初期化する。
+
+        Args:
+            current: DBに保存されている最新のリソース情報。
+            message: 例外に設定する業務エラーメッセージ。
+        """
+        self.current = current
+        super().__init__(message)
+
+
 class InvalidCredentialsError(UnauthorizedError):
     """ログイン認証情報が正しくない場合の例外。"""
 

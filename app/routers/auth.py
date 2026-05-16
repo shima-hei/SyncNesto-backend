@@ -94,5 +94,6 @@ def read_current_user(
         id=current_user.id,
         email=current_user.email,
         name=current_user.name,
+        version=current_user.version,
         system_roles=[RoleRead(key=role.key, name=role.name) for role in system_roles],
     )

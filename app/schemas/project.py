@@ -17,6 +17,7 @@ class ProjectCreate(ProjectBase):
 class ProjectUpdate(BaseModel):
     """プロジェクト更新リクエストで受け取るschema。"""
 
+    version: int
     name: str | None = None
     description: str | None = None
 
@@ -25,6 +26,7 @@ class ProjectRead(ProjectBase):
     """プロジェクト読み取り時に返すschema。"""
 
     id: int
+    version: int
 
     model_config = {"from_attributes": True}
 
@@ -39,6 +41,7 @@ class ProjectMemberCreate(BaseModel):
 class ProjectMemberUpdate(BaseModel):
     """プロジェクトメンバー更新リクエストで受け取るschema。"""
 
+    version: int
     role_id: int
 
 
@@ -49,5 +52,6 @@ class ProjectMemberRead(BaseModel):
     project_id: int
     user_id: int
     role_id: int
+    version: int
 
     model_config = {"from_attributes": True}

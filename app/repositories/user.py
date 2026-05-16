@@ -107,6 +107,7 @@ class UserRepository:
             user.name = user_in.name
         if hashed_password is not None:
             user.hashed_password = hashed_password
+        user.version += 1
 
         db.commit()
         db.refresh(user)

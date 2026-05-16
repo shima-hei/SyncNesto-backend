@@ -12,6 +12,7 @@ from app.core.exceptions import (
     ForbiddenError,
     NotFoundError,
     UnauthorizedError,
+    VersionConflictError,
 )
 
 logger = logging.getLogger(__name__)
@@ -72,10 +73,11 @@ def register_exception_handlers(app: FastAPI) -> None:
                 exc.message,
             )
 
-        return JSONResponse(
-            status_code=status_code,
-            content={
-                "message": exc.message,
-                "code": exc.code,
-            },
-        )
+        content: dict[str, object] = {
+            "message": exc.message,
+            "code": exc.code,
+        }
+        if isinstance(exc, VersionConflictError):
+            content["current"] = exc.current
+
+        return JSONResponse(status_code=status_code, content=content)

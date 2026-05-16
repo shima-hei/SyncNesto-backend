@@ -57,6 +57,7 @@ GET /auth/me
   "id": 1,
   "email": "admin@example.com",
   "name": "Admin",
+  "version": 1,
   "system_roles": [
     {
       "key": "system_admin",
@@ -119,6 +120,15 @@ viewer
 
 プロジェクトごとの role は、今後 `/projects` または `/projects/{project_id}/me` で返す想定です。現時点では `/auth/me` には含めません。
 
+現在のproject role別の主な操作権限:
+
+| role key | 表示名 | 主な操作権限 |
+|---|---|---|
+| `project_admin` | プロジェクト管理者 | プロジェクト閲覧/更新/削除、メンバー招待/削除、タスクCRUD、テスト設計書CRUD、テストケースCRUD/実行、ドキュメントCRUD |
+| `manager` | マネージャー | プロジェクト閲覧、タスクCRUD、テスト設計書閲覧/作成/更新、テストケース閲覧/作成/更新/実行、ドキュメント閲覧/作成/更新 |
+| `member` | メンバー | プロジェクト閲覧、タスク閲覧/作成/更新、テスト設計書閲覧/作成/更新、テストケース閲覧/実行、ドキュメント閲覧/作成/更新 |
+| `viewer` | 閲覧者 | プロジェクト、タスク、テスト設計書、テストケース、ドキュメントの閲覧 |
+
 ## API別の認可
 
 ### Auth
@@ -135,7 +145,7 @@ GET  /auth/me      ログイン必須
 POST   /users              user:create
 GET    /users              user:read
 GET    /users/{user_id}    user:read
-PATCH  /users/{user_id}    user:update
+PATCH  /users/{user_id}    user:update, version必須
 DELETE /users/{user_id}    user:delete
 ```
 
@@ -145,7 +155,7 @@ DELETE /users/{user_id}    user:delete
 POST   /projects                project:create
 GET    /projects                ログイン必須
 GET    /projects/{project_id}   project:read
-PATCH  /projects/{project_id}   project:update
+PATCH  /projects/{project_id}   project:update, version必須
 DELETE /projects/{project_id}   project:delete
 ```
 
@@ -156,9 +166,62 @@ DELETE /projects/{project_id}   project:delete
 ```text
 POST   /projects/{project_id}/members              project:invite_member
 GET    /projects/{project_id}/members              project:read
-PATCH  /projects/{project_id}/members/{user_id}    project:invite_member
+PATCH  /projects/{project_id}/members/{user_id}    project:invite_member, version必須
 DELETE /projects/{project_id}/members/{user_id}    project:remove_member
 ```
+
+## 排他制御
+
+更新APIは楽観的排他制御を行います。バックエンドは取得レスポンスに `version` を含め、フロントエンドは更新時にその `version` をリクエストへ含めます。
+
+対象:
+
+```text
+PATCH /users/{user_id}
+PATCH /projects/{project_id}
+PATCH /projects/{project_id}/members/{user_id}
+```
+
+更新リクエスト例:
+
+```json
+{
+  "name": "Updated Project",
+  "version": 1
+}
+```
+
+更新成功時は `version` が1つ増えた最新リソースを返します。
+
+```json
+{
+  "id": 1,
+  "name": "Updated Project",
+  "description": null,
+  "version": 2
+}
+```
+
+送信した `version` がDB上の最新値と一致しない場合、更新は行わず `409 Conflict` を返します。レスポンスの `current` にはDB上の最新リソースが入ります。
+
+```http
+409 Conflict
+```
+
+```json
+{
+  "message": "Resource version conflict",
+  "code": "VERSION_CONFLICT",
+  "current": {
+    "id": 1,
+    "name": "Latest Project",
+    "description": null,
+    "version": 2
+  }
+}
+```
+
+フロントエンドでは、`409` を受け取った場合に `current` を画面へ反映し、ユーザーに再編集または再送信を促してください。
 
 ## フロントエンドでの表示制御例
 
@@ -220,4 +283,18 @@ const canViewProject = [
 }
 ```
 
-フロントエンドでは、`401` はログイン画面への誘導、`403` は権限なし表示として扱ってください。
+更新競合:
+
+```http
+409 Conflict
+```
+
+```json
+{
+  "message": "Resource version conflict",
+  "code": "VERSION_CONFLICT",
+  "current": {}
+}
+```
+
+フロントエンドでは、`401` はログイン画面への誘導、`403` は権限なし表示、`409` は最新データの再表示として扱ってください。
