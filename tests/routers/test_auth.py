@@ -141,7 +141,12 @@ def test_get_me_returns_current_user_with_cookie_token(
         password="password123",
     )
     access_token = create_access_token(subject=user.email)
-    client.cookies.set(settings.auth_cookie_name, access_token)
+    client.cookies.set(
+        settings.auth_cookie_name,
+        access_token,
+        domain="testserver.local",
+        path="/",
+    )
 
     response = client.get("/auth/me")
 
@@ -198,6 +203,55 @@ def test_get_me_rejects_invalid_token(client: TestClient) -> None:
         headers={"Authorization": "Bearer invalid-token"},
     )
 
+    assert response.status_code == 401
+    assert response.json() == {
+        "message": "Invalid email or password",
+        "code": "INVALID_CREDENTIALS",
+    }
+
+
+def test_logout_deletes_auth_cookie(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """ログアウトAPIが認証Cookieを削除することを確認する。"""
+    user = create_test_user(email="logout@example.com")
+    access_token = create_access_token(subject=user.email)
+    client.cookies.set(
+        settings.auth_cookie_name,
+        access_token,
+        domain="testserver.local",
+        path="/",
+    )
+
+    response = client.post("/auth/logout")
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert client.cookies.get(settings.auth_cookie_name) is None
+    assert settings.auth_cookie_name in response.headers["set-cookie"]
+    assert "max-age=0" in response.headers["set-cookie"].lower()
+    assert "httponly" in response.headers["set-cookie"].lower()
+
+
+def test_get_me_rejects_after_logout(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """ログアウト後に現在ユーザー取得を拒否することを確認する。"""
+    user = create_test_user(email="logout-me@example.com")
+    access_token = create_access_token(subject=user.email)
+    client.cookies.set(
+        settings.auth_cookie_name,
+        access_token,
+        domain="testserver.local",
+        path="/",
+    )
+
+    logout_response = client.post("/auth/logout")
+    response = client.get("/auth/me")
+
+    assert logout_response.status_code == 204
     assert response.status_code == 401
     assert response.json() == {
         "message": "Invalid email or password",

@@ -238,6 +238,23 @@ POST /auth/login
 }
 ```
 
+レスポンス:
+
+```json
+{
+  "access_token": "jwt-access-token",
+  "token_type": "bearer"
+}
+```
+
+### User Logout
+
+```text
+POST /auth/logout
+```
+
+認証Cookieを削除します。レスポンスbodyはありません。
+
 ### Current User
 
 ```text
@@ -250,8 +267,9 @@ GET /auth/me
 
 ```json
 {
-  "access_token": "jwt-access-token",
-  "token_type": "bearer"
+  "id": 1,
+  "email": "user@example.com",
+  "name": "User Name"
 }
 ```
 
@@ -359,5 +377,4 @@ def get_password_hash(password: str) -> str:
 ## 今後の主なTODO
 
 - role/permission を `is_admin` から拡張する
-- logout APIで認証Cookieを削除する
 - JWT decode失敗時の例外種別を細分化する

@@ -52,6 +52,25 @@ def login_user(
     return UserLoginResponse()
 
 
+@router.post(
+    "/logout",
+    status_code=204,
+)
+def logout_user(response: Response) -> None:
+    """ユーザーログアウトを行う。
+
+    Args:
+        response: HTTPレスポンス。
+
+    """
+    response.delete_cookie(
+        key=settings.auth_cookie_name,
+        httponly=True,
+        secure=settings.auth_cookie_secure,
+        samesite=settings.auth_cookie_samesite,
+    )
+
+
 @router.get(
     "/me",
     response_model=UserRead,
