@@ -25,6 +25,14 @@ class UserCreate(UserBase):
     password: str
 
 
+class UserUpdate(BaseModel):
+    """ユーザー更新リクエストで受け取るschema。"""
+
+    email: EmailStr | None = None
+    name: str | None = None
+    password: str | None = None
+
+
 class UserRead(UserBase):
     """
     ユーザー読み取り時に返すschema。
@@ -33,6 +41,21 @@ class UserRead(UserBase):
     id: int
 
     model_config = {"from_attributes": True}
+
+
+class RoleRead(BaseModel):
+    """ロール読み取り時に返すschema。"""
+
+    key: str
+    name: str
+
+    model_config = {"from_attributes": True}
+
+
+class CurrentUserRead(UserRead):
+    """現在のログインユーザー読み取り時に返すschema。"""
+
+    system_roles: list[RoleRead]
 
 
 class UserLogin(BaseModel):

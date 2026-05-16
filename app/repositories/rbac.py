@@ -4,29 +4,30 @@ from sqlalchemy.orm import Session
 
 from app.models.rbac import Permission, Role, RolePermission, UserRole
 from app.models.user import User
+from app.models.project import ProjectMember
 
 
 class RbacRepository:
     """RBACテーブルへのデータアクセス処理を提供するRepository。"""
 
-    def get_role_by_name_scope(
+    def get_role_by_key_scope(
         self,
         db: Session,
         *,
-        name: str,
+        key: str,
         scope: str,
     ) -> Role | None:
-        """nameとscopeに一致するロールを取得する。
+        """keyとscopeに一致するロールを取得する。
 
         Args:
             db: DBセッション。
-            name: ロール名。
+            key: ロールkey。
             scope: ロールの適用範囲。
 
         Returns:
             一致するロール。存在しない場合はNone。
         """
-        return db.query(Role).filter(Role.name == name, Role.scope == scope).first()
+        return db.query(Role).filter(Role.key == key, Role.scope == scope).first()
 
     def get_permission_by_code(self, db: Session, code: str) -> Permission | None:
         """codeに一致する権限を取得する。
@@ -40,10 +41,23 @@ class RbacRepository:
         """
         return db.query(Permission).filter(Permission.code == code).first()
 
+    def get_role_by_id(self, db: Session, role_id: int) -> Role | None:
+        """idに一致するロールを取得する。
+
+        Args:
+            db: DBセッション。
+            role_id: ロールID。
+
+        Returns:
+            一致するロール。存在しない場合はNone。
+        """
+        return db.query(Role).filter(Role.id == role_id).first()
+
     def create_role(
         self,
         db: Session,
         *,
+        key: str,
         name: str,
         scope: str,
         description: str | None = None,
@@ -52,6 +66,7 @@ class RbacRepository:
 
         Args:
             db: DBセッション。
+            key: ロールkey。
             name: ロール名。
             scope: ロールの適用範囲。
             description: ロール説明。
@@ -59,8 +74,32 @@ class RbacRepository:
         Returns:
             作成されたロール。
         """
-        role = Role(name=name, scope=scope, description=description)
+        role = Role(key=key, name=name, scope=scope, description=description)
         db.add(role)
+        db.flush()
+        return role
+
+    def update_role_display(
+        self,
+        db: Session,
+        *,
+        role: Role,
+        name: str,
+        description: str | None = None,
+    ) -> Role:
+        """ロールの表示名と説明を更新する。
+
+        Args:
+            db: DBセッション。
+            role: 更新対象ロール。
+            name: 表示名。
+            description: 説明。
+
+        Returns:
+            更新されたロール。
+        """
+        role.name = name
+        role.description = description
         db.flush()
         return role
 
@@ -149,6 +188,24 @@ class RbacRepository:
         db.flush()
         return user_role
 
+    def list_system_roles_by_user(self, db: Session, user_id: int) -> list[Role]:
+        """ユーザーに付与されたシステムロール一覧を取得する。
+
+        Args:
+            db: DBセッション。
+            user_id: ユーザーID。
+
+        Returns:
+            システムロール一覧。
+        """
+        return (
+            db.query(Role)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .filter(UserRole.user_id == user_id, Role.scope == "system")
+            .order_by(Role.id)
+            .all()
+        )
+
     def user_has_system_permission(
         self,
         db: Session,
@@ -174,6 +231,41 @@ class RbacRepository:
             .filter(
                 UserRole.user_id == user_id,
                 Role.scope == "system",
+                Permission.code == permission_code,
+            )
+            .first()
+            is not None
+        )
+
+    def project_member_has_permission(
+        self,
+        db: Session,
+        *,
+        user_id: int,
+        project_id: int,
+        permission_code: str,
+    ) -> bool:
+        """プロジェクトメンバーが指定権限を持つか判定する。
+
+        Args:
+            db: DBセッション。
+            user_id: 判定対象ユーザーID。
+            project_id: 判定対象プロジェクトID。
+            permission_code: 権限コード。
+
+        Returns:
+            権限を持つ場合はTrue。
+        """
+        return (
+            db.query(ProjectMember.id)
+            .join(Role, ProjectMember.role_id == Role.id)
+            .join(RolePermission, RolePermission.role_id == Role.id)
+            .join(Permission, RolePermission.permission_id == Permission.id)
+            .filter(
+                ProjectMember.user_id == user_id,
+                ProjectMember.project_id == project_id,
+                ProjectMember.deleted_at.is_(None),
+                Role.scope == "project",
                 Permission.code == permission_code,
             )
             .first()

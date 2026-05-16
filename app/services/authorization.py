@@ -39,3 +39,36 @@ class AuthorizationService:
             user_id=user.id,
             permission_code=permission_code,
         )
+
+    def has_project_permission(
+        self,
+        db: Session,
+        *,
+        user: User,
+        project_id: int,
+        permission_code: str,
+    ) -> bool:
+        """ユーザーがプロジェクト権限を持つか判定する。
+
+        Args:
+            db: DBセッション。
+            user: 判定対象ユーザー。
+            project_id: 判定対象プロジェクトID。
+            permission_code: 権限コード。
+
+        Returns:
+            権限を持つ場合はTrue。
+        """
+        if self.has_system_permission(
+            db,
+            user=user,
+            permission_code=permission_code,
+        ):
+            return True
+
+        return self.repository.project_member_has_permission(
+            db,
+            user_id=user.id,
+            project_id=project_id,
+            permission_code=permission_code,
+        )

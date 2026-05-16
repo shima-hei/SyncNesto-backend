@@ -8,7 +8,8 @@ from app.core.config import settings
 from app.core.security import create_access_token
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.user import UserLogin, UserLoginResponse, UserRead
+from app.repositories.rbac import RbacRepository
+from app.schemas.user import CurrentUserRead, RoleRead, UserLogin, UserLoginResponse
 from app.services.user import UserService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -73,17 +74,25 @@ def logout_user(response: Response) -> None:
 
 @router.get(
     "/me",
-    response_model=UserRead,
+    response_model=CurrentUserRead,
 )
 def read_current_user(
     current_user: User = Depends(get_current_user),
-) -> User:
+    db: Session = Depends(get_db),
+) -> CurrentUserRead:
     """現在のログインユーザーを取得する。
 
     Args:
         current_user: 認証済みユーザー。
+        db: DBセッション。
 
     Returns:
         現在のログインユーザー情報。
     """
-    return current_user
+    system_roles = RbacRepository().list_system_roles_by_user(db, current_user.id)
+    return CurrentUserRead(
+        id=current_user.id,
+        email=current_user.email,
+        name=current_user.name,
+        system_roles=[RoleRead(key=role.key, name=role.name) for role in system_roles],
+    )

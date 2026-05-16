@@ -172,9 +172,9 @@ def create_test_user(db: Session) -> Callable[..., "User"]:
 
         if system_role is not None:
             repository = RbacRepository()
-            role = repository.get_role_by_name_scope(
+            role = repository.get_role_by_key_scope(
                 db,
-                name=system_role,
+                key=system_role,
                 scope="system",
             )
             if role is None:
@@ -186,3 +186,71 @@ def create_test_user(db: Session) -> Callable[..., "User"]:
         return user
 
     return _create_test_user
+
+
+@pytest.fixture
+def create_test_project(db: Session) -> Callable[..., "Project"]:
+    """テスト用プロジェクトをDBへ直接作成するfixture。
+
+    Args:
+        db: テスト用DBセッション。
+
+    Returns:
+        任意のname/descriptionでプロジェクトを作成する関数。
+    """
+    from app.models.project import Project
+
+    def _create_test_project(
+        *,
+        name: str = "Project Name",
+        description: str | None = "Project Description",
+    ) -> Project:
+        project = Project(name=name, description=description)
+        db.add(project)
+        db.commit()
+        db.refresh(project)
+        return project
+
+    return _create_test_project
+
+
+@pytest.fixture
+def assign_project_role(db: Session) -> Callable[..., "ProjectMember"]:
+    """テスト用プロジェクトロールをユーザーへ付与するfixture。
+
+    Args:
+        db: テスト用DBセッション。
+
+    Returns:
+        プロジェクトメンバーを作成する関数。
+    """
+    from app.models.project import Project, ProjectMember
+    from app.models.user import User
+    from app.repositories.rbac import RbacRepository
+
+    def _assign_project_role(
+        *,
+        user: User,
+        project: Project,
+        role_key: str,
+    ) -> ProjectMember:
+        repository = RbacRepository()
+        role = repository.get_role_by_key_scope(
+            db,
+            key=role_key,
+            scope="project",
+        )
+        if role is None:
+            raise RuntimeError(f"project role not found: {role_key}")
+
+        member = ProjectMember(
+            project_id=project.id,
+            user_id=user.id,
+            role_id=role.id,
+        )
+        db.add(member)
+        db.commit()
+        db.refresh(member)
+        return member
+
+    return _assign_project_role

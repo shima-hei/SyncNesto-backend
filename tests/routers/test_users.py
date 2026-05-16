@@ -173,3 +173,135 @@ def test_create_user_requires_admin(
         "message": "Forbidden",
         "code": "FORBIDDEN",
     }
+
+
+def test_list_users_returns_users_for_system_admin(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """system_adminがユーザー一覧を取得できることを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    create_test_user(email="user-a@example.com", name="User A")
+    authorize_as(client, admin_user)
+
+    response = client.get("/users")
+
+    assert response.status_code == 200
+    assert [user["email"] for user in response.json()] == [
+        "admin@example.com",
+        "user-a@example.com",
+    ]
+
+
+def test_list_users_requires_user_read_permission(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """user:read権限がない場合にユーザー一覧取得を拒否する。"""
+    normal_user = create_test_user(email="normal@example.com")
+    authorize_as(client, normal_user)
+
+    response = client.get("/users")
+
+    assert response.status_code == 403
+
+
+def test_read_user_returns_user_for_system_admin(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """system_adminがユーザー詳細を取得できることを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    target_user = create_test_user(email="target@example.com", name="Target User")
+    authorize_as(client, admin_user)
+
+    response = client.get(f"/users/{target_user.id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": target_user.id,
+        "email": "target@example.com",
+        "name": "Target User",
+    }
+
+
+def test_update_user_updates_user_for_system_admin(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """system_adminがユーザーを更新できることを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    target_user = create_test_user(email="before@example.com", name="Before")
+    authorize_as(client, admin_user)
+
+    response = client.patch(
+        f"/users/{target_user.id}",
+        json={"email": "after@example.com", "name": "After"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": target_user.id,
+        "email": "after@example.com",
+        "name": "After",
+    }
+
+
+def test_update_user_requires_user_update_permission(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """user:update権限がない場合にユーザー更新を拒否する。"""
+    normal_user = create_test_user(email="normal@example.com")
+    target_user = create_test_user(email="target@example.com")
+    authorize_as(client, normal_user)
+
+    response = client.patch(
+        f"/users/{target_user.id}",
+        json={"name": "Updated"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_delete_user_soft_deletes_user_for_system_admin(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """system_adminがユーザーを論理削除できることを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    target_user = create_test_user(email="delete@example.com")
+    authorize_as(client, admin_user)
+
+    response = client.delete(f"/users/{target_user.id}")
+
+    assert response.status_code == 204
+    db.refresh(target_user)
+    assert target_user.deleted_at is not None
+
+
+def test_delete_user_requires_user_delete_permission(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """user:delete権限がない場合にユーザー削除を拒否する。"""
+    normal_user = create_test_user(email="normal@example.com")
+    target_user = create_test_user(email="target@example.com")
+    authorize_as(client, normal_user)
+
+    response = client.delete(f"/users/{target_user.id}")
+
+    assert response.status_code == 403

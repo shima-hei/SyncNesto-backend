@@ -10,11 +10,15 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import EmailAlreadyRegisteredError, InvalidCredentialsError
+from app.core.exceptions import (
+    EmailAlreadyRegisteredError,
+    InvalidCredentialsError,
+    NotFoundError,
+)
 from app.core.security import get_password_hash, verify_password
 from app.models.user import User
 from app.repositories.user import UserRepository
-from app.schemas.user import UserCreate
+from app.schemas.user import UserCreate, UserUpdate
 
 
 logger = logging.getLogger(__name__)
@@ -58,6 +62,81 @@ class UserService:
         user = self.repository.create(db, user_in, hashed_password)
         logger.info("User created: id=%s email=%s", user.id, user.email)
         return user
+
+    def list_users(self, db: Session) -> list[User]:
+        """ユーザー一覧を取得する。
+
+        Args:
+            db: DBセッション。
+
+        Returns:
+            ユーザー一覧。
+        """
+        return self.repository.list(db)
+
+    def get_user(self, db: Session, user_id: int) -> User:
+        """ユーザーを取得する。
+
+        Args:
+            db: DBセッション。
+            user_id: 取得対象ユーザーID。
+
+        Returns:
+            取得されたユーザー。
+
+        Raises:
+            NotFoundError: ユーザーが存在しない場合。
+        """
+        user = self.repository.get_by_id(db, user_id)
+        if user is None:
+            raise NotFoundError("User not found")
+
+        return user
+
+    def update_user(self, db: Session, user_id: int, user_in: UserUpdate) -> User:
+        """ユーザーを更新する。
+
+        Args:
+            db: DBセッション。
+            user_id: 更新対象ユーザーID。
+            user_in: ユーザー更新リクエストの入力値。
+
+        Returns:
+            更新されたユーザー。
+
+        Raises:
+            EmailAlreadyRegisteredError: emailが既に登録されている場合。
+            NotFoundError: ユーザーが存在しない場合。
+        """
+        user = self.get_user(db, user_id)
+        if user_in.email is not None and user_in.email != user.email:
+            existing_user = self.repository.get_by_email(db, user_in.email)
+            if existing_user is not None:
+                raise EmailAlreadyRegisteredError()
+
+        hashed_password = None
+        if user_in.password is not None:
+            hashed_password = get_password_hash(user_in.password)
+
+        return self.repository.update(
+            db,
+            user=user,
+            user_in=user_in,
+            hashed_password=hashed_password,
+        )
+
+    def delete_user(self, db: Session, user_id: int) -> None:
+        """ユーザーを論理削除する。
+
+        Args:
+            db: DBセッション。
+            user_id: 削除対象ユーザーID。
+
+        Raises:
+            NotFoundError: ユーザーが存在しない場合。
+        """
+        user = self.get_user(db, user_id)
+        self.repository.soft_delete(db, user)
 
     def authenticate_user(self, db: Session, email: str, password: str) -> User:
         """ユーザーを認証する。

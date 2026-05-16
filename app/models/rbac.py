@@ -12,9 +12,13 @@ class Role(Base):
     """ロールを管理するモデル。"""
 
     __tablename__ = "roles"
-    __table_args__ = (UniqueConstraint("name", "scope", name="uq_roles_name_scope"),)
+    __table_args__ = (
+        UniqueConstraint("key", "scope", name="uq_roles_key_scope"),
+        UniqueConstraint("name", "scope", name="uq_roles_name_scope"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    key: Mapped[str] = mapped_column(String(100), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     scope: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)

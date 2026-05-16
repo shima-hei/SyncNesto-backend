@@ -109,3 +109,44 @@ def require_system_permission(permission_code: str):
         return current_user
 
     return dependency
+
+
+def require_project_permission(permission_code: str):
+    """プロジェクト権限を要求するDependencyを作成する。
+
+    Args:
+        permission_code: 要求する権限コード。
+
+    Returns:
+        認可済みユーザーを返すDependency。
+    """
+
+    def dependency(
+        project_id: int,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> User:
+        """プロジェクト権限を持つことを確認する。
+
+        Args:
+            project_id: 対象プロジェクトID。
+            current_user: 認証済みユーザー。
+            db: DBセッション。
+
+        Returns:
+            認可済みユーザー。
+
+        Raises:
+            ForbiddenError: 権限がない場合。
+        """
+        if not AuthorizationService().has_project_permission(
+            db,
+            user=current_user,
+            project_id=project_id,
+            permission_code=permission_code,
+        ):
+            raise ForbiddenError()
+
+        return current_user
+
+    return dependency

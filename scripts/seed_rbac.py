@@ -44,11 +44,11 @@ PERMISSIONS = [
 ]
 
 ROLES = [
-    ("system_admin", "system", "システム全体の管理者"),
-    ("project_admin", "project", "プロジェクト管理者"),
-    ("manager", "project", "プロジェクト運用担当者"),
-    ("member", "project", "通常メンバー"),
-    ("viewer", "project", "閲覧専用ユーザー"),
+    ("system_admin", "システム管理者", "system", "システム全体の管理者"),
+    ("project_admin", "プロジェクト管理者", "project", "プロジェクト管理者"),
+    ("manager", "マネージャー", "project", "プロジェクト運用担当者"),
+    ("member", "メンバー", "project", "通常メンバー"),
+    ("viewer", "閲覧者", "project", "閲覧専用ユーザー"),
 ]
 
 ROLE_PERMISSIONS = {
@@ -56,6 +56,7 @@ ROLE_PERMISSIONS = {
     "project_admin": [
         "project:read",
         "project:update",
+        "project:delete",
         "project:invite_member",
         "project:remove_member",
         "task:read",
@@ -130,16 +131,24 @@ def seed_roles_and_permissions(repository: RbacRepository) -> None:
             permissions[code] = permission
 
         roles = {}
-        for name, scope, description in ROLES:
-            role = repository.get_role_by_name_scope(db, name=name, scope=scope)
+        for key, name, scope, description in ROLES:
+            role = repository.get_role_by_key_scope(db, key=key, scope=scope)
             if role is None:
                 role = repository.create_role(
                     db,
+                    key=key,
                     name=name,
                     scope=scope,
                     description=description,
                 )
-            roles[name] = role
+            else:
+                repository.update_role_display(
+                    db,
+                    role=role,
+                    name=name,
+                    description=description,
+                )
+            roles[key] = role
 
         for role_name, permission_codes in ROLE_PERMISSIONS.items():
             role = roles[role_name]
@@ -181,9 +190,9 @@ def seed_initial_admin(repository: RbacRepository) -> None:
             db.add(user)
             db.flush()
 
-        role = repository.get_role_by_name_scope(
+        role = repository.get_role_by_key_scope(
             db,
-            name="system_admin",
+            key="system_admin",
             scope="system",
         )
         if role is None:

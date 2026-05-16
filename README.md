@@ -193,15 +193,27 @@ GET /
 
 ログイン成功時はHttpOnly Cookieにもaccess tokenをセットします。開発環境ではSwagger UIや手動検証をしやすくするため、レスポンスbodyにも `access_token` を返します。本番では `ALLOW_BEARER_TOKEN_RESPONSE=false` にして、bodyにはaccess tokenを返さない運用を想定しています。
 
-### User Create
+### Users
 
 ```text
-POST /users
+POST   /users
+GET    /users
+GET    /users/{user_id}
+PATCH  /users/{user_id}
+DELETE /users/{user_id}
 ```
 
-管理者認証が必要です。
+必要な権限:
 
-リクエスト:
+```text
+POST   /users              user:create
+GET    /users              user:read
+GET    /users/{user_id}    user:read
+PATCH  /users/{user_id}    user:update
+DELETE /users/{user_id}    user:delete
+```
+
+作成リクエスト:
 
 ```json
 {
@@ -222,6 +234,46 @@ POST /users
 ```
 
 `password` は平文のまま保存せず、Argon2idでハッシュ化して `users.hashed_password` に保存します。レスポンスには `password` と `hashed_password` を含めません。
+
+### Projects
+
+```text
+POST   /projects
+GET    /projects
+GET    /projects/{project_id}
+PATCH  /projects/{project_id}
+DELETE /projects/{project_id}
+```
+
+必要な権限:
+
+```text
+POST   /projects                project:create
+GET    /projects                ログイン必須
+GET    /projects/{project_id}   project:read
+PATCH  /projects/{project_id}   project:update
+DELETE /projects/{project_id}   project:delete
+```
+
+`GET /projects` は、システム権限で `project:read` を持つユーザーには全プロジェクトを返し、それ以外のログインユーザーには所属プロジェクトのみ返します。
+
+### Project Members
+
+```text
+POST   /projects/{project_id}/members
+GET    /projects/{project_id}/members
+PATCH  /projects/{project_id}/members/{user_id}
+DELETE /projects/{project_id}/members/{user_id}
+```
+
+必要な権限:
+
+```text
+POST   /projects/{project_id}/members              project:invite_member
+GET    /projects/{project_id}/members              project:read
+PATCH  /projects/{project_id}/members/{user_id}    project:invite_member
+DELETE /projects/{project_id}/members/{user_id}    project:remove_member
+```
 
 ### User Login
 
@@ -307,7 +359,7 @@ ALLOW_AUTHORIZATION_HEADER=false
 - `projects`: プロジェクト
 - `project_members`: プロジェクト所属とプロジェクト内ロール
 
-現時点では `POST /users` に `user:create` 権限を要求しています。未ログインは `401`、権限不足は `403` を返します。
+未ログインは `401`、権限不足は `403` を返します。
 
 ## 例外ハンドリング
 

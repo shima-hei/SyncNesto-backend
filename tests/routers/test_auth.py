@@ -155,6 +155,7 @@ def test_get_me_returns_current_user_with_cookie_token(
         "id": 1,
         "email": "me-cookie@example.com",
         "name": "Me Cookie User",
+        "system_roles": [],
     }
 
 
@@ -182,6 +183,41 @@ def test_get_me_returns_current_user_with_authorization_header(
         "id": 1,
         "email": "me-bearer@example.com",
         "name": "Me Bearer User",
+        "system_roles": [],
+    }
+
+
+def test_get_me_returns_system_roles(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """現在ユーザー取得でsystem roleを返すことを確認する。"""
+    user = create_test_user(
+        email="admin@example.com",
+        name="Admin",
+        system_role="system_admin",
+    )
+    access_token = create_access_token(subject=user.email)
+    client.cookies.set(
+        settings.auth_cookie_name,
+        access_token,
+        domain="testserver.local",
+        path="/",
+    )
+
+    response = client.get("/auth/me")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": user.id,
+        "email": "admin@example.com",
+        "name": "Admin",
+        "system_roles": [
+            {
+                "key": "system_admin",
+                "name": "システム管理者",
+            }
+        ],
     }
 
 
