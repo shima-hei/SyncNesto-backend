@@ -21,19 +21,20 @@ user_service = UserService()
 )
 def create_user(
     user_in: UserCreate,
-    _: User = Depends(require_system_permission("user:create")),
+    current_user: User = Depends(require_system_permission("user:create")),
     db: Session = Depends(get_db),
 ) -> User:
     """管理者としてユーザーを作成する。
 
     Args:
         user_in: ユーザー作成リクエストの入力値。
+        current_user: 認可済みユーザー。
         db: DBセッション。
 
     Returns:
         作成されたユーザー情報。
     """
-    return user_service.create_user(db, user_in)
+    return user_service.create_user(db, user_in, actor_id=current_user.id)
 
 
 @router.get(
@@ -83,7 +84,7 @@ def read_user(
 def update_user(
     user_id: int,
     user_in: UserUpdate,
-    _: User = Depends(require_system_permission("user:update")),
+    current_user: User = Depends(require_system_permission("user:update")),
     db: Session = Depends(get_db),
 ) -> User:
     """ユーザーを更新する。
@@ -91,12 +92,13 @@ def update_user(
     Args:
         user_id: 更新対象ユーザーID。
         user_in: ユーザー更新リクエストの入力値。
+        current_user: 認可済みユーザー。
         db: DBセッション。
 
     Returns:
         更新されたユーザー。
     """
-    return user_service.update_user(db, user_id, user_in)
+    return user_service.update_user(db, user_id, user_in, actor_id=current_user.id)
 
 
 @router.delete(

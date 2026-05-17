@@ -76,6 +76,63 @@ def test_login_user_does_not_return_access_token_in_production(
     assert "secure" in response.headers["set-cookie"].lower()
 
 
+def test_login_user_updates_last_login_at_without_incrementing_version(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """ログイン成功時にlast_login_atを更新し、versionを増やさないことを確認する。"""
+    password = "password123"
+    user = create_test_user(
+        email="last-login@example.com",
+        name="Last Login User",
+        password=password,
+    )
+
+    response = client.post(
+        "/auth/login",
+        json={
+            "email": "last-login@example.com",
+            "password": password,
+        },
+    )
+
+    assert response.status_code == 200
+    db.refresh(user)
+    assert user.last_login_at is not None
+    assert user.version == 1
+
+
+def test_login_user_rejects_inactive_user(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """無効ユーザーのログインを拒否することを確認する。"""
+    password = "password123"
+    user = create_test_user(
+        email="inactive@example.com",
+        name="Inactive User",
+        password=password,
+    )
+    user.is_active = False
+    db.commit()
+
+    response = client.post(
+        "/auth/login",
+        json={
+            "email": "inactive@example.com",
+            "password": password,
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "message": "Invalid email or password",
+        "code": "INVALID_CREDENTIALS",
+    }
+
+
 def test_login_user_rejects_unknown_email(client: TestClient) -> None:
     """ログインAPIが存在しないemailを拒否することを確認する。"""
     response = client.post(
@@ -157,6 +214,13 @@ def test_get_me_returns_current_user_with_cookie_token(
         "email": "me-cookie@example.com",
         "name": "Me Cookie User",
         "version": 1,
+        "department": None,
+        "position": None,
+        "avatar_url": None,
+        "is_active": True,
+        "last_login_at": None,
+        "created_by": None,
+        "updated_by": None,
         "system_roles": [],
     }
 
@@ -186,6 +250,13 @@ def test_get_me_returns_current_user_with_authorization_header(
         "email": "me-bearer@example.com",
         "name": "Me Bearer User",
         "version": 1,
+        "department": None,
+        "position": None,
+        "avatar_url": None,
+        "is_active": True,
+        "last_login_at": None,
+        "created_by": None,
+        "updated_by": None,
         "system_roles": [],
     }
 
@@ -216,6 +287,13 @@ def test_get_me_returns_system_roles(
         "email": "admin@example.com",
         "name": "Admin",
         "version": 1,
+        "department": None,
+        "position": None,
+        "avatar_url": None,
+        "is_active": True,
+        "last_login_at": None,
+        "created_by": None,
+        "updated_by": None,
         "system_roles": [
             {
                 "key": "system_admin",
@@ -249,6 +327,7 @@ def test_update_me_updates_current_user_profile(
         json={
             "name": "After",
             "password": "new-password123",
+            "avatar_url": "https://example.com/avatar.png",
             "version": user.version,
         },
     )
@@ -259,10 +338,19 @@ def test_update_me_updates_current_user_profile(
         "email": "profile@example.com",
         "name": "After",
         "version": user.version + 1,
+        "department": None,
+        "position": None,
+        "avatar_url": "https://example.com/avatar.png",
+        "is_active": True,
+        "last_login_at": None,
+        "created_by": None,
+        "updated_by": user.id,
         "system_roles": [],
     }
     db.refresh(user)
     assert user.name == "After"
+    assert user.avatar_url == "https://example.com/avatar.png"
+    assert user.updated_by == user.id
     assert verify_password("new-password123", user.hashed_password)
 
 
@@ -284,6 +372,33 @@ def test_update_me_rejects_email_update(
         "/auth/me",
         json={
             "email": "changed@example.com",
+            "version": user.version,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_me_rejects_admin_only_profile_fields(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """本人プロフィール更新で管理者用項目の変更を拒否することを確認する。"""
+    user = create_test_user(email="profile@example.com")
+    access_token = create_access_token(subject=user.email)
+    client.cookies.set(
+        settings.auth_cookie_name,
+        access_token,
+        domain="testserver.local",
+        path="/",
+    )
+
+    response = client.patch(
+        "/auth/me",
+        json={
+            "department": "QA",
+            "position": "Lead",
+            "is_active": False,
             "version": user.version,
         },
     )
@@ -324,6 +439,13 @@ def test_update_me_rejects_stale_version_with_current_user(
             "email": "profile@example.com",
             "name": "Latest",
             "version": 2,
+            "department": None,
+            "position": None,
+            "avatar_url": None,
+            "is_active": True,
+            "last_login_at": None,
+            "created_by": None,
+            "updated_by": None,
         },
     }
 

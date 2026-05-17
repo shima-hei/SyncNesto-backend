@@ -67,7 +67,7 @@ def get_current_user(
         raise InvalidCredentialsError()
 
     user = UserRepository().get_by_email(db, email)
-    if user is None:
+    if user is None or not user.is_active:
         raise InvalidCredentialsError()
 
     return user

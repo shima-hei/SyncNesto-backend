@@ -4,6 +4,8 @@
 リクエスト（作成）およびレスポンス（読み取り）で使用するデータ構造を定義する。
 """
 
+from datetime import datetime
+
 from pydantic import BaseModel, EmailStr
 
 
@@ -23,6 +25,10 @@ class UserCreate(UserBase):
     """
 
     password: str
+    department: str | None = None
+    position: str | None = None
+    avatar_url: str | None = None
+    is_active: bool = True
 
 
 class UserUpdate(BaseModel):
@@ -32,6 +38,10 @@ class UserUpdate(BaseModel):
     email: EmailStr | None = None
     name: str | None = None
     password: str | None = None
+    department: str | None = None
+    position: str | None = None
+    avatar_url: str | None = None
+    is_active: bool | None = None
 
 
 class UserProfileUpdate(BaseModel):
@@ -40,6 +50,7 @@ class UserProfileUpdate(BaseModel):
     version: int
     name: str | None = None
     password: str | None = None
+    avatar_url: str | None = None
 
     model_config = {"extra": "forbid"}
 
@@ -51,6 +62,13 @@ class UserRead(UserBase):
 
     id: int
     version: int
+    department: str | None = None
+    position: str | None = None
+    avatar_url: str | None = None
+    is_active: bool
+    last_login_at: datetime | None = None
+    created_by: int | None = None
+    updated_by: int | None = None
 
     model_config = {"from_attributes": True}
 

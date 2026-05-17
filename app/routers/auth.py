@@ -38,6 +38,13 @@ def build_current_user_response(db: Session, current_user: User) -> CurrentUserR
         email=current_user.email,
         name=current_user.name,
         version=current_user.version,
+        department=current_user.department,
+        position=current_user.position,
+        avatar_url=current_user.avatar_url,
+        is_active=current_user.is_active,
+        last_login_at=current_user.last_login_at,
+        created_by=current_user.created_by,
+        updated_by=current_user.updated_by,
         system_roles=[RoleRead(key=role.key, name=role.name) for role in system_roles],
     )
 
@@ -63,6 +70,7 @@ def login_user(
         ログイン成功レスポンス。
     """
     user = user_service.authenticate_user(db, user_in.email, user_in.password)
+    user_service.update_last_login_at(db, user)
     access_token = create_access_token(subject=user.email)
     response.set_cookie(
         key=settings.auth_cookie_name,

@@ -41,12 +41,18 @@ class UserService:
         """
         self.repository = repository or UserRepository()
 
-    def create_user(self, db: Session, user_in: UserCreate) -> User:
+    def create_user(
+        self,
+        db: Session,
+        user_in: UserCreate,
+        actor_id: int | None = None,
+    ) -> User:
         """ユーザーを作成する。
 
         Args:
             db: DBセッション。
             user_in: ユーザー作成リクエストの入力値。
+            actor_id: 作成者ユーザーID。
 
         Returns:
             作成されたユーザー。
@@ -60,7 +66,7 @@ class UserService:
             raise EmailAlreadyRegisteredError()
 
         hashed_password = get_password_hash(user_in.password)
-        user = self.repository.create(db, user_in, hashed_password)
+        user = self.repository.create(db, user_in, hashed_password, actor_id=actor_id)
         logger.info("User created: id=%s email=%s", user.id, user.email)
         return user
 
@@ -94,13 +100,20 @@ class UserService:
 
         return user
 
-    def update_user(self, db: Session, user_id: int, user_in: UserUpdate) -> User:
+    def update_user(
+        self,
+        db: Session,
+        user_id: int,
+        user_in: UserUpdate,
+        actor_id: int | None = None,
+    ) -> User:
         """ユーザーを更新する。
 
         Args:
             db: DBセッション。
             user_id: 更新対象ユーザーID。
             user_in: ユーザー更新リクエストの入力値。
+            actor_id: 更新者ユーザーID。
 
         Returns:
             更新されたユーザー。
@@ -129,6 +142,7 @@ class UserService:
             user=user,
             user_in=user_in,
             hashed_password=hashed_password,
+            actor_id=actor_id,
         )
 
     def update_profile(
@@ -164,6 +178,7 @@ class UserService:
             user=current_user,
             user_in=user_in,
             hashed_password=hashed_password,
+            actor_id=current_user.id,
         )
 
     def delete_user(self, db: Session, user_id: int) -> None:
@@ -198,9 +213,25 @@ class UserService:
             logger.warning("Invalid login attempt: email=%s", email)
             raise InvalidCredentialsError()
 
+        if not user.is_active:
+            logger.warning("Inactive user login attempt: id=%s email=%s", user.id, email)
+            raise InvalidCredentialsError()
+
         if not verify_password(password, user.hashed_password):
             logger.warning("Invalid login attempt: email=%s", email)
             raise InvalidCredentialsError()
 
         logger.info("User authenticated: id=%s email=%s", user.id, user.email)
         return user
+
+    def update_last_login_at(self, db: Session, user: User) -> User:
+        """ユーザーの最終ログイン日時を更新する。
+
+        Args:
+            db: DBセッション。
+            user: 更新対象ユーザー。
+
+        Returns:
+            更新されたユーザー。
+        """
+        return self.repository.update_last_login_at(db, user)

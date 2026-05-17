@@ -58,6 +58,13 @@ GET /auth/me
   "email": "admin@example.com",
   "name": "Admin",
   "version": 1,
+  "department": "QA",
+  "position": "テスト担当",
+  "avatar_url": "https://example.com/avatar.png",
+  "is_active": true,
+  "last_login_at": "2026-05-17T10:00:00+09:00",
+  "created_by": 1,
+  "updated_by": 1,
   "system_roles": [
     {
       "key": "system_admin",
@@ -143,6 +150,21 @@ PATCH /auth/me     ログイン必須、本人プロフィール更新、version
 ### Users
 
 `/users` 系は管理者向けのユーザー管理APIです。ログインユーザー本人のプロフィール更新には `/auth/me` を使います。
+
+管理者用のユーザー作成・更新では、以下のプロフィール項目を扱えます。
+
+```text
+email
+name
+password
+department
+position
+avatar_url
+is_active
+version
+```
+
+`created_by`, `updated_by`, `last_login_at` はサーバー側で設定します。
 
 ```text
 POST   /users              user:create
@@ -236,10 +258,11 @@ PATCH /projects/{project_id}/members/{user_id}
 ```text
 name
 password
+avatar_url
 version
 ```
 
-`email` はログインIDとして扱うため、本人プロフィール更新では変更できません。将来的に変更を許可する場合は、メール確認などの追加フローを入れてから対応します。
+`email`, `department`, `position`, `is_active` は本人プロフィール更新では変更できません。`email` はログインIDとして扱うため、将来的に変更を許可する場合はメール確認などの追加フローを入れてから対応します。
 
 リクエスト例:
 
@@ -251,6 +274,7 @@ PATCH /auth/me
 {
   "name": "Updated Name",
   "password": "new-password",
+  "avatar_url": "https://example.com/avatar.png",
   "version": 1
 }
 ```

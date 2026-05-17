@@ -50,6 +50,13 @@ def test_create_user_returns_created_user(
         "email": "user@example.com",
         "name": "User Name",
         "version": 1,
+        "department": None,
+        "position": None,
+        "avatar_url": None,
+        "is_active": True,
+        "last_login_at": None,
+        "created_by": admin_user.id,
+        "updated_by": admin_user.id,
     }
     assert "password" not in response.json()
     assert "hashed_password" not in response.json()
@@ -82,6 +89,48 @@ def test_create_user_stores_hashed_password(
     user = db.query(User).filter(User.email == "hash@example.com").one()
     assert user.hashed_password != plain_password
     assert verify_password(plain_password, user.hashed_password)
+
+
+def test_create_user_stores_profile_fields_and_audit_users(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """作成APIがプロフィール項目と監査ユーザーを保存することを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    authorize_as(client, admin_user)
+
+    response = client.post(
+        "/users",
+        json={
+            "email": "profile@example.com",
+            "name": "Profile User",
+            "password": "password123",
+            "department": "QA",
+            "position": "Tester",
+            "avatar_url": "https://example.com/avatar.png",
+            "is_active": False,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["department"] == "QA"
+    assert response.json()["position"] == "Tester"
+    assert response.json()["avatar_url"] == "https://example.com/avatar.png"
+    assert response.json()["is_active"] is False
+    assert response.json()["created_by"] == admin_user.id
+    assert response.json()["updated_by"] == admin_user.id
+
+    user = db.query(User).filter(User.email == "profile@example.com").one()
+    assert user.department == "QA"
+    assert user.position == "Tester"
+    assert user.avatar_url == "https://example.com/avatar.png"
+    assert user.is_active is False
+    assert user.created_by == admin_user.id
+    assert user.updated_by == admin_user.id
 
 
 def test_create_user_rejects_duplicate_email(
@@ -230,6 +279,13 @@ def test_read_user_returns_user_for_system_admin(
         "email": "target@example.com",
         "name": "Target User",
         "version": 1,
+        "department": None,
+        "position": None,
+        "avatar_url": None,
+        "is_active": True,
+        "last_login_at": None,
+        "created_by": None,
+        "updated_by": None,
     }
 
 
@@ -250,6 +306,10 @@ def test_update_user_updates_user_for_system_admin(
         json={
             "email": "after@example.com",
             "name": "After",
+            "department": "QA",
+            "position": "Lead",
+            "avatar_url": "https://example.com/avatar.png",
+            "is_active": False,
             "version": target_user.version,
         },
     )
@@ -260,6 +320,13 @@ def test_update_user_updates_user_for_system_admin(
         "email": "after@example.com",
         "name": "After",
         "version": target_user.version + 1,
+        "department": "QA",
+        "position": "Lead",
+        "avatar_url": "https://example.com/avatar.png",
+        "is_active": False,
+        "last_login_at": None,
+        "created_by": None,
+        "updated_by": admin_user.id,
     }
 
 
@@ -294,6 +361,13 @@ def test_update_user_rejects_stale_version_with_current_user(
             "email": "before@example.com",
             "name": "Latest",
             "version": 2,
+            "department": None,
+            "position": None,
+            "avatar_url": None,
+            "is_active": True,
+            "last_login_at": None,
+            "created_by": None,
+            "updated_by": None,
         },
     }
 

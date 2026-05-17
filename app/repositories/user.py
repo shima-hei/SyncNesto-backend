@@ -4,6 +4,8 @@
 Userテーブルに対するCRUD操作を提供する。
 """
 
+from datetime import UTC, datetime
+
 from sqlalchemy.orm import Session
 
 from app.models.user import User
@@ -18,6 +20,7 @@ class UserRepository:
         db: Session,
         user_in: UserCreate,
         hashed_password: str,
+        actor_id: int | None = None,
     ) -> User:
         """ユーザーを作成する。
 
@@ -25,6 +28,7 @@ class UserRepository:
             db: DBセッション。
             user_in: ユーザー作成リクエストの入力値。
             hashed_password: ハッシュ化されたパスワード。
+            actor_id: 作成者ユーザーID。
 
         Returns:
             作成されたユーザー。
@@ -33,6 +37,12 @@ class UserRepository:
             email=user_in.email,
             name=user_in.name,
             hashed_password=hashed_password,
+            department=user_in.department,
+            position=user_in.position,
+            avatar_url=user_in.avatar_url,
+            is_active=user_in.is_active,
+            created_by=actor_id,
+            updated_by=actor_id,
         )
         db.add(user)
         db.commit()
@@ -89,6 +99,7 @@ class UserRepository:
         user: User,
         user_in: UserUpdate,
         hashed_password: str | None = None,
+        actor_id: int | None = None,
     ) -> User:
         """ユーザーを更新する。
 
@@ -97,6 +108,7 @@ class UserRepository:
             user: 更新対象ユーザー。
             user_in: ユーザー更新リクエストの入力値。
             hashed_password: ハッシュ化されたパスワード。
+            actor_id: 更新者ユーザーID。
 
         Returns:
             更新されたユーザー。
@@ -107,6 +119,16 @@ class UserRepository:
             user.name = user_in.name
         if hashed_password is not None:
             user.hashed_password = hashed_password
+        if "department" in user_in.model_fields_set:
+            user.department = user_in.department
+        if "position" in user_in.model_fields_set:
+            user.position = user_in.position
+        if "avatar_url" in user_in.model_fields_set:
+            user.avatar_url = user_in.avatar_url
+        if user_in.is_active is not None:
+            user.is_active = user_in.is_active
+        if actor_id is not None:
+            user.updated_by = actor_id
         user.version += 1
 
         db.commit()
@@ -120,6 +142,7 @@ class UserRepository:
         user: User,
         user_in: UserProfileUpdate,
         hashed_password: str | None = None,
+        actor_id: int | None = None,
     ) -> User:
         """本人プロフィールを更新する。
 
@@ -128,6 +151,7 @@ class UserRepository:
             user: 更新対象ユーザー。
             user_in: 本人プロフィール更新リクエストの入力値。
             hashed_password: ハッシュ化されたパスワード。
+            actor_id: 更新者ユーザーID。
 
         Returns:
             更新されたユーザー。
@@ -136,8 +160,27 @@ class UserRepository:
             user.name = user_in.name
         if hashed_password is not None:
             user.hashed_password = hashed_password
+        if "avatar_url" in user_in.model_fields_set:
+            user.avatar_url = user_in.avatar_url
+        if actor_id is not None:
+            user.updated_by = actor_id
         user.version += 1
 
+        db.commit()
+        db.refresh(user)
+        return user
+
+    def update_last_login_at(self, db: Session, user: User) -> User:
+        """最終ログイン日時を更新する。
+
+        Args:
+            db: DBセッション。
+            user: 更新対象ユーザー。
+
+        Returns:
+            更新されたユーザー。
+        """
+        user.last_login_at = datetime.now(UTC)
         db.commit()
         db.refresh(user)
         return user
@@ -152,8 +195,6 @@ class UserRepository:
         Returns:
             論理削除されたユーザー。
         """
-        from datetime import UTC, datetime
-
         user.deleted_at = datetime.now(UTC)
         db.commit()
         db.refresh(user)
