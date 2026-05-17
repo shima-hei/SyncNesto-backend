@@ -34,6 +34,16 @@ class UserUpdate(BaseModel):
     password: str | None = None
 
 
+class UserProfileUpdate(BaseModel):
+    """本人プロフィール更新リクエストで受け取るschema。"""
+
+    version: int
+    name: str | None = None
+    password: str | None = None
+
+    model_config = {"extra": "forbid"}
+
+
 class UserRead(UserBase):
     """
     ユーザー読み取り時に返すschema。

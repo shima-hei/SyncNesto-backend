@@ -7,7 +7,7 @@ Userテーブルに対するCRUD操作を提供する。
 from sqlalchemy.orm import Session
 
 from app.models.user import User
-from app.schemas.user import UserCreate, UserUpdate
+from app.schemas.user import UserCreate, UserProfileUpdate, UserUpdate
 
 
 class UserRepository:
@@ -103,6 +103,35 @@ class UserRepository:
         """
         if user_in.email is not None:
             user.email = user_in.email
+        if user_in.name is not None:
+            user.name = user_in.name
+        if hashed_password is not None:
+            user.hashed_password = hashed_password
+        user.version += 1
+
+        db.commit()
+        db.refresh(user)
+        return user
+
+    def update_profile(
+        self,
+        db: Session,
+        *,
+        user: User,
+        user_in: UserProfileUpdate,
+        hashed_password: str | None = None,
+    ) -> User:
+        """本人プロフィールを更新する。
+
+        Args:
+            db: DBセッション。
+            user: 更新対象ユーザー。
+            user_in: 本人プロフィール更新リクエストの入力値。
+            hashed_password: ハッシュ化されたパスワード。
+
+        Returns:
+            更新されたユーザー。
+        """
         if user_in.name is not None:
             user.name = user_in.name
         if hashed_password is not None:

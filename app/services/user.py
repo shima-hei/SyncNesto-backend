@@ -19,7 +19,7 @@ from app.core.exceptions import (
 from app.core.security import get_password_hash, verify_password
 from app.models.user import User
 from app.repositories.user import UserRepository
-from app.schemas.user import UserCreate, UserRead, UserUpdate
+from app.schemas.user import UserCreate, UserProfileUpdate, UserRead, UserUpdate
 
 
 logger = logging.getLogger(__name__)
@@ -127,6 +127,41 @@ class UserService:
         return self.repository.update(
             db,
             user=user,
+            user_in=user_in,
+            hashed_password=hashed_password,
+        )
+
+    def update_profile(
+        self,
+        db: Session,
+        *,
+        current_user: User,
+        user_in: UserProfileUpdate,
+    ) -> User:
+        """本人プロフィールを更新する。
+
+        Args:
+            db: DBセッション。
+            current_user: 認証済みユーザー。
+            user_in: 本人プロフィール更新リクエストの入力値。
+
+        Returns:
+            更新されたユーザー。
+
+        Raises:
+            VersionConflictError: リクエストのversionが最新ではない場合。
+        """
+        if current_user.version != user_in.version:
+            current = UserRead.model_validate(current_user).model_dump()
+            raise VersionConflictError(current=current)
+
+        hashed_password = None
+        if user_in.password is not None:
+            hashed_password = get_password_hash(user_in.password)
+
+        return self.repository.update_profile(
+            db,
+            user=current_user,
             user_in=user_in,
             hashed_password=hashed_password,
         )

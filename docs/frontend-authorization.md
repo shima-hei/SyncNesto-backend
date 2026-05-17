@@ -137,9 +137,12 @@ viewer
 POST /auth/login   認可不要
 POST /auth/logout  認可不要
 GET  /auth/me      ログイン必須
+PATCH /auth/me     ログイン必須、本人プロフィール更新、version必須
 ```
 
 ### Users
+
+`/users` 系は管理者向けのユーザー管理APIです。ログインユーザー本人のプロフィール更新には `/auth/me` を使います。
 
 ```text
 POST   /users              user:create
@@ -177,6 +180,7 @@ DELETE /projects/{project_id}/members/{user_id}    project:remove_member
 対象:
 
 ```text
+PATCH /auth/me
 PATCH /users/{user_id}
 PATCH /projects/{project_id}
 PATCH /projects/{project_id}/members/{user_id}
@@ -222,6 +226,36 @@ PATCH /projects/{project_id}/members/{user_id}
 ```
 
 フロントエンドでは、`409` を受け取った場合に `current` を画面へ反映し、ユーザーに再編集または再送信を促してください。
+
+## 本人プロフィール更新
+
+ログインユーザー本人のプロフィール更新には `PATCH /auth/me` を使います。
+
+更新可能フィールド:
+
+```text
+name
+password
+version
+```
+
+`email` はログインIDとして扱うため、本人プロフィール更新では変更できません。将来的に変更を許可する場合は、メール確認などの追加フローを入れてから対応します。
+
+リクエスト例:
+
+```http
+PATCH /auth/me
+```
+
+```json
+{
+  "name": "Updated Name",
+  "password": "new-password",
+  "version": 1
+}
+```
+
+レスポンスは `/auth/me` の取得時と同じ形式です。
 
 ## フロントエンドでの表示制御例
 

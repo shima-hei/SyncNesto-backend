@@ -4,9 +4,10 @@ from collections.abc import Callable
 
 from fastapi.testclient import TestClient
 import pytest
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.security import create_access_token
+from app.core.security import create_access_token, verify_password
 from app.models.user import User
 
 
@@ -221,6 +222,120 @@ def test_get_me_returns_system_roles(
                 "name": "システム管理者",
             }
         ],
+    }
+
+
+def test_update_me_updates_current_user_profile(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """本人プロフィールを更新できることを確認する。"""
+    user = create_test_user(
+        email="profile@example.com",
+        name="Before",
+        password="password123",
+    )
+    access_token = create_access_token(subject=user.email)
+    client.cookies.set(
+        settings.auth_cookie_name,
+        access_token,
+        domain="testserver.local",
+        path="/",
+    )
+
+    response = client.patch(
+        "/auth/me",
+        json={
+            "name": "After",
+            "password": "new-password123",
+            "version": user.version,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": user.id,
+        "email": "profile@example.com",
+        "name": "After",
+        "version": user.version + 1,
+        "system_roles": [],
+    }
+    db.refresh(user)
+    assert user.name == "After"
+    assert verify_password("new-password123", user.hashed_password)
+
+
+def test_update_me_rejects_email_update(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """本人プロフィール更新でemail変更を拒否することを確認する。"""
+    user = create_test_user(email="profile@example.com")
+    access_token = create_access_token(subject=user.email)
+    client.cookies.set(
+        settings.auth_cookie_name,
+        access_token,
+        domain="testserver.local",
+        path="/",
+    )
+
+    response = client.patch(
+        "/auth/me",
+        json={
+            "email": "changed@example.com",
+            "version": user.version,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_me_rejects_stale_version_with_current_user(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """古いversionでの本人プロフィール更新を409で拒否する。"""
+    user = create_test_user(email="profile@example.com", name="Before")
+    user.name = "Latest"
+    user.version = 2
+    db.commit()
+    db.refresh(user)
+    access_token = create_access_token(subject=user.email)
+    client.cookies.set(
+        settings.auth_cookie_name,
+        access_token,
+        domain="testserver.local",
+        path="/",
+    )
+
+    response = client.patch(
+        "/auth/me",
+        json={"name": "Stale", "version": 1},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "message": "Resource version conflict",
+        "code": "VERSION_CONFLICT",
+        "current": {
+            "id": user.id,
+            "email": "profile@example.com",
+            "name": "Latest",
+            "version": 2,
+        },
+    }
+
+
+def test_update_me_requires_login(client: TestClient) -> None:
+    """本人プロフィール更新が未ログインユーザーを拒否することを確認する。"""
+    response = client.patch("/auth/me", json={"name": "After", "version": 1})
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "message": "Invalid email or password",
+        "code": "INVALID_CREDENTIALS",
     }
 
 
