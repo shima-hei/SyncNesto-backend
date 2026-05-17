@@ -66,6 +66,7 @@ AWS_REGION=ap-northeast-1
 AWS_S3_BUCKET_NAME=syncnesto-local-app-bucket
 AWS_S3_ENDPOINT_URL=http://localhost:4566
 AWS_S3_PRESIGNED_URL_EXPIRES_SECONDS=3600
+DEFAULT_AVATAR_KEY=default-avatar.png
 AWS_ACCESS_KEY_ID=test
 AWS_SECRET_ACCESS_KEY=test
 ```
@@ -99,6 +100,7 @@ SECRET_KEY=test-secret-key-at-least-32-bytes
 - `AWS_S3_BUCKET_NAME`: ユーザーアイコンを保存するS3バケット名
 - `AWS_S3_ENDPOINT_URL`: LocalStackなどのS3互換エンドポイントURL
 - `AWS_S3_PRESIGNED_URL_EXPIRES_SECONDS`: 署名付きURLの有効期限秒数
+- `DEFAULT_AVATAR_KEY`: ユーザー作成時に設定するデフォルトアイコンのS3 key
 
 ## セットアップ
 

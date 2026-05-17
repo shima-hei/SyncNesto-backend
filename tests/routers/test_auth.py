@@ -32,6 +32,14 @@ class FakeStorageService:
         return f"https://example.com/{avatar_key}?signature=test"
 
 
+@pytest.fixture(autouse=True)
+def use_fake_storage_service(monkeypatch: pytest.MonkeyPatch) -> None:
+    """認証APIテストではStorageServiceをfakeに差し替える。"""
+    from app.routers import auth
+
+    monkeypatch.setattr(auth, "storage_service", FakeStorageService())
+
+
 def test_login_user_returns_access_token_and_cookie_in_development(
     client: TestClient,
     create_test_user: Callable[..., User],
@@ -237,7 +245,7 @@ def test_get_me_returns_current_user_with_cookie_token(
         "version": 1,
         "department": None,
         "position": None,
-        "avatar_url": None,
+        "avatar_url": "https://example.com/default-avatar.png?signature=test",
         "is_active": True,
         "last_login_at": None,
         "created_by": None,
@@ -273,7 +281,7 @@ def test_get_me_returns_current_user_with_authorization_header(
         "version": 1,
         "department": None,
         "position": None,
-        "avatar_url": None,
+        "avatar_url": "https://example.com/default-avatar.png?signature=test",
         "is_active": True,
         "last_login_at": None,
         "created_by": None,
@@ -310,7 +318,7 @@ def test_get_me_returns_system_roles(
         "version": 1,
         "department": None,
         "position": None,
-        "avatar_url": None,
+        "avatar_url": "https://example.com/default-avatar.png?signature=test",
         "is_active": True,
         "last_login_at": None,
         "created_by": None,
@@ -360,7 +368,7 @@ def test_update_me_updates_current_user_profile(
         "version": user.version + 1,
         "department": None,
         "position": None,
-        "avatar_url": None,
+        "avatar_url": "https://example.com/default-avatar.png?signature=test",
         "is_active": True,
         "last_login_at": None,
         "created_by": None,

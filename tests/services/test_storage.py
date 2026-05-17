@@ -2,6 +2,7 @@
 
 import pytest
 
+from app.core.config import settings
 from app.core.exceptions import BadRequestError
 from app.services.storage import StorageService
 
@@ -75,3 +76,29 @@ def test_generate_presigned_url_returns_none_without_avatar_key() -> None:
     storage_service = StorageService(s3_client=FakeS3Client())
 
     assert storage_service.generate_presigned_url(None) is None
+
+
+def test_storage_service_uses_configured_aws_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """設定されたAWS認証情報をS3クライアントへ渡すことを確認する。"""
+    captured_kwargs: dict[str, object] = {}
+
+    def fake_boto3_client(service_name: str, **kwargs: object) -> FakeS3Client:
+        captured_kwargs["service_name"] = service_name
+        captured_kwargs.update(kwargs)
+        return FakeS3Client()
+
+    monkeypatch.setattr("app.services.storage.boto3.client", fake_boto3_client)
+    monkeypatch.setattr(settings, "aws_region", "ap-northeast-1")
+    monkeypatch.setattr(settings, "aws_s3_endpoint_url", "http://localhost:4566")
+    monkeypatch.setattr(settings, "aws_access_key_id", "test")
+    monkeypatch.setattr(settings, "aws_secret_access_key", "test")
+
+    StorageService()
+
+    assert captured_kwargs["service_name"] == "s3"
+    assert captured_kwargs["region_name"] == "ap-northeast-1"
+    assert captured_kwargs["endpoint_url"] == "http://localhost:4566"
+    assert captured_kwargs["aws_access_key_id"] == "test"
+    assert captured_kwargs["aws_secret_access_key"] == "test"

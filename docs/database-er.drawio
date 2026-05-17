@@ -1,6 +1,6 @@
 <mxfile host="Electron" agent="Codex">
   <diagram id="syncnesto-database-er" name="Syncnesto Database ER">
-    <mxGraphModel dx="2830" dy="739" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0" adaptiveColors="auto">
+    <mxGraphModel dx="4428" dy="1700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0" adaptiveColors="auto">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -8,154 +8,154 @@
           <mxGeometry height="40" width="360" x="40" y="20" as="geometry" />
         </mxCell>
         <mxCell id="users" parent="1" style="swimlane;fontStyle=1;align=center;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;rounded=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" value="users" vertex="1">
-          <mxGeometry height="196" width="280" x="310" y="80" as="geometry" />
+          <mxGeometry height="168" width="280" x="310" y="80" as="geometry" />
         </mxCell>
         <mxCell id="users_id" parent="users" style="text;strokeColor=#000000;fillColor=#f5f5f5;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="PK id: int" vertex="1">
-          <mxGeometry height="24" width="280" y="28" as="geometry" />
+          <mxGeometry height="24" width="280" as="geometry" />
         </mxCell>
         <mxCell id="users_email" parent="users" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="email: varchar(255) unique" vertex="1">
-          <mxGeometry height="24" width="280" y="52" as="geometry" />
+          <mxGeometry height="24" width="280" y="24" as="geometry" />
         </mxCell>
         <mxCell id="users_name" parent="users" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="name: varchar(255)" vertex="1">
-          <mxGeometry height="24" width="280" y="76" as="geometry" />
+          <mxGeometry height="24" width="280" y="48" as="geometry" />
         </mxCell>
         <mxCell id="users_hashed_password" parent="users" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="hashed_password: varchar(255)" vertex="1">
-          <mxGeometry height="24" width="280" y="100" as="geometry" />
+          <mxGeometry height="24" width="280" y="72" as="geometry" />
         </mxCell>
         <mxCell id="users_created_at" parent="users" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="created_at: timestamptz" vertex="1">
-          <mxGeometry height="24" width="280" y="124" as="geometry" />
+          <mxGeometry height="24" width="280" y="96" as="geometry" />
         </mxCell>
         <mxCell id="users_updated_at" parent="users" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="updated_at: timestamptz" vertex="1">
-          <mxGeometry height="24" width="280" y="148" as="geometry" />
+          <mxGeometry height="24" width="280" y="120" as="geometry" />
         </mxCell>
         <mxCell id="users_deleted_at" parent="users" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="deleted_at: timestamptz nullable" vertex="1">
-          <mxGeometry height="24" width="280" y="172" as="geometry" />
+          <mxGeometry height="24" width="280" y="144" as="geometry" />
         </mxCell>
         <mxCell id="roles" parent="1" style="swimlane;fontStyle=1;align=center;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;rounded=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" value="roles" vertex="1">
-          <mxGeometry height="196" width="280" x="750" y="316" as="geometry" />
+          <mxGeometry height="168" width="280" x="750" y="316" as="geometry" />
         </mxCell>
         <mxCell id="roles_id" parent="roles" style="text;strokeColor=#000000;fillColor=#f5f5f5;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="PK id: int" vertex="1">
-          <mxGeometry height="24" width="280" y="28" as="geometry" />
+          <mxGeometry height="24" width="280" as="geometry" />
         </mxCell>
         <mxCell id="roles_name" parent="roles" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="name: varchar(100)" vertex="1">
-          <mxGeometry height="24" width="280" y="52" as="geometry" />
+          <mxGeometry height="24" width="280" y="24" as="geometry" />
         </mxCell>
         <mxCell id="roles_scope" parent="roles" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="scope: varchar(50)" vertex="1">
-          <mxGeometry height="24" width="280" y="76" as="geometry" />
+          <mxGeometry height="24" width="280" y="48" as="geometry" />
         </mxCell>
         <mxCell id="roles_description" parent="roles" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="description: varchar(255) nullable" vertex="1">
-          <mxGeometry height="24" width="280" y="100" as="geometry" />
+          <mxGeometry height="24" width="280" y="72" as="geometry" />
         </mxCell>
         <mxCell id="roles_created_at" parent="roles" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="created_at: timestamptz" vertex="1">
-          <mxGeometry height="24" width="280" y="124" as="geometry" />
+          <mxGeometry height="24" width="280" y="96" as="geometry" />
         </mxCell>
         <mxCell id="roles_updated_at" parent="roles" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="updated_at: timestamptz" vertex="1">
-          <mxGeometry height="24" width="280" y="148" as="geometry" />
+          <mxGeometry height="24" width="280" y="120" as="geometry" />
         </mxCell>
         <mxCell id="roles_uq" parent="roles" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;fontStyle=2;" value="UQ name + scope" vertex="1">
-          <mxGeometry height="24" width="280" y="172" as="geometry" />
+          <mxGeometry height="24" width="280" y="144" as="geometry" />
         </mxCell>
         <mxCell id="permissions" parent="1" style="swimlane;fontStyle=1;align=center;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;rounded=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" value="permissions" vertex="1">
-          <mxGeometry height="148" width="290" x="1180" y="90" as="geometry" />
+          <mxGeometry height="120" width="290" x="1180" y="90" as="geometry" />
         </mxCell>
         <mxCell id="permissions_id" parent="permissions" style="text;strokeColor=#000000;fillColor=#f5f5f5;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="PK id: int" vertex="1">
-          <mxGeometry height="24" width="290" y="28" as="geometry" />
+          <mxGeometry height="24" width="290" as="geometry" />
         </mxCell>
         <mxCell id="permissions_code" parent="permissions" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="code: varchar(100) unique" vertex="1">
-          <mxGeometry height="24" width="290" y="52" as="geometry" />
+          <mxGeometry height="24" width="290" y="24" as="geometry" />
         </mxCell>
         <mxCell id="permissions_description" parent="permissions" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="description: varchar(255) nullable" vertex="1">
-          <mxGeometry height="24" width="290" y="76" as="geometry" />
+          <mxGeometry height="24" width="290" y="48" as="geometry" />
         </mxCell>
         <mxCell id="permissions_created_at" parent="permissions" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="created_at: timestamptz" vertex="1">
-          <mxGeometry height="24" width="290" y="100" as="geometry" />
+          <mxGeometry height="24" width="290" y="72" as="geometry" />
         </mxCell>
         <mxCell id="permissions_updated_at" parent="permissions" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="updated_at: timestamptz" vertex="1">
-          <mxGeometry height="24" width="290" y="124" as="geometry" />
+          <mxGeometry height="24" width="290" y="96" as="geometry" />
         </mxCell>
         <mxCell id="user_roles" parent="1" style="swimlane;fontStyle=1;align=center;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;rounded=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" value="user_roles" vertex="1">
-          <mxGeometry height="148" width="280" x="750" y="80" as="geometry" />
+          <mxGeometry height="120" width="280" x="750" y="80" as="geometry" />
         </mxCell>
         <mxCell id="user_roles_id" parent="user_roles" style="text;strokeColor=#000000;fillColor=#f5f5f5;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="PK id: int" vertex="1">
-          <mxGeometry height="24" width="280" y="28" as="geometry" />
+          <mxGeometry height="24" width="280" as="geometry" />
         </mxCell>
         <mxCell id="user_roles_user_id" parent="user_roles" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="FK user_id: users.id" vertex="1">
-          <mxGeometry height="24" width="280" y="52" as="geometry" />
+          <mxGeometry height="24" width="280" y="24" as="geometry" />
         </mxCell>
         <mxCell id="user_roles_role_id" parent="user_roles" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="FK role_id: roles.id" vertex="1">
-          <mxGeometry height="24" width="280" y="76" as="geometry" />
+          <mxGeometry height="24" width="280" y="48" as="geometry" />
         </mxCell>
         <mxCell id="user_roles_created_at" parent="user_roles" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="created_at: timestamptz" vertex="1">
-          <mxGeometry height="24" width="280" y="100" as="geometry" />
+          <mxGeometry height="24" width="280" y="72" as="geometry" />
         </mxCell>
         <mxCell id="user_roles_uq" parent="user_roles" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;fontStyle=2;" value="UQ user_id + role_id" vertex="1">
-          <mxGeometry height="24" width="280" y="124" as="geometry" />
+          <mxGeometry height="24" width="280" y="96" as="geometry" />
         </mxCell>
         <mxCell id="role_permissions" parent="1" style="swimlane;fontStyle=1;align=center;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;rounded=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" value="role_permissions" vertex="1">
-          <mxGeometry height="148" width="310" x="1160" y="316" as="geometry" />
+          <mxGeometry height="120" width="310" x="1160" y="316" as="geometry" />
         </mxCell>
         <mxCell id="role_permissions_id" parent="role_permissions" style="text;strokeColor=#000000;fillColor=#f5f5f5;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="PK id: int" vertex="1">
-          <mxGeometry height="24" width="310" y="28" as="geometry" />
+          <mxGeometry height="24" width="310" as="geometry" />
         </mxCell>
         <mxCell id="role_permissions_role_id" parent="role_permissions" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="FK role_id: roles.id" vertex="1">
-          <mxGeometry height="24" width="310" y="52" as="geometry" />
+          <mxGeometry height="24" width="310" y="24" as="geometry" />
         </mxCell>
         <mxCell id="role_permissions_permission_id" parent="role_permissions" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="FK permission_id: permissions.id" vertex="1">
-          <mxGeometry height="24" width="310" y="76" as="geometry" />
+          <mxGeometry height="24" width="310" y="48" as="geometry" />
         </mxCell>
         <mxCell id="role_permissions_created_at" parent="role_permissions" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="created_at: timestamptz" vertex="1">
-          <mxGeometry height="24" width="310" y="100" as="geometry" />
+          <mxGeometry height="24" width="310" y="72" as="geometry" />
         </mxCell>
         <mxCell id="role_permissions_uq" parent="role_permissions" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;fontStyle=2;" value="UQ role_id + permission_id" vertex="1">
-          <mxGeometry height="24" width="310" y="124" as="geometry" />
+          <mxGeometry height="24" width="310" y="96" as="geometry" />
         </mxCell>
         <mxCell id="projects" parent="1" style="swimlane;fontStyle=1;align=center;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;rounded=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" value="projects" vertex="1">
-          <mxGeometry height="172" width="300" x="-160" y="340" as="geometry" />
+          <mxGeometry height="144" width="300" x="-160" y="340" as="geometry" />
         </mxCell>
         <mxCell id="projects_id" parent="projects" style="text;strokeColor=#000000;fillColor=#f5f5f5;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="PK id: int" vertex="1">
-          <mxGeometry height="24" width="300" y="28" as="geometry" />
+          <mxGeometry height="24" width="300" as="geometry" />
         </mxCell>
         <mxCell id="projects_name" parent="projects" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="name: varchar(255)" vertex="1">
-          <mxGeometry height="24" width="300" y="52" as="geometry" />
+          <mxGeometry height="24" width="300" y="24" as="geometry" />
         </mxCell>
         <mxCell id="projects_description" parent="projects" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="description: varchar(1000) nullable" vertex="1">
-          <mxGeometry height="24" width="300" y="76" as="geometry" />
+          <mxGeometry height="24" width="300" y="48" as="geometry" />
         </mxCell>
         <mxCell id="projects_created_at" parent="projects" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="created_at: timestamptz" vertex="1">
-          <mxGeometry height="24" width="300" y="100" as="geometry" />
+          <mxGeometry height="24" width="300" y="72" as="geometry" />
         </mxCell>
         <mxCell id="projects_updated_at" parent="projects" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="updated_at: timestamptz" vertex="1">
-          <mxGeometry height="24" width="300" y="124" as="geometry" />
+          <mxGeometry height="24" width="300" y="96" as="geometry" />
         </mxCell>
         <mxCell id="projects_deleted_at" parent="projects" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="deleted_at: timestamptz nullable" vertex="1">
-          <mxGeometry height="24" width="300" y="148" as="geometry" />
+          <mxGeometry height="24" width="300" y="120" as="geometry" />
         </mxCell>
         <mxCell id="project_members" parent="1" style="swimlane;fontStyle=1;align=center;childLayout=stackLayout;horizontal=1;startSize=28;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;rounded=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" value="project_members" vertex="1">
-          <mxGeometry height="220" width="330" x="260" y="316" as="geometry" />
+          <mxGeometry height="192" width="330" x="260" y="316" as="geometry" />
         </mxCell>
         <mxCell id="project_members_id" parent="project_members" style="text;strokeColor=#000000;fillColor=#f5f5f5;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="PK id: int" vertex="1">
-          <mxGeometry height="24" width="330" y="28" as="geometry" />
+          <mxGeometry height="24" width="330" as="geometry" />
         </mxCell>
         <mxCell id="project_members_project_id" parent="project_members" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="FK project_id: projects.id" vertex="1">
-          <mxGeometry height="24" width="330" y="52" as="geometry" />
+          <mxGeometry height="24" width="330" y="24" as="geometry" />
         </mxCell>
         <mxCell id="project_members_user_id" parent="project_members" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="FK user_id: users.id" vertex="1">
-          <mxGeometry height="24" width="330" y="76" as="geometry" />
+          <mxGeometry height="24" width="330" y="48" as="geometry" />
         </mxCell>
         <mxCell id="project_members_role_id" parent="project_members" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="FK role_id: roles.id" vertex="1">
-          <mxGeometry height="24" width="330" y="100" as="geometry" />
+          <mxGeometry height="24" width="330" y="72" as="geometry" />
         </mxCell>
         <mxCell id="project_members_created_at" parent="project_members" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="created_at: timestamptz" vertex="1">
-          <mxGeometry height="24" width="330" y="124" as="geometry" />
+          <mxGeometry height="24" width="330" y="96" as="geometry" />
         </mxCell>
         <mxCell id="project_members_updated_at" parent="project_members" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="updated_at: timestamptz" vertex="1">
-          <mxGeometry height="24" width="330" y="148" as="geometry" />
+          <mxGeometry height="24" width="330" y="120" as="geometry" />
         </mxCell>
         <mxCell id="project_members_deleted_at" parent="project_members" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;" value="deleted_at: timestamptz nullable" vertex="1">
-          <mxGeometry height="24" width="330" y="172" as="geometry" />
+          <mxGeometry height="24" width="330" y="144" as="geometry" />
         </mxCell>
         <mxCell id="project_members_uq" parent="project_members" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;html=1;resizable=0;fontStyle=2;" value="UQ project_id + user_id" vertex="1">
-          <mxGeometry height="24" width="330" y="196" as="geometry" />
+          <mxGeometry height="24" width="330" y="168" as="geometry" />
         </mxCell>
         <mxCell id="note" parent="1" style="shape=note;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=10;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" value="認可方針&lt;br&gt;system role: user_roles + roles(scope=system)&lt;br&gt;project role: project_members + roles(scope=project)&lt;br&gt;permission: role_permissions + permissions" vertex="1">
           <mxGeometry height="140" width="360" x="990" y="760" as="geometry" />

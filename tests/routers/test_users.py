@@ -3,6 +3,7 @@
 from collections.abc import Callable
 
 from fastapi.testclient import TestClient
+import pytest
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -19,6 +20,14 @@ class FakeStorageService:
             return None
 
         return f"https://example.com/{avatar_key}?signature=test"
+
+
+@pytest.fixture(autouse=True)
+def use_fake_storage_service(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ユーザーAPIテストではStorageServiceをfakeに差し替える。"""
+    from app.routers import users
+
+    monkeypatch.setattr(users, "storage_service", FakeStorageService())
 
 
 def authorize_as(
@@ -63,7 +72,7 @@ def test_create_user_returns_created_user(
         "version": 1,
         "department": None,
         "position": None,
-        "avatar_url": None,
+        "avatar_url": "https://example.com/default-avatar.png?signature=test",
         "is_active": True,
         "last_login_at": None,
         "created_by": admin_user.id,
@@ -129,7 +138,9 @@ def test_create_user_stores_profile_fields_and_audit_users(
     assert response.status_code == 201
     assert response.json()["department"] == "QA"
     assert response.json()["position"] == "Tester"
-    assert response.json()["avatar_url"] is None
+    assert response.json()["avatar_url"] == (
+        "https://example.com/default-avatar.png?signature=test"
+    )
     assert response.json()["is_active"] is False
     assert response.json()["created_by"] == admin_user.id
     assert response.json()["updated_by"] == admin_user.id
@@ -137,7 +148,7 @@ def test_create_user_stores_profile_fields_and_audit_users(
     user = db.query(User).filter(User.email == "profile@example.com").one()
     assert user.department == "QA"
     assert user.position == "Tester"
-    assert user.avatar_key is None
+    assert user.avatar_key == settings.default_avatar_key
     assert user.is_active is False
     assert user.created_by == admin_user.id
     assert user.updated_by == admin_user.id
@@ -250,10 +261,102 @@ def test_list_users_returns_users_for_system_admin(
     response = client.get("/users")
 
     assert response.status_code == 200
-    assert [user["email"] for user in response.json()] == [
+    assert response.json()["total"] == 2
+    assert response.json()["page"] == 1
+    assert response.json()["page_size"] == 20
+    assert [user["email"] for user in response.json()["items"]] == [
         "admin@example.com",
         "user-a@example.com",
     ]
+
+
+def test_list_users_paginates_users_for_system_admin(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """ユーザー一覧がページングされることを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    create_test_user(email="user-a@example.com", name="User A")
+    create_test_user(email="user-b@example.com", name="User B")
+    authorize_as(client, admin_user)
+
+    response = client.get("/users?page=2&page_size=1")
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 3
+    assert response.json()["page"] == 2
+    assert response.json()["page_size"] == 1
+    assert response.json()["items"][0]["email"] == "user-a@example.com"
+
+
+def test_list_users_searches_users(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """ユーザー一覧がキーワード検索できることを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    target_user = create_test_user(email="target@example.com", name="Target User")
+    target_user.department = "Quality Assurance"
+    create_test_user(email="other@example.com", name="Other User")
+    db.commit()
+    authorize_as(client, admin_user)
+
+    response = client.get("/users?q=Quality")
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["email"] == "target@example.com"
+
+
+def test_list_users_filters_by_is_active(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """ユーザー一覧がis_activeで絞り込みできることを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    inactive_user = create_test_user(email="inactive@example.com")
+    inactive_user.is_active = False
+    create_test_user(email="active@example.com")
+    db.commit()
+    authorize_as(client, admin_user)
+
+    response = client.get("/users?is_active=false")
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["email"] == "inactive@example.com"
+
+
+def test_list_users_uses_lightweight_items(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """ユーザー一覧itemに必要な軽量項目だけ含まれることを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    authorize_as(client, admin_user)
+
+    response = client.get("/users")
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert "version" not in item
+    assert "last_login_at" in item
+    assert "created_by" not in item
+    assert "updated_by" not in item
 
 
 def test_list_users_returns_presigned_avatar_url(
@@ -278,7 +381,7 @@ def test_list_users_returns_presigned_avatar_url(
     response = client.get("/users")
 
     assert response.status_code == 200
-    assert response.json()[1]["avatar_url"] == (
+    assert response.json()["items"][1]["avatar_url"] == (
         "https://example.com/users/2.png?signature=test"
     )
 
@@ -318,7 +421,7 @@ def test_read_user_returns_user_for_system_admin(
         "version": 1,
         "department": None,
         "position": None,
-        "avatar_url": None,
+        "avatar_url": "https://example.com/default-avatar.png?signature=test",
         "is_active": True,
         "last_login_at": None,
         "created_by": None,
@@ -358,7 +461,7 @@ def test_update_user_updates_user_for_system_admin(
         "version": target_user.version + 1,
         "department": "QA",
         "position": "Lead",
-        "avatar_url": None,
+        "avatar_url": "https://example.com/default-avatar.png?signature=test",
         "is_active": False,
         "last_login_at": None,
         "created_by": None,

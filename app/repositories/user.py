@@ -6,8 +6,10 @@ Userテーブルに対するCRUD操作を提供する。
 
 from datetime import UTC, datetime
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.user import User
 from app.schemas.user import UserCreate, UserProfileUpdate, UserUpdate
 
@@ -39,6 +41,7 @@ class UserRepository:
             hashed_password=hashed_password,
             department=user_in.department,
             position=user_in.position,
+            avatar_key=settings.default_avatar_key,
             is_active=user_in.is_active,
             created_by=actor_id,
             updated_by=actor_id,
@@ -90,6 +93,50 @@ class UserRepository:
             ユーザー一覧。
         """
         return db.query(User).filter(User.deleted_at.is_(None)).order_by(User.id).all()
+
+    def list_paginated(
+        self,
+        db: Session,
+        *,
+        page: int,
+        page_size: int,
+        q: str | None = None,
+        is_active: bool | None = None,
+    ) -> tuple[list[User], int]:
+        """削除されていないユーザー一覧をページング付きで取得する。
+
+        Args:
+            db: DBセッション。
+            page: ページ番号。
+            page_size: 1ページあたりの件数。
+            q: 検索キーワード。
+            is_active: 有効状態の絞り込み。
+
+        Returns:
+            ユーザー一覧と総件数。
+        """
+        query = db.query(User).filter(User.deleted_at.is_(None))
+        if q:
+            like_pattern = f"%{q}%"
+            query = query.filter(
+                or_(
+                    User.email.ilike(like_pattern),
+                    User.name.ilike(like_pattern),
+                    User.department.ilike(like_pattern),
+                    User.position.ilike(like_pattern),
+                )
+            )
+        if is_active is not None:
+            query = query.filter(User.is_active == is_active)
+
+        total = query.count()
+        users = (
+            query.order_by(User.id)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        return users, total
 
     def update(
         self,

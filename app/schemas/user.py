@@ -70,6 +70,26 @@ class UserRead(UserBase):
     model_config = {"from_attributes": True}
 
 
+class UserListItem(UserBase):
+    """ユーザー一覧で返す軽量schema。"""
+
+    id: int
+    department: str | None = None
+    position: str | None = None
+    avatar_url: str | None = None
+    is_active: bool
+    last_login_at: datetime | None = None
+
+
+class UserListResponse(BaseModel):
+    """ユーザー一覧レスポンスschema。"""
+
+    items: list[UserListItem]
+    total: int
+    page: int
+    page_size: int
+
+
 class RoleRead(BaseModel):
     """ロール読み取り時に返すschema。"""
 

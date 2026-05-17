@@ -192,9 +192,12 @@ def seed_initial_admin(repository: RbacRepository) -> None:
                 email=settings.initial_admin_email,
                 name=settings.initial_admin_name,
                 hashed_password=get_password_hash(settings.initial_admin_password),
+                avatar_key=settings.default_avatar_key,
             )
             db.add(user)
             db.flush()
+        elif user.avatar_key is None:
+            user.avatar_key = settings.default_avatar_key
 
         role = repository.get_role_by_key_scope(
             db,

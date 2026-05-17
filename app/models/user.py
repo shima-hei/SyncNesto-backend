@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.config import settings
 from app.db.base import Base
 
 
@@ -21,7 +22,9 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255))
     department: Mapped[str | None] = mapped_column(String(255), nullable=True)
     position: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    avatar_key: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    avatar_key: Mapped[str | None] = mapped_column(
+        String(1000), nullable=True, default=settings.default_avatar_key
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

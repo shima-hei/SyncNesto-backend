@@ -168,11 +168,46 @@ version
 
 ```text
 POST   /users              user:create
-GET    /users              user:read
+GET    /users              user:read, page/page_size/q/is_active対応
 GET    /users/{user_id}    user:read
 PATCH  /users/{user_id}    user:update, version必須
 DELETE /users/{user_id}    user:delete
 ```
+
+`GET /users` は一覧用の軽量レスポンスです。
+
+クエリ:
+
+```text
+page: 1以上。default 1
+page_size: 1-100。default 20
+q: email, name, department, position の部分一致検索
+is_active: true/false
+```
+
+レスポンス例:
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "email": "user@example.com",
+      "name": "User",
+      "department": "QA",
+      "position": "Tester",
+      "avatar_url": "https://example.com/avatar.png",
+      "is_active": true,
+      "version": 1
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "page_size": 20
+}
+```
+
+`GET /users/{user_id}` は詳細取得APIです。編集画面では詳細APIを使ってください。
 
 ### Projects
 
@@ -306,7 +341,7 @@ image/webp
 2MB
 ```
 
-バックエンドは画像をS3へ保存し、DBにはS3 keyだけを保存します。APIレスポンスの `avatar_url` は署名付きURLです。`GET /auth/me`, `GET /users`, `GET /users/{user_id}` では、ユーザーにアイコンが設定されている場合のみ `avatar_url` に署名付きURLが入ります。
+バックエンドは画像をS3へ保存し、DBにはS3 keyだけを保存します。ユーザー作成時は `default-avatar.png` をデフォルトのS3 keyとして設定します。APIレスポンスの `avatar_url` は署名付きURLです。`GET /auth/me`, `GET /users`, `GET /users/{user_id}` では、ユーザーに設定されているS3 keyから署名付きURLを生成して返します。
 
 `avatar_url` は有効期限付きなので、永続保存せず、画面表示時にAPIレスポンスから取得してください。
 

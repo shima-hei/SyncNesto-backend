@@ -1,12 +1,18 @@
 """ユーザー管理APIのルーティングを定義するモジュール。"""
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.auth import require_system_permission
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.user import UserCreate, UserRead, UserUpdate
+from app.schemas.user import (
+    UserCreate,
+    UserListItem,
+    UserListResponse,
+    UserRead,
+    UserUpdate,
+)
 from app.services.storage import StorageService
 from app.services.user import UserService
 
@@ -40,6 +46,27 @@ def build_user_response(user: User) -> UserRead:
     )
 
 
+def build_user_list_item(user: User) -> UserListItem:
+    """ユーザー一覧itemレスポンスを組み立てる。
+
+    Args:
+        user: レスポンスへ変換するユーザー。
+
+    Returns:
+        ユーザー一覧itemレスポンス。
+    """
+    return UserListItem(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        department=user.department,
+        position=user.position,
+        avatar_url=storage_service.generate_presigned_url(user.avatar_key),
+        is_active=user.is_active,
+        last_login_at=user.last_login_at,
+    )
+
+
 @router.post(
     "",
     response_model=UserRead,
@@ -66,21 +93,41 @@ def create_user(
 
 @router.get(
     "",
-    response_model=list[UserRead],
+    response_model=UserListResponse,
 )
 def list_users(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    q: str | None = Query(default=None),
+    is_active: bool | None = Query(default=None),
     _: User = Depends(require_system_permission("user:read")),
     db: Session = Depends(get_db),
-) -> list[UserRead]:
+) -> UserListResponse:
     """ユーザー一覧を取得する。
 
     Args:
+        page: ページ番号。
+        page_size: 1ページあたりの件数。
+        q: 検索キーワード。
+        is_active: 有効状態の絞り込み。
         db: DBセッション。
 
     Returns:
         ユーザー一覧。
     """
-    return [build_user_response(user) for user in user_service.list_users(db)]
+    users, total = user_service.list_users_paginated(
+        db,
+        page=page,
+        page_size=page_size,
+        q=q,
+        is_active=is_active,
+    )
+    return UserListResponse(
+        items=[build_user_list_item(user) for user in users],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get(

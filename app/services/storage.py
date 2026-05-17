@@ -42,11 +42,15 @@ class StorageService:
         Args:
             s3_client: boto3 S3クライアント。
         """
-        self.s3_client = s3_client or boto3.client(
-            "s3",
-            region_name=settings.aws_region,
-            endpoint_url=settings.aws_s3_endpoint_url,
-        )
+        s3_client_kwargs: dict[str, object] = {
+            "region_name": settings.aws_region,
+            "endpoint_url": settings.aws_s3_endpoint_url,
+        }
+        if settings.aws_access_key_id and settings.aws_secret_access_key:
+            s3_client_kwargs["aws_access_key_id"] = settings.aws_access_key_id
+            s3_client_kwargs["aws_secret_access_key"] = settings.aws_secret_access_key
+
+        self.s3_client = s3_client or boto3.client("s3", **s3_client_kwargs)
 
     def upload_user_avatar(
         self,

@@ -82,6 +82,35 @@ class UserService:
         """
         return self.repository.list(db)
 
+    def list_users_paginated(
+        self,
+        db: Session,
+        *,
+        page: int,
+        page_size: int,
+        q: str | None = None,
+        is_active: bool | None = None,
+    ) -> tuple[list[User], int]:
+        """ユーザー一覧をページング付きで取得する。
+
+        Args:
+            db: DBセッション。
+            page: ページ番号。
+            page_size: 1ページあたりの件数。
+            q: 検索キーワード。
+            is_active: 有効状態の絞り込み。
+
+        Returns:
+            ユーザー一覧と総件数。
+        """
+        return self.repository.list_paginated(
+            db,
+            page=page,
+            page_size=page_size,
+            q=q,
+            is_active=is_active,
+        )
+
     def get_user(self, db: Session, user_id: int) -> User:
         """ユーザーを取得する。
 
