@@ -62,6 +62,12 @@ ALLOW_AUTHORIZATION_HEADER=true
 INITIAL_ADMIN_EMAIL=admin@example.com
 INITIAL_ADMIN_PASSWORD=change-me
 INITIAL_ADMIN_NAME=Initial Admin
+AWS_REGION=ap-northeast-1
+AWS_S3_BUCKET_NAME=syncnesto-local-app-bucket
+AWS_S3_ENDPOINT_URL=http://localhost:4566
+AWS_S3_PRESIGNED_URL_EXPIRES_SECONDS=3600
+AWS_ACCESS_KEY_ID=test
+AWS_SECRET_ACCESS_KEY=test
 ```
 
 テスト用の設定は `.env.test` に置きます。`tests/conftest.py` がテスト実行時に読み込みます。
@@ -89,6 +95,10 @@ SECRET_KEY=test-secret-key-at-least-32-bytes
 - `INITIAL_ADMIN_EMAIL`: 初期管理者seedで作成する管理者email
 - `INITIAL_ADMIN_PASSWORD`: 初期管理者seedで使用する管理者password
 - `INITIAL_ADMIN_NAME`: 初期管理者seedで使用する管理者名
+- `AWS_REGION`: S3クライアントで使用するAWSリージョン
+- `AWS_S3_BUCKET_NAME`: ユーザーアイコンを保存するS3バケット名
+- `AWS_S3_ENDPOINT_URL`: LocalStackなどのS3互換エンドポイントURL
+- `AWS_S3_PRESIGNED_URL_EXPIRES_SECONDS`: 署名付きURLの有効期限秒数
 
 ## セットアップ
 

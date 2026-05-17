@@ -145,6 +145,7 @@ POST /auth/login   認可不要
 POST /auth/logout  認可不要
 GET  /auth/me      ログイン必須
 PATCH /auth/me     ログイン必須、本人プロフィール更新、version必須
+PUT   /auth/me/avatar ログイン必須、本人アイコン更新
 ```
 
 ### Users
@@ -159,7 +160,6 @@ name
 password
 department
 position
-avatar_url
 is_active
 version
 ```
@@ -258,7 +258,6 @@ PATCH /projects/{project_id}/members/{user_id}
 ```text
 name
 password
-avatar_url
 version
 ```
 
@@ -274,12 +273,42 @@ PATCH /auth/me
 {
   "name": "Updated Name",
   "password": "new-password",
-  "avatar_url": "https://example.com/avatar.png",
   "version": 1
 }
 ```
 
 レスポンスは `/auth/me` の取得時と同じ形式です。
+
+## ユーザーアイコン
+
+ユーザーアイコン更新には `PUT /auth/me/avatar` を使います。
+
+```http
+PUT /auth/me/avatar
+Content-Type: multipart/form-data
+```
+
+```text
+file: image/png, image/jpeg, image/webp
+```
+
+許可する画像形式:
+
+```text
+image/png
+image/jpeg
+image/webp
+```
+
+最大サイズ:
+
+```text
+2MB
+```
+
+バックエンドは画像をS3へ保存し、DBにはS3 keyだけを保存します。APIレスポンスの `avatar_url` は署名付きURLです。`GET /auth/me`, `GET /users`, `GET /users/{user_id}` では、ユーザーにアイコンが設定されている場合のみ `avatar_url` に署名付きURLが入ります。
+
+`avatar_url` は有効期限付きなので、永続保存せず、画面表示時にAPIレスポンスから取得してください。
 
 ## フロントエンドでの表示制御例
 

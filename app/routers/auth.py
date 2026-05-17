@@ -1,6 +1,6 @@
 """認証関連APIのルーティングを定義するモジュール。"""
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, File, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
@@ -16,10 +16,12 @@ from app.schemas.user import (
     UserLoginResponse,
     UserProfileUpdate,
 )
+from app.services.storage import StorageService
 from app.services.user import UserService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 user_service = UserService()
+storage_service = StorageService()
 
 
 def build_current_user_response(db: Session, current_user: User) -> CurrentUserRead:
@@ -40,7 +42,7 @@ def build_current_user_response(db: Session, current_user: User) -> CurrentUserR
         version=current_user.version,
         department=current_user.department,
         position=current_user.position,
-        avatar_url=current_user.avatar_url,
+        avatar_url=storage_service.generate_presigned_url(current_user.avatar_key),
         is_active=current_user.is_active,
         last_login_at=current_user.last_login_at,
         created_by=current_user.created_by,
@@ -146,4 +148,33 @@ def update_current_user(
         更新された現在のログインユーザー情報。
     """
     user = user_service.update_profile(db, current_user=current_user, user_in=user_in)
+    return build_current_user_response(db, user)
+
+
+@router.put(
+    "/me/avatar",
+    response_model=CurrentUserRead,
+)
+def update_current_user_avatar(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CurrentUserRead:
+    """現在のログインユーザーのアイコン画像を更新する。
+
+    Args:
+        file: アップロードされた画像ファイル。
+        current_user: 認証済みユーザー。
+        db: DBセッション。
+
+    Returns:
+        更新された現在のログインユーザー情報。
+    """
+    user = user_service.update_avatar(
+        db,
+        current_user=current_user,
+        content=file.file.read(),
+        content_type=file.content_type,
+        storage_service=storage_service,
+    )
     return build_current_user_response(db, user)

@@ -10,6 +10,17 @@ from app.core.security import create_access_token, verify_password
 from app.models.user import User
 
 
+class FakeStorageService:
+    """テスト用StorageService。"""
+
+    def generate_presigned_url(self, avatar_key: str | None) -> str | None:
+        """固定の署名付きURLを返す。"""
+        if avatar_key is None:
+            return None
+
+        return f"https://example.com/{avatar_key}?signature=test"
+
+
 def authorize_as(
     client: TestClient,
     user: User,
@@ -111,7 +122,6 @@ def test_create_user_stores_profile_fields_and_audit_users(
             "password": "password123",
             "department": "QA",
             "position": "Tester",
-            "avatar_url": "https://example.com/avatar.png",
             "is_active": False,
         },
     )
@@ -119,7 +129,7 @@ def test_create_user_stores_profile_fields_and_audit_users(
     assert response.status_code == 201
     assert response.json()["department"] == "QA"
     assert response.json()["position"] == "Tester"
-    assert response.json()["avatar_url"] == "https://example.com/avatar.png"
+    assert response.json()["avatar_url"] is None
     assert response.json()["is_active"] is False
     assert response.json()["created_by"] == admin_user.id
     assert response.json()["updated_by"] == admin_user.id
@@ -127,7 +137,7 @@ def test_create_user_stores_profile_fields_and_audit_users(
     user = db.query(User).filter(User.email == "profile@example.com").one()
     assert user.department == "QA"
     assert user.position == "Tester"
-    assert user.avatar_url == "https://example.com/avatar.png"
+    assert user.avatar_key is None
     assert user.is_active is False
     assert user.created_by == admin_user.id
     assert user.updated_by == admin_user.id
@@ -246,6 +256,33 @@ def test_list_users_returns_users_for_system_admin(
     ]
 
 
+def test_list_users_returns_presigned_avatar_url(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+    monkeypatch,
+) -> None:
+    """ユーザー一覧でavatar_keyから署名付きURLを返すことを確認する。"""
+    from app.routers import users
+
+    monkeypatch.setattr(users, "storage_service", FakeStorageService())
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    target_user = create_test_user(email="avatar@example.com")
+    target_user.avatar_key = "users/2.png"
+    db.commit()
+    authorize_as(client, admin_user)
+
+    response = client.get("/users")
+
+    assert response.status_code == 200
+    assert response.json()[1]["avatar_url"] == (
+        "https://example.com/users/2.png?signature=test"
+    )
+
+
 def test_list_users_requires_user_read_permission(
     client: TestClient,
     create_test_user: Callable[..., User],
@@ -308,7 +345,6 @@ def test_update_user_updates_user_for_system_admin(
             "name": "After",
             "department": "QA",
             "position": "Lead",
-            "avatar_url": "https://example.com/avatar.png",
             "is_active": False,
             "version": target_user.version,
         },
@@ -322,7 +358,7 @@ def test_update_user_updates_user_for_system_admin(
         "version": target_user.version + 1,
         "department": "QA",
         "position": "Lead",
-        "avatar_url": "https://example.com/avatar.png",
+        "avatar_url": None,
         "is_active": False,
         "last_login_at": None,
         "created_by": None,

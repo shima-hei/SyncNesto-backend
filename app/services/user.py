@@ -20,6 +20,7 @@ from app.core.security import get_password_hash, verify_password
 from app.models.user import User
 from app.repositories.user import UserRepository
 from app.schemas.user import UserCreate, UserProfileUpdate, UserRead, UserUpdate
+from app.services.storage import StorageService
 
 
 logger = logging.getLogger(__name__)
@@ -178,6 +179,39 @@ class UserService:
             user=current_user,
             user_in=user_in,
             hashed_password=hashed_password,
+            actor_id=current_user.id,
+        )
+
+    def update_avatar(
+        self,
+        db: Session,
+        *,
+        current_user: User,
+        content: bytes,
+        content_type: str | None,
+        storage_service: StorageService,
+    ) -> User:
+        """本人のユーザーアイコンを更新する。
+
+        Args:
+            db: DBセッション。
+            current_user: 認証済みユーザー。
+            content: 画像バイナリ。
+            content_type: アップロードファイルのContent-Type。
+            storage_service: ストレージサービス。
+
+        Returns:
+            更新されたユーザー。
+        """
+        avatar_key = storage_service.upload_user_avatar(
+            user_id=current_user.id,
+            content=content,
+            content_type=content_type,
+        )
+        return self.repository.update_avatar_key(
+            db,
+            user=current_user,
+            avatar_key=avatar_key,
             actor_id=current_user.id,
         )
 

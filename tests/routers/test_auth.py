@@ -11,6 +11,27 @@ from app.core.security import create_access_token, verify_password
 from app.models.user import User
 
 
+class FakeStorageService:
+    """テスト用StorageService。"""
+
+    def upload_user_avatar(
+        self,
+        *,
+        user_id: int,
+        content: bytes,
+        content_type: str | None,
+    ) -> str:
+        """固定のavatar keyを返す。"""
+        return f"users/{user_id}.png"
+
+    def generate_presigned_url(self, avatar_key: str | None) -> str | None:
+        """固定の署名付きURLを返す。"""
+        if avatar_key is None:
+            return None
+
+        return f"https://example.com/{avatar_key}?signature=test"
+
+
 def test_login_user_returns_access_token_and_cookie_in_development(
     client: TestClient,
     create_test_user: Callable[..., User],
@@ -327,7 +348,6 @@ def test_update_me_updates_current_user_profile(
         json={
             "name": "After",
             "password": "new-password123",
-            "avatar_url": "https://example.com/avatar.png",
             "version": user.version,
         },
     )
@@ -340,7 +360,7 @@ def test_update_me_updates_current_user_profile(
         "version": user.version + 1,
         "department": None,
         "position": None,
-        "avatar_url": "https://example.com/avatar.png",
+        "avatar_url": None,
         "is_active": True,
         "last_login_at": None,
         "created_by": None,
@@ -349,7 +369,6 @@ def test_update_me_updates_current_user_profile(
     }
     db.refresh(user)
     assert user.name == "After"
-    assert user.avatar_url == "https://example.com/avatar.png"
     assert user.updated_by == user.id
     assert verify_password("new-password123", user.hashed_password)
 
@@ -404,6 +423,54 @@ def test_update_me_rejects_admin_only_profile_fields(
     )
 
     assert response.status_code == 422
+
+
+def test_update_me_avatar_uploads_image_and_returns_presigned_url(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """本人アイコン画像をアップロードして署名付きURLを返すことを確認する。"""
+    from app.routers import auth
+
+    monkeypatch.setattr(auth, "storage_service", FakeStorageService())
+    user = create_test_user(email="avatar@example.com")
+    access_token = create_access_token(subject=user.email)
+    client.cookies.set(
+        settings.auth_cookie_name,
+        access_token,
+        domain="testserver.local",
+        path="/",
+    )
+
+    response = client.put(
+        "/auth/me/avatar",
+        files={"file": ("avatar.png", b"image-bytes", "image/png")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["avatar_url"] == (
+        "https://example.com/users/1.png?signature=test"
+    )
+    assert response.json()["version"] == user.version + 1
+    db.refresh(user)
+    assert user.avatar_key == "users/1.png"
+    assert user.updated_by == user.id
+
+
+def test_update_me_avatar_requires_login(client: TestClient) -> None:
+    """本人アイコン更新が未ログインユーザーを拒否することを確認する。"""
+    response = client.put(
+        "/auth/me/avatar",
+        files={"file": ("avatar.png", b"image-bytes", "image/png")},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "message": "Invalid email or password",
+        "code": "INVALID_CREDENTIALS",
+    }
 
 
 def test_update_me_rejects_stale_version_with_current_user(

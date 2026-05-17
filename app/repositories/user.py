@@ -39,7 +39,6 @@ class UserRepository:
             hashed_password=hashed_password,
             department=user_in.department,
             position=user_in.position,
-            avatar_url=user_in.avatar_url,
             is_active=user_in.is_active,
             created_by=actor_id,
             updated_by=actor_id,
@@ -123,8 +122,6 @@ class UserRepository:
             user.department = user_in.department
         if "position" in user_in.model_fields_set:
             user.position = user_in.position
-        if "avatar_url" in user_in.model_fields_set:
-            user.avatar_url = user_in.avatar_url
         if user_in.is_active is not None:
             user.is_active = user_in.is_active
         if actor_id is not None:
@@ -160,8 +157,34 @@ class UserRepository:
             user.name = user_in.name
         if hashed_password is not None:
             user.hashed_password = hashed_password
-        if "avatar_url" in user_in.model_fields_set:
-            user.avatar_url = user_in.avatar_url
+        if actor_id is not None:
+            user.updated_by = actor_id
+        user.version += 1
+
+        db.commit()
+        db.refresh(user)
+        return user
+
+    def update_avatar_key(
+        self,
+        db: Session,
+        *,
+        user: User,
+        avatar_key: str,
+        actor_id: int | None = None,
+    ) -> User:
+        """ユーザーアイコンのS3キーを更新する。
+
+        Args:
+            db: DBセッション。
+            user: 更新対象ユーザー。
+            avatar_key: S3オブジェクトキー。
+            actor_id: 更新者ユーザーID。
+
+        Returns:
+            更新されたユーザー。
+        """
+        user.avatar_key = avatar_key
         if actor_id is not None:
             user.updated_by = actor_id
         user.version += 1

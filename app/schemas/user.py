@@ -27,7 +27,6 @@ class UserCreate(UserBase):
     password: str
     department: str | None = None
     position: str | None = None
-    avatar_url: str | None = None
     is_active: bool = True
 
 
@@ -40,7 +39,6 @@ class UserUpdate(BaseModel):
     password: str | None = None
     department: str | None = None
     position: str | None = None
-    avatar_url: str | None = None
     is_active: bool | None = None
 
 
@@ -50,7 +48,6 @@ class UserProfileUpdate(BaseModel):
     version: int
     name: str | None = None
     password: str | None = None
-    avatar_url: str | None = None
 
     model_config = {"extra": "forbid"}
 

@@ -7,11 +7,37 @@ from app.core.auth import require_system_permission
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate, UserRead, UserUpdate
+from app.services.storage import StorageService
 from app.services.user import UserService
 
 
 router = APIRouter(prefix="/users", tags=["users"])
 user_service = UserService()
+storage_service = StorageService()
+
+
+def build_user_response(user: User) -> UserRead:
+    """ユーザーレスポンスを組み立てる。
+
+    Args:
+        user: レスポンスへ変換するユーザー。
+
+    Returns:
+        ユーザー読み取りレスポンス。
+    """
+    return UserRead(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        version=user.version,
+        department=user.department,
+        position=user.position,
+        avatar_url=storage_service.generate_presigned_url(user.avatar_key),
+        is_active=user.is_active,
+        last_login_at=user.last_login_at,
+        created_by=user.created_by,
+        updated_by=user.updated_by,
+    )
 
 
 @router.post(
@@ -23,7 +49,7 @@ def create_user(
     user_in: UserCreate,
     current_user: User = Depends(require_system_permission("user:create")),
     db: Session = Depends(get_db),
-) -> User:
+) -> UserRead:
     """管理者としてユーザーを作成する。
 
     Args:
@@ -34,7 +60,8 @@ def create_user(
     Returns:
         作成されたユーザー情報。
     """
-    return user_service.create_user(db, user_in, actor_id=current_user.id)
+    user = user_service.create_user(db, user_in, actor_id=current_user.id)
+    return build_user_response(user)
 
 
 @router.get(
@@ -44,7 +71,7 @@ def create_user(
 def list_users(
     _: User = Depends(require_system_permission("user:read")),
     db: Session = Depends(get_db),
-) -> list[User]:
+) -> list[UserRead]:
     """ユーザー一覧を取得する。
 
     Args:
@@ -53,7 +80,7 @@ def list_users(
     Returns:
         ユーザー一覧。
     """
-    return user_service.list_users(db)
+    return [build_user_response(user) for user in user_service.list_users(db)]
 
 
 @router.get(
@@ -64,7 +91,7 @@ def read_user(
     user_id: int,
     _: User = Depends(require_system_permission("user:read")),
     db: Session = Depends(get_db),
-) -> User:
+) -> UserRead:
     """ユーザーを取得する。
 
     Args:
@@ -74,7 +101,7 @@ def read_user(
     Returns:
         取得されたユーザー。
     """
-    return user_service.get_user(db, user_id)
+    return build_user_response(user_service.get_user(db, user_id))
 
 
 @router.patch(
@@ -86,7 +113,7 @@ def update_user(
     user_in: UserUpdate,
     current_user: User = Depends(require_system_permission("user:update")),
     db: Session = Depends(get_db),
-) -> User:
+) -> UserRead:
     """ユーザーを更新する。
 
     Args:
@@ -98,7 +125,8 @@ def update_user(
     Returns:
         更新されたユーザー。
     """
-    return user_service.update_user(db, user_id, user_in, actor_id=current_user.id)
+    user = user_service.update_user(db, user_id, user_in, actor_id=current_user.id)
+    return build_user_response(user)
 
 
 @router.delete(
