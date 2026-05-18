@@ -11,13 +11,16 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
+    BadRequestError,
     EmailAlreadyRegisteredError,
     InvalidCredentialsError,
     NotFoundError,
     VersionConflictError,
 )
 from app.core.security import get_password_hash, verify_password
+from app.models.rbac import Role
 from app.models.user import User
+from app.repositories.rbac import RbacRepository
 from app.repositories.user import UserRepository
 from app.schemas.user import UserCreate, UserProfileUpdate, UserRead, UserUpdate
 from app.services.storage import StorageService
@@ -34,13 +37,45 @@ class UserService:
     ユーザー作成時のバリデーションなどを担う。
     """
 
-    def __init__(self, repository: UserRepository | None = None) -> None:
+    def __init__(
+        self,
+        repository: UserRepository | None = None,
+        rbac_repository: RbacRepository | None = None,
+    ) -> None:
         """UserServiceを初期化する。
 
         Args:
             repository: ユーザーRepository。
+            rbac_repository: RBAC Repository。
         """
         self.repository = repository or UserRepository()
+        self.rbac_repository = rbac_repository or RbacRepository()
+
+    def _resolve_system_roles(self, db: Session, role_keys: list[str]) -> list[Role]:
+        """システムロールkey一覧からロール一覧を取得する。
+
+        Args:
+            db: DBセッション。
+            role_keys: システムロールkey一覧。
+
+        Returns:
+            システムロール一覧。
+
+        Raises:
+            BadRequestError: 存在しないシステムロールkeyが指定された場合。
+        """
+        roles = []
+        for role_key in dict.fromkeys(role_keys):
+            role = self.rbac_repository.get_role_by_key_scope(
+                db,
+                key=role_key,
+                scope="system",
+            )
+            if role is None:
+                raise BadRequestError(f"Invalid system role key: {role_key}")
+            roles.append(role)
+
+        return roles
 
     def create_user(
         self,
@@ -68,6 +103,10 @@ class UserService:
 
         hashed_password = get_password_hash(user_in.password)
         user = self.repository.create(db, user_in, hashed_password, actor_id=actor_id)
+        roles = self._resolve_system_roles(db, user_in.system_role_keys)
+        self.rbac_repository.replace_system_roles_for_user(db, user=user, roles=roles)
+        db.commit()
+        db.refresh(user)
         logger.info("User created: id=%s email=%s", user.id, user.email)
         return user
 
@@ -110,6 +149,34 @@ class UserService:
             q=q,
             is_active=is_active,
         )
+
+    def list_system_roles_by_user_ids(
+        self,
+        db: Session,
+        user_ids: list[int],
+    ) -> dict[int, list[Role]]:
+        """複数ユーザーのシステムロール一覧を取得する。
+
+        Args:
+            db: DBセッション。
+            user_ids: ユーザーID一覧。
+
+        Returns:
+            ユーザーIDをkey、システムロール一覧をvalueにした辞書。
+        """
+        return self.rbac_repository.list_system_roles_by_user_ids(db, user_ids)
+
+    def list_system_roles_by_user(self, db: Session, user_id: int) -> list[Role]:
+        """ユーザーのシステムロール一覧を取得する。
+
+        Args:
+            db: DBセッション。
+            user_id: ユーザーID。
+
+        Returns:
+            システムロール一覧。
+        """
+        return self.rbac_repository.list_system_roles_by_user(db, user_id)
 
     def get_user(self, db: Session, user_id: int) -> User:
         """ユーザーを取得する。
@@ -167,13 +234,24 @@ class UserService:
         if user_in.password is not None:
             hashed_password = get_password_hash(user_in.password)
 
-        return self.repository.update(
+        user = self.repository.update(
             db,
             user=user,
             user_in=user_in,
             hashed_password=hashed_password,
             actor_id=actor_id,
         )
+        if "system_role_keys" in user_in.model_fields_set:
+            roles = self._resolve_system_roles(db, user_in.system_role_keys or [])
+            self.rbac_repository.replace_system_roles_for_user(
+                db,
+                user=user,
+                roles=roles,
+            )
+
+        db.commit()
+        db.refresh(user)
+        return user
 
     def update_profile(
         self,
@@ -203,13 +281,16 @@ class UserService:
         if user_in.password is not None:
             hashed_password = get_password_hash(user_in.password)
 
-        return self.repository.update_profile(
+        user = self.repository.update_profile(
             db,
             user=current_user,
             user_in=user_in,
             hashed_password=hashed_password,
             actor_id=current_user.id,
         )
+        db.commit()
+        db.refresh(user)
+        return user
 
     def update_avatar(
         self,
@@ -237,12 +318,15 @@ class UserService:
             content=content,
             content_type=content_type,
         )
-        return self.repository.update_avatar_key(
+        user = self.repository.update_avatar_key(
             db,
             user=current_user,
             avatar_key=avatar_key,
             actor_id=current_user.id,
         )
+        db.commit()
+        db.refresh(user)
+        return user
 
     def delete_user(self, db: Session, user_id: int) -> None:
         """ユーザーを論理削除する。
@@ -256,6 +340,7 @@ class UserService:
         """
         user = self.get_user(db, user_id)
         self.repository.soft_delete(db, user)
+        db.commit()
 
     def authenticate_user(self, db: Session, email: str, password: str) -> User:
         """ユーザーを認証する。
@@ -297,4 +382,7 @@ class UserService:
         Returns:
             更新されたユーザー。
         """
-        return self.repository.update_last_login_at(db, user)
+        user = self.repository.update_last_login_at(db, user)
+        db.commit()
+        db.refresh(user)
+        return user

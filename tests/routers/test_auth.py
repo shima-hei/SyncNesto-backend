@@ -521,6 +521,7 @@ def test_update_me_rejects_stale_version_with_current_user(
             "last_login_at": None,
             "created_by": None,
             "updated_by": None,
+            "system_roles": [],
         },
     }
 

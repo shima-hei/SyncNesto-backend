@@ -77,6 +77,7 @@ def test_create_user_returns_created_user(
         "last_login_at": None,
         "created_by": admin_user.id,
         "updated_by": admin_user.id,
+        "system_roles": [],
     }
     assert "password" not in response.json()
     assert "hashed_password" not in response.json()
@@ -152,6 +153,61 @@ def test_create_user_stores_profile_fields_and_audit_users(
     assert user.is_active is False
     assert user.created_by == admin_user.id
     assert user.updated_by == admin_user.id
+
+
+def test_create_user_assigns_system_roles(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """作成APIが指定されたシステムロールを付与することを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    authorize_as(client, admin_user)
+
+    response = client.post(
+        "/users",
+        json={
+            "email": "role@example.com",
+            "name": "Role User",
+            "password": "password123",
+            "system_role_keys": ["system_admin"],
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["system_roles"] == [
+        {"key": "system_admin", "name": "システム管理者"},
+    ]
+
+
+def test_create_user_rejects_invalid_system_role_key(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """存在しないシステムロールkeyでのユーザー作成を拒否する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    authorize_as(client, admin_user)
+
+    response = client.post(
+        "/users",
+        json={
+            "email": "invalid-role@example.com",
+            "name": "Invalid Role User",
+            "password": "password123",
+            "system_role_keys": ["unknown_role"],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "message": "Invalid system role key: unknown_role",
+        "code": "BAD_REQUEST",
+    }
 
 
 def test_create_user_rejects_duplicate_email(
@@ -355,6 +411,7 @@ def test_list_users_uses_lightweight_items(
     item = response.json()["items"][0]
     assert "version" not in item
     assert "last_login_at" in item
+    assert "system_roles" in item
     assert "created_by" not in item
     assert "updated_by" not in item
 
@@ -384,6 +441,29 @@ def test_list_users_returns_presigned_avatar_url(
     assert response.json()["items"][1]["avatar_url"] == (
         "https://example.com/users/2.png?signature=test"
     )
+
+
+def test_list_users_returns_system_roles(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """ユーザー一覧がシステムロールを返すことを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    create_test_user(email="role-user@example.com", system_role="system_admin")
+    authorize_as(client, admin_user)
+
+    response = client.get("/users")
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["system_roles"] == [
+        {"key": "system_admin", "name": "システム管理者"},
+    ]
+    assert response.json()["items"][1]["system_roles"] == [
+        {"key": "system_admin", "name": "システム管理者"},
+    ]
 
 
 def test_list_users_requires_user_read_permission(
@@ -426,7 +506,31 @@ def test_read_user_returns_user_for_system_admin(
         "last_login_at": None,
         "created_by": None,
         "updated_by": None,
+        "system_roles": [],
     }
+
+
+def test_read_user_returns_system_roles(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """ユーザー詳細がシステムロールを返すことを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    target_user = create_test_user(
+        email="role-detail@example.com",
+        system_role="system_admin",
+    )
+    authorize_as(client, admin_user)
+
+    response = client.get(f"/users/{target_user.id}")
+
+    assert response.status_code == 200
+    assert response.json()["system_roles"] == [
+        {"key": "system_admin", "name": "システム管理者"},
+    ]
 
 
 def test_update_user_updates_user_for_system_admin(
@@ -466,6 +570,87 @@ def test_update_user_updates_user_for_system_admin(
         "last_login_at": None,
         "created_by": None,
         "updated_by": admin_user.id,
+        "system_roles": [],
+    }
+
+
+def test_update_user_replaces_system_roles(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """更新APIがシステムロールを差し替えることを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    target_user = create_test_user(email="target@example.com")
+    authorize_as(client, admin_user)
+
+    response = client.patch(
+        f"/users/{target_user.id}",
+        json={
+            "version": target_user.version,
+            "system_role_keys": ["system_admin"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["system_roles"] == [
+        {"key": "system_admin", "name": "システム管理者"},
+    ]
+
+
+def test_update_user_clears_system_roles(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """更新APIが空配列指定でシステムロールを外すことを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    target_user = create_test_user(
+        email="target@example.com",
+        system_role="system_admin",
+    )
+    authorize_as(client, admin_user)
+
+    response = client.patch(
+        f"/users/{target_user.id}",
+        json={
+            "version": target_user.version,
+            "system_role_keys": [],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["system_roles"] == []
+
+
+def test_update_user_rejects_invalid_system_role_key(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """存在しないシステムロールkeyでのユーザー更新を拒否する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    target_user = create_test_user(email="target@example.com")
+    authorize_as(client, admin_user)
+
+    response = client.patch(
+        f"/users/{target_user.id}",
+        json={
+            "version": target_user.version,
+            "system_role_keys": ["unknown_role"],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "message": "Invalid system role key: unknown_role",
+        "code": "BAD_REQUEST",
     }
 
 
@@ -507,6 +692,7 @@ def test_update_user_rejects_stale_version_with_current_user(
             "last_login_at": None,
             "created_by": None,
             "updated_by": None,
+            "system_roles": [],
         },
     }
 

@@ -188,6 +188,27 @@ class RbacRepository:
         db.flush()
         return user_role
 
+    def replace_system_roles_for_user(
+        self,
+        db: Session,
+        *,
+        user: User,
+        roles: list[Role],
+    ) -> None:
+        """ユーザーのシステムロールを指定ロールで差し替える。
+
+        Args:
+            db: DBセッション。
+            user: ロール差し替え対象ユーザー。
+            roles: 差し替え後のシステムロール一覧。
+        """
+        db.query(UserRole).filter(UserRole.user_id == user.id).delete(
+            synchronize_session=False
+        )
+        for role in roles:
+            db.add(UserRole(user_id=user.id, role_id=role.id))
+        db.flush()
+
     def list_system_roles_by_user(self, db: Session, user_id: int) -> list[Role]:
         """ユーザーに付与されたシステムロール一覧を取得する。
 
@@ -205,6 +226,36 @@ class RbacRepository:
             .order_by(Role.id)
             .all()
         )
+
+    def list_system_roles_by_user_ids(
+        self,
+        db: Session,
+        user_ids: list[int],
+    ) -> dict[int, list[Role]]:
+        """複数ユーザーに付与されたシステムロール一覧を取得する。
+
+        Args:
+            db: DBセッション。
+            user_ids: ユーザーID一覧。
+
+        Returns:
+            ユーザーIDをkey、システムロール一覧をvalueにした辞書。
+        """
+        if not user_ids:
+            return {}
+
+        rows = (
+            db.query(UserRole.user_id, Role)
+            .join(Role, UserRole.role_id == Role.id)
+            .filter(UserRole.user_id.in_(user_ids), Role.scope == "system")
+            .order_by(UserRole.user_id, Role.id)
+            .all()
+        )
+        roles_by_user_id: dict[int, list[Role]] = {user_id: [] for user_id in user_ids}
+        for user_id, role in rows:
+            roles_by_user_id[user_id].append(role)
+
+        return roles_by_user_id
 
     def user_has_system_permission(
         self,

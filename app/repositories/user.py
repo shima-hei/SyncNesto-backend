@@ -47,8 +47,7 @@ class UserRepository:
             updated_by=actor_id,
         )
         db.add(user)
-        db.commit()
-        db.refresh(user)
+        db.flush()
         return user
 
     def get_by_email(self, db: Session, email: str) -> User | None:
@@ -175,8 +174,7 @@ class UserRepository:
             user.updated_by = actor_id
         user.version += 1
 
-        db.commit()
-        db.refresh(user)
+        db.flush()
         return user
 
     def update_profile(
@@ -208,8 +206,7 @@ class UserRepository:
             user.updated_by = actor_id
         user.version += 1
 
-        db.commit()
-        db.refresh(user)
+        db.flush()
         return user
 
     def update_avatar_key(
@@ -236,8 +233,7 @@ class UserRepository:
             user.updated_by = actor_id
         user.version += 1
 
-        db.commit()
-        db.refresh(user)
+        db.flush()
         return user
 
     def update_last_login_at(self, db: Session, user: User) -> User:
@@ -251,8 +247,7 @@ class UserRepository:
             更新されたユーザー。
         """
         user.last_login_at = datetime.now(UTC)
-        db.commit()
-        db.refresh(user)
+        db.flush()
         return user
 
     def soft_delete(self, db: Session, user: User) -> User:
@@ -266,6 +261,5 @@ class UserRepository:
             論理削除されたユーザー。
         """
         user.deleted_at = datetime.now(UTC)
-        db.commit()
-        db.refresh(user)
+        db.flush()
         return user

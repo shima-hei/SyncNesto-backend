@@ -162,7 +162,10 @@ department
 position
 is_active
 version
+system_role_keys
 ```
+
+`system_role_keys` は `role.id` ではなく role key を指定します。未指定または空配列の場合、システムロールは付与されません。`PATCH /users/{user_id}` では `system_role_keys` を送った場合だけロールを差し替えます。空配列を送るとシステムロールをすべて外します。
 
 `created_by`, `updated_by`, `last_login_at` はサーバー側で設定します。
 
@@ -198,7 +201,13 @@ is_active: true/false
       "position": "Tester",
       "avatar_url": "https://example.com/avatar.png",
       "is_active": true,
-      "version": 1
+      "last_login_at": null,
+      "system_roles": [
+        {
+          "key": "system_admin",
+          "name": "システム管理者"
+        }
+      ]
     }
   ],
   "total": 1,
@@ -208,6 +217,8 @@ is_active: true/false
 ```
 
 `GET /users/{user_id}` は詳細取得APIです。編集画面では詳細APIを使ってください。
+
+詳細レスポンスでは一覧項目に加えて `version`, `created_by`, `updated_by` を返します。権限変更画面では `system_roles` を初期表示に使い、保存時は `system_role_keys` として送ってください。
 
 ### Projects
 

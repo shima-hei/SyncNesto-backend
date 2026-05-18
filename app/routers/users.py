@@ -5,8 +5,10 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import require_system_permission
 from app.db.session import get_db
+from app.models.rbac import Role
 from app.models.user import User
 from app.schemas.user import (
+    RoleRead,
     UserCreate,
     UserListItem,
     UserListResponse,
@@ -22,11 +24,24 @@ user_service = UserService()
 storage_service = StorageService()
 
 
-def build_user_response(user: User) -> UserRead:
+def build_role_reads(roles: list[Role]) -> list[RoleRead]:
+    """ロールモデルをレスポンスschemaへ変換する。
+
+    Args:
+        roles: ロール一覧。
+
+    Returns:
+        ロール読み取りレスポンス一覧。
+    """
+    return [RoleRead(key=role.key, name=role.name) for role in roles]
+
+
+def build_user_response(user: User, system_roles: list[Role]) -> UserRead:
     """ユーザーレスポンスを組み立てる。
 
     Args:
         user: レスポンスへ変換するユーザー。
+        system_roles: ユーザーに付与されたシステムロール一覧。
 
     Returns:
         ユーザー読み取りレスポンス。
@@ -43,14 +58,16 @@ def build_user_response(user: User) -> UserRead:
         last_login_at=user.last_login_at,
         created_by=user.created_by,
         updated_by=user.updated_by,
+        system_roles=build_role_reads(system_roles),
     )
 
 
-def build_user_list_item(user: User) -> UserListItem:
+def build_user_list_item(user: User, system_roles: list[Role]) -> UserListItem:
     """ユーザー一覧itemレスポンスを組み立てる。
 
     Args:
         user: レスポンスへ変換するユーザー。
+        system_roles: ユーザーに付与されたシステムロール一覧。
 
     Returns:
         ユーザー一覧itemレスポンス。
@@ -64,6 +81,7 @@ def build_user_list_item(user: User) -> UserListItem:
         avatar_url=storage_service.generate_presigned_url(user.avatar_key),
         is_active=user.is_active,
         last_login_at=user.last_login_at,
+        system_roles=build_role_reads(system_roles),
     )
 
 
@@ -88,7 +106,8 @@ def create_user(
         作成されたユーザー情報。
     """
     user = user_service.create_user(db, user_in, actor_id=current_user.id)
-    return build_user_response(user)
+    system_roles = user_service.list_system_roles_by_user(db, user.id)
+    return build_user_response(user, system_roles)
 
 
 @router.get(
@@ -122,8 +141,15 @@ def list_users(
         q=q,
         is_active=is_active,
     )
+    roles_by_user_id = user_service.list_system_roles_by_user_ids(
+        db,
+        [user.id for user in users],
+    )
     return UserListResponse(
-        items=[build_user_list_item(user) for user in users],
+        items=[
+            build_user_list_item(user, roles_by_user_id.get(user.id, []))
+            for user in users
+        ],
         total=total,
         page=page,
         page_size=page_size,
@@ -148,7 +174,9 @@ def read_user(
     Returns:
         取得されたユーザー。
     """
-    return build_user_response(user_service.get_user(db, user_id))
+    user = user_service.get_user(db, user_id)
+    system_roles = user_service.list_system_roles_by_user(db, user.id)
+    return build_user_response(user, system_roles)
 
 
 @router.patch(
@@ -173,7 +201,8 @@ def update_user(
         更新されたユーザー。
     """
     user = user_service.update_user(db, user_id, user_in, actor_id=current_user.id)
-    return build_user_response(user)
+    system_roles = user_service.list_system_roles_by_user(db, user.id)
+    return build_user_response(user, system_roles)
 
 
 @router.delete(

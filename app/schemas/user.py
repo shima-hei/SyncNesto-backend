@@ -6,7 +6,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class UserBase(BaseModel):
@@ -28,6 +28,7 @@ class UserCreate(UserBase):
     department: str | None = None
     position: str | None = None
     is_active: bool = True
+    system_role_keys: list[str] = Field(default_factory=list)
 
 
 class UserUpdate(BaseModel):
@@ -40,6 +41,7 @@ class UserUpdate(BaseModel):
     department: str | None = None
     position: str | None = None
     is_active: bool | None = None
+    system_role_keys: list[str] | None = None
 
 
 class UserProfileUpdate(BaseModel):
@@ -52,10 +54,17 @@ class UserProfileUpdate(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class RoleRead(BaseModel):
+    """ロール読み取り時に返すschema。"""
+
+    key: str
+    name: str
+
+    model_config = {"from_attributes": True}
+
+
 class UserRead(UserBase):
-    """
-    ユーザー読み取り時に返すschema。
-    """
+    """ユーザー読み取り時に返すschema。"""
 
     id: int
     version: int
@@ -66,6 +75,7 @@ class UserRead(UserBase):
     last_login_at: datetime | None = None
     created_by: int | None = None
     updated_by: int | None = None
+    system_roles: list[RoleRead] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -79,6 +89,7 @@ class UserListItem(UserBase):
     avatar_url: str | None = None
     is_active: bool
     last_login_at: datetime | None = None
+    system_roles: list[RoleRead] = Field(default_factory=list)
 
 
 class UserListResponse(BaseModel):
@@ -88,15 +99,6 @@ class UserListResponse(BaseModel):
     total: int
     page: int
     page_size: int
-
-
-class RoleRead(BaseModel):
-    """ロール読み取り時に返すschema。"""
-
-    key: str
-    name: str
-
-    model_config = {"from_attributes": True}
 
 
 class CurrentUserRead(UserRead):
