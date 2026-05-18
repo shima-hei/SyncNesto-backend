@@ -17,6 +17,7 @@ from app.core.exceptions import (
     NotFoundError,
     VersionConflictError,
 )
+from app.core.config import settings
 from app.core.security import get_password_hash, verify_password
 from app.models.rbac import Role
 from app.models.user import User
@@ -326,6 +327,51 @@ class UserService:
         )
         db.commit()
         db.refresh(user)
+        return user
+
+    def delete_avatar(
+        self,
+        db: Session,
+        *,
+        current_user: User,
+        storage_service: StorageService,
+    ) -> User:
+        """本人のユーザーアイコンを削除してデフォルト画像に戻す。
+
+        DB更新を先に確定し、その後にユーザー固有のS3オブジェクト削除を試みる。
+        S3削除に失敗しても、DB上のデフォルト画像への復帰は維持する。
+
+        Args:
+            db: DBセッション。
+            current_user: 認証済みユーザー。
+            storage_service: ストレージサービス。
+
+        Returns:
+            更新されたユーザー。
+        """
+        previous_avatar_key = current_user.avatar_key
+        if previous_avatar_key == settings.default_avatar_key:
+            return current_user
+
+        user = self.repository.update_avatar_key(
+            db,
+            user=current_user,
+            avatar_key=settings.default_avatar_key,
+            actor_id=current_user.id,
+        )
+        db.commit()
+        db.refresh(user)
+
+        if previous_avatar_key is not None:
+            try:
+                storage_service.delete_object(previous_avatar_key)
+            except Exception:
+                logger.exception(
+                    "Failed to delete user avatar from S3: user_id=%s key=%s",
+                    user.id,
+                    previous_avatar_key,
+                )
+
         return user
 
     def delete_user(self, db: Session, user_id: int) -> None:

@@ -13,10 +13,16 @@ class FakeS3Client:
     def __init__(self) -> None:
         """FakeS3Clientを初期化する。"""
         self.put_object_kwargs: dict[str, object] | None = None
+        self.delete_object_kwargs: dict[str, object] | None = None
 
     def put_object(self, **kwargs: object) -> object:
         """put_objectの呼び出し内容を保持する。"""
         self.put_object_kwargs = kwargs
+        return {}
+
+    def delete_object(self, **kwargs: object) -> object:
+        """delete_objectの呼び出し内容を保持する。"""
+        self.delete_object_kwargs = kwargs
         return {}
 
     def generate_presigned_url(
@@ -76,6 +82,19 @@ def test_generate_presigned_url_returns_none_without_avatar_key() -> None:
     storage_service = StorageService(s3_client=FakeS3Client())
 
     assert storage_service.generate_presigned_url(None) is None
+
+
+def test_delete_object_deletes_s3_object() -> None:
+    """指定keyのS3オブジェクトを削除する。"""
+    s3_client = FakeS3Client()
+    storage_service = StorageService(s3_client=s3_client)
+
+    storage_service.delete_object("users/1.png")
+
+    assert s3_client.delete_object_kwargs == {
+        "Bucket": settings.aws_s3_bucket_name,
+        "Key": "users/1.png",
+    }
 
 
 def test_storage_service_uses_configured_aws_credentials(

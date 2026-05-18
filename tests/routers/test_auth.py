@@ -14,6 +14,10 @@ from app.models.user import User
 class FakeStorageService:
     """テスト用StorageService。"""
 
+    def __init__(self) -> None:
+        """FakeStorageServiceを初期化する。"""
+        self.deleted_keys: list[str] = []
+
     def upload_user_avatar(
         self,
         *,
@@ -30,6 +34,10 @@ class FakeStorageService:
             return None
 
         return f"https://example.com/{avatar_key}?signature=test"
+
+    def delete_object(self, key: str) -> None:
+        """削除対象keyを保持する。"""
+        self.deleted_keys.append(key)
 
 
 @pytest.fixture(autouse=True)
@@ -473,6 +481,88 @@ def test_update_me_avatar_requires_login(client: TestClient) -> None:
         "/auth/me/avatar",
         files={"file": ("avatar.png", b"image-bytes", "image/png")},
     )
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "message": "Invalid email or password",
+        "code": "INVALID_CREDENTIALS",
+    }
+
+
+def test_delete_me_avatar_resets_avatar_key_and_deletes_s3_object(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """本人アイコン削除でDBをデフォルトに戻し、旧S3オブジェクトを削除する。"""
+    from app.routers import auth
+
+    fake_storage_service = FakeStorageService()
+    monkeypatch.setattr(auth, "storage_service", fake_storage_service)
+    user = create_test_user(email="delete-avatar@example.com")
+    user.avatar_key = "users/1.png"
+    db.commit()
+    db.refresh(user)
+    access_token = create_access_token(subject=user.email)
+    client.cookies.set(
+        settings.auth_cookie_name,
+        access_token,
+        domain="testserver.local",
+        path="/",
+    )
+
+    response = client.delete("/auth/me/avatar")
+
+    assert response.status_code == 200
+    assert response.json()["avatar_url"] == (
+        "https://example.com/default-avatar.png?signature=test"
+    )
+    assert response.json()["version"] == user.version + 1
+    db.refresh(user)
+    assert user.avatar_key == settings.default_avatar_key
+    assert user.updated_by == user.id
+    assert fake_storage_service.deleted_keys == ["users/1.png"]
+
+
+def test_delete_me_avatar_does_not_delete_default_avatar(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """デフォルト画像の本人アイコン削除ではS3削除もDB更新もしない。"""
+    from app.routers import auth
+
+    fake_storage_service = FakeStorageService()
+    monkeypatch.setattr(auth, "storage_service", fake_storage_service)
+    user = create_test_user(email="default-avatar@example.com")
+    user.avatar_key = settings.default_avatar_key
+    db.commit()
+    db.refresh(user)
+    current_version = user.version
+    access_token = create_access_token(subject=user.email)
+    client.cookies.set(
+        settings.auth_cookie_name,
+        access_token,
+        domain="testserver.local",
+        path="/",
+    )
+
+    response = client.delete("/auth/me/avatar")
+
+    assert response.status_code == 200
+    assert response.json()["avatar_url"] == (
+        "https://example.com/default-avatar.png?signature=test"
+    )
+    db.refresh(user)
+    assert user.version == current_version
+    assert fake_storage_service.deleted_keys == []
+
+
+def test_delete_me_avatar_requires_login(client: TestClient) -> None:
+    """本人アイコン削除が未ログインユーザーを拒否することを確認する。"""
+    response = client.delete("/auth/me/avatar")
 
     assert response.status_code == 401
     assert response.json() == {

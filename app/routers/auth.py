@@ -178,3 +178,28 @@ def update_current_user_avatar(
         storage_service=storage_service,
     )
     return build_current_user_response(db, user)
+
+
+@router.delete(
+    "/me/avatar",
+    response_model=CurrentUserRead,
+)
+def delete_current_user_avatar(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CurrentUserRead:
+    """現在のログインユーザーのアイコン画像を削除する。
+
+    Args:
+        current_user: 認証済みユーザー。
+        db: DBセッション。
+
+    Returns:
+        更新された現在のログインユーザー情報。
+    """
+    user = user_service.delete_avatar(
+        db,
+        current_user=current_user,
+        storage_service=storage_service,
+    )
+    return build_current_user_response(db, user)

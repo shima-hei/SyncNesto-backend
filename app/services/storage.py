@@ -23,6 +23,10 @@ class S3Client(Protocol):
         """S3へオブジェクトを保存する。"""
         ...
 
+    def delete_object(self, **kwargs: object) -> object:
+        """S3からオブジェクトを削除する。"""
+        ...
+
     def generate_presigned_url(
         self,
         ClientMethod: str,
@@ -102,6 +106,17 @@ class StorageService:
                 "Key": avatar_key,
             },
             ExpiresIn=settings.aws_s3_presigned_url_expires_seconds,
+        )
+
+    def delete_object(self, key: str) -> None:
+        """S3オブジェクトを削除する。
+
+        Args:
+            key: 削除対象のS3オブジェクトキー。
+        """
+        self.s3_client.delete_object(
+            Bucket=settings.aws_s3_bucket_name,
+            Key=key,
         )
 
     def _get_image_extension(self, content_type: str | None) -> str:

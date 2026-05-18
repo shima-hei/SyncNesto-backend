@@ -352,6 +352,14 @@ image/webp
 2MB
 ```
 
+ユーザーアイコン削除には `DELETE /auth/me/avatar` を使います。
+
+```http
+DELETE /auth/me/avatar
+```
+
+削除時はDBのS3 keyを `default-avatar.png` に戻し、以前のユーザー固有画像をS3から削除します。すでにデフォルト画像の場合は、S3削除もDB更新も行いません。
+
 バックエンドは画像をS3へ保存し、DBにはS3 keyだけを保存します。ユーザー作成時は `default-avatar.png` をデフォルトのS3 keyとして設定します。APIレスポンスの `avatar_url` は署名付きURLです。`GET /auth/me`, `GET /users`, `GET /users/{user_id}` では、ユーザーに設定されているS3 keyから署名付きURLを生成して返します。
 
 `avatar_url` は有効期限付きなので、永続保存せず、画面表示時にAPIレスポンスから取得してください。
