@@ -42,16 +42,22 @@ def test_create_project_returns_project_for_system_admin(
 
     response = client.post(
         "/projects",
-        json={"name": "Project A", "description": "Description A"},
+        json={
+            "project_code": "PRJ-A",
+            "name": "Project A",
+            "description": "Description A",
+            "status": "active",
+        },
     )
 
     assert response.status_code == 201
-    assert response.json() == {
-        "id": 1,
-        "name": "Project A",
-        "description": "Description A",
-        "version": 1,
-    }
+    assert response.json()["project_code"] == "PRJ-A"
+    assert response.json()["name"] == "Project A"
+    assert response.json()["description"] == "Description A"
+    assert response.json()["status"] == "active"
+    assert response.json()["version"] == 1
+    assert response.json()["created_by"] == admin_user.id
+    assert response.json()["updated_by"] == admin_user.id
 
 
 def test_create_project_requires_project_create_permission(
@@ -67,6 +73,34 @@ def test_create_project_requires_project_create_permission(
     assert response.status_code == 403
 
 
+def test_create_project_rejects_duplicate_project_code(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+) -> None:
+    """重複project_codeでのプロジェクト作成を拒否する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    create_test_project(project_code="DUP", name="Existing")
+    authorize_as(client, admin_user)
+
+    response = client.post(
+        "/projects",
+        json={
+            "project_code": "DUP",
+            "name": "Duplicate",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "message": "Project code already exists",
+        "code": "BAD_REQUEST",
+    }
+
+
 def test_list_projects_returns_all_projects_for_system_admin(
     client: TestClient,
     create_test_user: Callable[..., User],
@@ -77,14 +111,17 @@ def test_list_projects_returns_all_projects_for_system_admin(
         email="admin@example.com",
         system_role="system_admin",
     )
-    create_test_project(name="Project A")
-    create_test_project(name="Project B")
+    create_test_project(project_code="PRJ-A", name="Project A")
+    create_test_project(project_code="PRJ-B", name="Project B")
     authorize_as(client, admin_user)
 
     response = client.get("/projects")
 
     assert response.status_code == 200
-    assert [project["name"] for project in response.json()] == [
+    assert response.json()["total"] == 2
+    assert response.json()["page"] == 1
+    assert response.json()["page_size"] == 20
+    assert [project["name"] for project in response.json()["items"]] == [
         "Project A",
         "Project B",
     ]
@@ -98,22 +135,92 @@ def test_list_projects_returns_joined_projects_for_project_member(
 ) -> None:
     """所属プロジェクトのみ取得できることを確認する。"""
     user = create_test_user(email="member@example.com")
-    joined_project = create_test_project(name="Joined")
-    create_test_project(name="Not Joined")
+    joined_project = create_test_project(project_code="JOINED", name="Joined")
+    create_test_project(project_code="NOT-JOINED", name="Not Joined")
     assign_project_role(user=user, project=joined_project, role_key="viewer")
     authorize_as(client, user)
 
     response = client.get("/projects")
 
     assert response.status_code == 200
-    assert response.json() == [
-        {
-            "id": joined_project.id,
-            "name": "Joined",
-            "description": "Project Description",
-            "version": 1,
-        }
-    ]
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["id"] == joined_project.id
+    assert response.json()["items"][0]["project_code"] == "JOINED"
+    assert response.json()["items"][0]["name"] == "Joined"
+    assert "version" not in response.json()["items"][0]
+
+
+def test_list_projects_paginates_projects_for_system_admin(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+) -> None:
+    """プロジェクト一覧がページングされることを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    create_test_project(project_code="PRJ-A", name="Project A")
+    create_test_project(project_code="PRJ-B", name="Project B")
+    authorize_as(client, admin_user)
+
+    response = client.get("/projects?page=2&page_size=1")
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 2
+    assert response.json()["page"] == 2
+    assert response.json()["page_size"] == 1
+    assert response.json()["items"][0]["project_code"] == "PRJ-B"
+
+
+def test_list_projects_searches_projects(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+) -> None:
+    """プロジェクト一覧がproject_code/name/descriptionで検索できることを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    create_test_project(
+        project_code="SYNC",
+        name="Syncnesto",
+        description="Backend project",
+    )
+    create_test_project(
+        project_code="OTHER",
+        name="Other",
+        description="Other project",
+    )
+    authorize_as(client, admin_user)
+
+    response = client.get("/projects?q=Backend")
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["project_code"] == "SYNC"
+
+
+def test_list_projects_filters_by_status(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+) -> None:
+    """プロジェクト一覧がstatusで絞り込みできることを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    create_test_project(project_code="ACTIVE", name="Active", status="active")
+    create_test_project(project_code="ARCHIVED", name="Archived", status="archived")
+    authorize_as(client, admin_user)
+
+    response = client.get("/projects?status=archived")
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["project_code"] == "ARCHIVED"
 
 
 def test_read_project_allows_project_viewer(
@@ -124,14 +231,23 @@ def test_read_project_allows_project_viewer(
 ) -> None:
     """viewerが所属プロジェクトを取得できることを確認する。"""
     user = create_test_user(email="viewer@example.com")
-    project = create_test_project(name="Readable")
+    project = create_test_project(
+        project_code="READ",
+        name="Readable",
+        status="active",
+    )
     assign_project_role(user=user, project=project, role_key="viewer")
     authorize_as(client, user)
 
     response = client.get(f"/projects/{project.id}")
 
     assert response.status_code == 200
+    assert response.json()["project_code"] == "READ"
     assert response.json()["name"] == "Readable"
+    assert response.json()["status"] == "active"
+    assert response.json()["version"] == project.version
+    assert "created_at" in response.json()
+    assert "updated_at" in response.json()
 
 
 def test_read_project_rejects_non_member(
@@ -163,12 +279,26 @@ def test_update_project_allows_project_admin(
 
     response = client.patch(
         f"/projects/{project.id}",
-        json={"name": "After", "version": project.version},
+        json={
+            "project_code": "AFTER",
+            "name": "After",
+            "description": None,
+            "status": "archived",
+            "start_date": "2026-05-01",
+            "end_date": "2026-05-31",
+            "version": project.version,
+        },
     )
 
     assert response.status_code == 200
+    assert response.json()["project_code"] == "AFTER"
     assert response.json()["name"] == "After"
+    assert response.json()["description"] is None
+    assert response.json()["status"] == "archived"
+    assert response.json()["start_date"] == "2026-05-01"
+    assert response.json()["end_date"] == "2026-05-31"
     assert response.json()["version"] == project.version + 1
+    assert response.json()["updated_by"] == user.id
 
 
 def test_update_project_rejects_stale_version_with_current_project(
@@ -194,16 +324,13 @@ def test_update_project_rejects_stale_version_with_current_project(
     )
 
     assert response.status_code == 409
-    assert response.json() == {
-        "message": "Resource version conflict",
-        "code": "VERSION_CONFLICT",
-        "current": {
-            "id": project.id,
-            "name": "Latest",
-            "description": "Project Description",
-            "version": 2,
-        },
-    }
+    assert response.json()["message"] == "Resource version conflict"
+    assert response.json()["code"] == "VERSION_CONFLICT"
+    assert response.json()["current"]["id"] == project.id
+    assert response.json()["current"]["project_code"] == project.project_code
+    assert response.json()["current"]["name"] == "Latest"
+    assert response.json()["current"]["description"] == "Project Description"
+    assert response.json()["current"]["version"] == 2
 
 
 def test_update_project_requires_version(
@@ -261,6 +388,7 @@ def test_delete_project_allows_project_admin(
     assert response.status_code == 204
     db.refresh(project)
     assert project.deleted_at is not None
+    assert project.updated_by == user.id
 
 
 def test_add_project_member_allows_project_admin(
@@ -268,7 +396,6 @@ def test_add_project_member_allows_project_admin(
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
     assign_project_role: Callable[..., ProjectMember],
-    db: Session,
 ) -> None:
     """project_adminがメンバーを追加できることを確認する。"""
     admin_user = create_test_user(email="project-admin@example.com")
@@ -276,16 +403,15 @@ def test_add_project_member_allows_project_admin(
     project = create_test_project(name="Project")
     assign_project_role(user=admin_user, project=project, role_key="project_admin")
     authorize_as(client, admin_user)
-    role_id = get_project_role_id(db, "member")
 
     response = client.post(
         f"/projects/{project.id}/members",
-        json={"user_id": target_user.id, "role_id": role_id},
+        json={"user_id": target_user.id, "role_key": "member"},
     )
 
     assert response.status_code == 201
     assert response.json()["user_id"] == target_user.id
-    assert response.json()["role_id"] == role_id
+    assert response.json()["role"] == {"key": "member", "name": "メンバー"}
 
 
 def test_add_project_member_rejects_viewer(
@@ -293,7 +419,6 @@ def test_add_project_member_rejects_viewer(
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
     assign_project_role: Callable[..., ProjectMember],
-    db: Session,
 ) -> None:
     """viewerのメンバー追加を拒否する。"""
     viewer = create_test_user(email="viewer@example.com")
@@ -301,14 +426,38 @@ def test_add_project_member_rejects_viewer(
     project = create_test_project(name="Project")
     assign_project_role(user=viewer, project=project, role_key="viewer")
     authorize_as(client, viewer)
-    role_id = get_project_role_id(db, "member")
 
     response = client.post(
         f"/projects/{project.id}/members",
-        json={"user_id": target_user.id, "role_id": role_id},
+        json={"user_id": target_user.id, "role_key": "member"},
     )
 
     assert response.status_code == 403
+
+
+def test_add_project_member_rejects_invalid_role_key(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+) -> None:
+    """存在しないrole_keyでのメンバー追加を拒否する。"""
+    admin_user = create_test_user(email="admin@example.com")
+    target_user = create_test_user(email="target@example.com")
+    project = create_test_project(name="Project")
+    assign_project_role(user=admin_user, project=project, role_key="project_admin")
+    authorize_as(client, admin_user)
+
+    response = client.post(
+        f"/projects/{project.id}/members",
+        json={"user_id": target_user.id, "role_key": "unknown_role"},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "message": "Project role not found",
+        "code": "NOT_FOUND",
+    }
 
 
 def test_list_project_members_allows_project_viewer(
@@ -331,7 +480,7 @@ def test_list_project_members_allows_project_viewer(
             "id": member.id,
             "project_id": project.id,
             "user_id": viewer.id,
-            "role_id": member.role_id,
+            "role": {"key": "viewer", "name": "閲覧者"},
             "version": 1,
         }
     ]
@@ -342,7 +491,6 @@ def test_update_project_member_allows_project_admin(
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
     assign_project_role: Callable[..., ProjectMember],
-    db: Session,
 ) -> None:
     """project_adminがメンバーロールを変更できることを確認。"""
     admin_user = create_test_user(email="admin@example.com")
@@ -351,16 +499,15 @@ def test_update_project_member_allows_project_admin(
     assign_project_role(user=admin_user, project=project, role_key="project_admin")
     member = assign_project_role(user=target_user, project=project, role_key="viewer")
     authorize_as(client, admin_user)
-    role_id = get_project_role_id(db, "member")
 
     response = client.patch(
         f"/projects/{project.id}/members/{target_user.id}",
-        json={"role_id": role_id, "version": member.version},
+        json={"role_key": "member", "version": member.version},
     )
 
     assert response.status_code == 200
     assert response.json()["id"] == member.id
-    assert response.json()["role_id"] == role_id
+    assert response.json()["role"] == {"key": "member", "name": "メンバー"}
     assert response.json()["version"] == member.version + 1
 
 
@@ -377,7 +524,6 @@ def test_update_project_member_rejects_stale_version_with_current_member(
     project = create_test_project(name="Project")
     assign_project_role(user=admin_user, project=project, role_key="project_admin")
     member = assign_project_role(user=target_user, project=project, role_key="viewer")
-    member_role_id = get_project_role_id(db, "member")
     manager_role_id = get_project_role_id(db, "manager")
     member.role_id = manager_role_id
     member.version = 2
@@ -387,7 +533,7 @@ def test_update_project_member_rejects_stale_version_with_current_member(
 
     response = client.patch(
         f"/projects/{project.id}/members/{target_user.id}",
-        json={"role_id": member_role_id, "version": 1},
+        json={"role_key": "member", "version": 1},
     )
 
     assert response.status_code == 409
@@ -398,7 +544,10 @@ def test_update_project_member_rejects_stale_version_with_current_member(
             "id": member.id,
             "project_id": project.id,
             "user_id": target_user.id,
-            "role_id": manager_role_id,
+            "role": {
+                "key": "manager",
+                "name": "マネージャー",
+            },
             "version": 2,
         },
     }
@@ -409,7 +558,6 @@ def test_update_project_member_requires_version(
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
     assign_project_role: Callable[..., ProjectMember],
-    db: Session,
 ) -> None:
     """メンバー更新時にversionが必須であることを確認する。"""
     admin_user = create_test_user(email="admin@example.com")
@@ -418,14 +566,39 @@ def test_update_project_member_requires_version(
     assign_project_role(user=admin_user, project=project, role_key="project_admin")
     assign_project_role(user=target_user, project=project, role_key="viewer")
     authorize_as(client, admin_user)
-    role_id = get_project_role_id(db, "member")
 
     response = client.patch(
         f"/projects/{project.id}/members/{target_user.id}",
-        json={"role_id": role_id},
+        json={"role_key": "member"},
     )
 
     assert response.status_code == 422
+
+
+def test_update_project_member_rejects_invalid_role_key(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+) -> None:
+    """存在しないrole_keyでのメンバー更新を拒否する。"""
+    admin_user = create_test_user(email="admin@example.com")
+    target_user = create_test_user(email="target@example.com")
+    project = create_test_project(name="Project")
+    assign_project_role(user=admin_user, project=project, role_key="project_admin")
+    member = assign_project_role(user=target_user, project=project, role_key="viewer")
+    authorize_as(client, admin_user)
+
+    response = client.patch(
+        f"/projects/{project.id}/members/{target_user.id}",
+        json={"role_key": "unknown_role", "version": member.version},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "message": "Project role not found",
+        "code": "NOT_FOUND",
+    }
 
 
 def test_remove_project_member_allows_project_admin(
@@ -441,10 +614,36 @@ def test_remove_project_member_allows_project_admin(
     project = create_test_project(name="Project")
     assign_project_role(user=admin_user, project=project, role_key="project_admin")
     member = assign_project_role(user=target_user, project=project, role_key="viewer")
+    member_id = member.id
     authorize_as(client, admin_user)
 
     response = client.delete(f"/projects/{project.id}/members/{target_user.id}")
 
     assert response.status_code == 204
-    db.refresh(member)
-    assert member.deleted_at is not None
+    db.expire_all()
+    assert db.get(ProjectMember, member_id) is None
+
+
+def test_remove_project_member_allows_readding_same_user(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+) -> None:
+    """物理削除後に同じユーザーを再追加できることを確認する。"""
+    admin_user = create_test_user(email="admin@example.com")
+    target_user = create_test_user(email="target@example.com")
+    project = create_test_project(name="Project")
+    assign_project_role(user=admin_user, project=project, role_key="project_admin")
+    assign_project_role(user=target_user, project=project, role_key="viewer")
+    authorize_as(client, admin_user)
+
+    delete_response = client.delete(f"/projects/{project.id}/members/{target_user.id}")
+    create_response = client.post(
+        f"/projects/{project.id}/members",
+        json={"user_id": target_user.id, "role_key": "member"},
+    )
+
+    assert delete_response.status_code == 204
+    assert create_response.status_code == 201
+    assert create_response.json()["role"] == {"key": "member", "name": "メンバー"}

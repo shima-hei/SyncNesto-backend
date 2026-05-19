@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi.testclient import TestClient
@@ -202,10 +203,17 @@ def create_test_project(db: Session) -> Callable[..., "Project"]:
 
     def _create_test_project(
         *,
+        project_code: str | None = None,
         name: str = "Project Name",
         description: str | None = "Project Description",
+        status: str = "active",
     ) -> Project:
-        project = Project(name=name, description=description)
+        project = Project(
+            project_code=project_code or f"PRJ-{uuid4().hex[:8].upper()}",
+            name=name,
+            description=description,
+            status=status,
+        )
         db.add(project)
         db.commit()
         db.refresh(project)

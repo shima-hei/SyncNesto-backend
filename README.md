@@ -283,13 +283,19 @@ DELETE /projects/{project_id}
 
 ```text
 POST   /projects                project:create
-GET    /projects                ログイン必須
+GET    /projects                ログイン必須、page/page_size/q/status対応
 GET    /projects/{project_id}   project:read
 PATCH  /projects/{project_id}   project:update
 DELETE /projects/{project_id}   project:delete
 ```
 
 `GET /projects` は、システム権限で `project:read` を持つユーザーには全プロジェクトを返し、それ以外のログインユーザーには所属プロジェクトのみ返します。
+
+`project_code` は必須かつ一意です。プロジェクト一覧はユーザー一覧と同じくページングレスポンスを返し、一覧には `version` を含めません。
+
+```text
+GET /projects?page=1&page_size=20&q=sync&status=active
+```
 
 ### Project Members
 
@@ -308,6 +314,17 @@ GET    /projects/{project_id}/members              project:read
 PATCH  /projects/{project_id}/members/{user_id}    project:invite_member
 DELETE /projects/{project_id}/members/{user_id}    project:remove_member
 ```
+
+メンバー追加・更新では `role_id` ではなく project role の `role_key` を使います。
+
+```json
+{
+  "user_id": 10,
+  "role_key": "member"
+}
+```
+
+メンバー削除は物理削除です。同じユーザーを再度メンバー追加できます。
 
 ### User Login
 

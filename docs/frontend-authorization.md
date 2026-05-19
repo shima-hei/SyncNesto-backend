@@ -224,13 +224,46 @@ is_active: true/false
 
 ```text
 POST   /projects                project:create
-GET    /projects                ログイン必須
+GET    /projects                ログイン必須、page/page_size/q/status対応
 GET    /projects/{project_id}   project:read
 PATCH  /projects/{project_id}   project:update, version必須
 DELETE /projects/{project_id}   project:delete
 ```
 
 `GET /projects` は、`project:read` を持つ system role のユーザーには全プロジェクトを返します。それ以外のログインユーザーには、所属プロジェクトのみ返します。
+
+`project_code` は必須かつ一意のプロジェクト識別子です。一覧レスポンスには `version` を含めません。編集画面では `GET /projects/{project_id}` で詳細を取得してください。
+
+`GET /projects` のクエリ:
+
+```text
+page: 1以上。default 1
+page_size: 1-100。default 20
+q: project_code, name, description の部分一致検索
+status: active/archived などのステータス絞り込み
+```
+
+レスポンス例:
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "project_code": "SYNC",
+      "name": "Syncnesto",
+      "description": "Backend project",
+      "status": "active",
+      "start_date": "2026-05-01",
+      "end_date": null,
+      "updated_at": "2026-05-19T10:00:00Z"
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "page_size": 20
+}
+```
 
 ### Project Members
 
@@ -240,6 +273,32 @@ GET    /projects/{project_id}/members              project:read
 PATCH  /projects/{project_id}/members/{user_id}    project:invite_member, version必須
 DELETE /projects/{project_id}/members/{user_id}    project:remove_member
 ```
+
+メンバー追加・更新では `role_id` ではなく project role の `role_key` を送ります。
+
+```json
+{
+  "user_id": 10,
+  "role_key": "member"
+}
+```
+
+レスポンスでは role key/name を返します。
+
+```json
+{
+  "id": 1,
+  "project_id": 1,
+  "user_id": 10,
+  "role": {
+    "key": "member",
+    "name": "メンバー"
+  },
+  "version": 1
+}
+```
+
+`DELETE /projects/{project_id}/members/{user_id}` は物理削除です。同じユーザーを再度メンバー追加できます。
 
 ## 排他制御
 

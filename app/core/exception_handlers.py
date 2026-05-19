@@ -3,6 +3,7 @@
 import logging
 
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 from app.core.exceptions import (
@@ -78,6 +79,6 @@ def register_exception_handlers(app: FastAPI) -> None:
             "code": exc.code,
         }
         if isinstance(exc, VersionConflictError):
-            content["current"] = exc.current
+            content["current"] = jsonable_encoder(exc.current)
 
         return JSONResponse(status_code=status_code, content=content)

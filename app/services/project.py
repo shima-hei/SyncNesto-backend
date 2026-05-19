@@ -2,7 +2,12 @@
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ConflictError, NotFoundError, VersionConflictError
+from app.core.exceptions import (
+    BadRequestError,
+    ConflictError,
+    NotFoundError,
+    VersionConflictError,
+)
 from app.models.project import Project, ProjectMember
 from app.models.user import User
 from app.repositories.project import ProjectMemberRepository, ProjectRepository
@@ -11,7 +16,6 @@ from app.repositories.user import UserRepository
 from app.schemas.project import (
     ProjectCreate,
     ProjectMemberCreate,
-    ProjectMemberRead,
     ProjectMemberUpdate,
     ProjectRead,
     ProjectUpdate,
@@ -36,17 +40,26 @@ class ProjectService:
         self.repository = repository or ProjectRepository()
         self.authorization_service = authorization_service or AuthorizationService()
 
-    def create_project(self, db: Session, project_in: ProjectCreate) -> Project:
+    def create_project(
+        self,
+        db: Session,
+        project_in: ProjectCreate,
+        actor_id: int | None = None,
+    ) -> Project:
         """プロジェクトを作成する。
 
         Args:
             db: DBセッション。
             project_in: プロジェクト作成リクエストの入力値。
+            actor_id: 作成者ユーザーID。
 
         Returns:
             作成されたプロジェクト。
         """
-        return self.repository.create(db, project_in)
+        if self.repository.get_by_project_code(db, project_in.project_code) is not None:
+            raise BadRequestError("Project code already exists")
+
+        return self.repository.create(db, project_in, actor_id=actor_id)
 
     def list_projects(self, db: Session, current_user: User) -> list[Project]:
         """ユーザーが閲覧可能なプロジェクト一覧を取得する。
@@ -66,6 +79,51 @@ class ProjectService:
             return self.repository.list(db)
 
         return self.repository.list_by_user(db, current_user.id)
+
+    def list_projects_paginated(
+        self,
+        db: Session,
+        current_user: User,
+        *,
+        page: int,
+        page_size: int,
+        q: str | None = None,
+        status: str | None = None,
+    ) -> tuple[list[Project], int]:
+        """ユーザーが閲覧可能なプロジェクト一覧をページング付きで取得する。
+
+        Args:
+            db: DBセッション。
+            current_user: 認証済みユーザー。
+            page: ページ番号。
+            page_size: 1ページあたりの件数。
+            q: 検索キーワード。
+            status: ステータス絞り込み。
+
+        Returns:
+            閲覧可能なプロジェクト一覧と総件数。
+        """
+        if self.authorization_service.has_system_permission(
+            db,
+            user=current_user,
+            permission_code="project:read",
+        ):
+            return self.repository.list_paginated(
+                db,
+                page=page,
+                page_size=page_size,
+                q=q,
+                status=status,
+            )
+
+        return self.repository.list_by_user_paginated(
+            db,
+            user_id=current_user.id,
+            page=page,
+            page_size=page_size,
+            q=q,
+            status=status,
+        )
 
     def get_project(self, db: Session, project_id: int) -> Project:
         """プロジェクトを取得する。
@@ -91,6 +149,7 @@ class ProjectService:
         db: Session,
         project_id: int,
         project_in: ProjectUpdate,
+        actor_id: int | None = None,
     ) -> Project:
         """プロジェクトを更新する。
 
@@ -98,6 +157,7 @@ class ProjectService:
             db: DBセッション。
             project_id: 更新対象プロジェクトID。
             project_in: プロジェクト更新リクエストの入力値。
+            actor_id: 更新者ユーザーID。
 
         Returns:
             更新されたプロジェクト。
@@ -110,17 +170,36 @@ class ProjectService:
             current = ProjectRead.model_validate(project).model_dump()
             raise VersionConflictError(current=current)
 
-        return self.repository.update(db, project=project, project_in=project_in)
+        if (
+            project_in.project_code is not None
+            and project_in.project_code != project.project_code
+            and self.repository.get_by_project_code(db, project_in.project_code)
+            is not None
+        ):
+            raise BadRequestError("Project code already exists")
 
-    def delete_project(self, db: Session, project_id: int) -> None:
+        return self.repository.update(
+            db,
+            project=project,
+            project_in=project_in,
+            actor_id=actor_id,
+        )
+
+    def delete_project(
+        self,
+        db: Session,
+        project_id: int,
+        actor_id: int | None = None,
+    ) -> None:
         """プロジェクトを論理削除する。
 
         Args:
             db: DBセッション。
             project_id: 削除対象プロジェクトID。
+            actor_id: 更新者ユーザーID。
         """
         project = self.get_project(db, project_id)
-        self.repository.soft_delete(db, project)
+        self.repository.soft_delete(db, project, actor_id=actor_id)
 
 
 class ProjectMemberService:
@@ -181,7 +260,7 @@ class ProjectMemberService:
         """
         self._ensure_project_exists(db, project_id)
         self._ensure_user_exists(db, member_in.user_id)
-        self._ensure_project_role_exists(db, member_in.role_id)
+        role = self._get_project_role_by_key(db, member_in.role_key)
         existing_member = self.repository.get_by_project_user(
             db,
             project_id=project_id,
@@ -194,7 +273,7 @@ class ProjectMemberService:
             db,
             project_id=project_id,
             user_id=member_in.user_id,
-            role_id=member_in.role_id,
+            role_id=role.id,
         )
 
     def update_member(
@@ -221,14 +300,14 @@ class ProjectMemberService:
         """
         member = self._get_member(db, project_id=project_id, user_id=user_id)
         if member.version != member_in.version:
-            current = ProjectMemberRead.model_validate(member).model_dump()
+            current = self._build_member_current(db, member)
             raise VersionConflictError(current=current)
 
-        self._ensure_project_role_exists(db, member_in.role_id)
-        return self.repository.update_role(db, member=member, role_id=member_in.role_id)
+        role = self._get_project_role_by_key(db, member_in.role_key)
+        return self.repository.update_role(db, member=member, role_id=role.id)
 
     def remove_member(self, db: Session, *, project_id: int, user_id: int) -> None:
-        """プロジェクトメンバーを論理削除する。
+        """プロジェクトメンバーを物理削除する。
 
         Args:
             db: DBセッション。
@@ -236,7 +315,7 @@ class ProjectMemberService:
             user_id: 削除対象ユーザーID。
         """
         member = self._get_member(db, project_id=project_id, user_id=user_id)
-        self.repository.soft_delete(db, member)
+        self.repository.delete(db, member)
 
     def _ensure_project_exists(self, db: Session, project_id: int) -> None:
         """プロジェクトが存在することを確認する。"""
@@ -248,11 +327,49 @@ class ProjectMemberService:
         if self.user_repository.get_by_id(db, user_id) is None:
             raise NotFoundError("User not found")
 
-    def _ensure_project_role_exists(self, db: Session, role_id: int) -> None:
-        """プロジェクトロールが存在することを確認する。"""
-        role = self.rbac_repository.get_role_by_id(db, role_id)
-        if role is None or role.scope != "project":
+    def _get_project_role_by_key(self, db: Session, role_key: str):
+        """project scopeのロールkeyからロールを取得する。
+
+        Args:
+            db: DBセッション。
+            role_key: プロジェクトロールkey。
+
+        Returns:
+            プロジェクトロール。
+
+        Raises:
+            NotFoundError: プロジェクトロールが存在しない場合。
+        """
+        role = self.rbac_repository.get_role_by_key_scope(
+            db,
+            key=role_key,
+            scope="project",
+        )
+        if role is None:
             raise NotFoundError("Project role not found")
+
+        return role
+
+    def _build_member_current(
+        self,
+        db: Session,
+        member: ProjectMember,
+    ) -> dict[str, object]:
+        """バージョン競合時に返す最新メンバー情報を組み立てる。"""
+        role = self.rbac_repository.get_role_by_id(db, member.role_id)
+        if role is None:
+            raise NotFoundError("Project role not found")
+
+        return {
+            "id": member.id,
+            "project_id": member.project_id,
+            "user_id": member.user_id,
+            "role": {
+                "key": role.key,
+                "name": role.name,
+            },
+            "version": member.version,
+        }
 
     def _get_member(
         self,
