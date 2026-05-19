@@ -4,6 +4,26 @@ Syncnesto のバックエンドAPIです。FastAPI、SQLAlchemy、Alembic、Post
 
 現在は認証・認可機能の土台として、ログインAPI、RBACによる管理者向けユーザー作成API、パスワードハッシュ化、共通例外ハンドラー、ロギング、テスト用PostgreSQL環境を整備しています。
 
+## 公開範囲とライセンス
+
+このリポジトリは公開状態でも参照できるようにしていますが、ソースコードおよびドキュメントの権利は著作者が保持します。
+
+```text
+Copyright (c) 2026 shima-hei
+All rights reserved.
+```
+
+著作者の明示的な許可なく、本ソフトウェアおよび関連ドキュメントの複製、再配布、改変、販売、公開、または派生物の作成を禁止します。
+
+このリポジトリを参照できることは、利用・改変・再配布の許諾を意味しません。利用条件が必要な場合は、著作者から個別に許可を得てください。
+
+公開前に確認すること:
+
+- `.env`, `.env.test`, `.venv`, `docker/postgres/pgdata`, `docker/pgadmin` はコミットしない
+- 実運用の `SECRET_KEY`, DBパスワード, AWS認証情報, JWT, Cookie, 個人情報をコミットしない
+- README内の環境変数はサンプル値であり、本番値ではない
+- `LICENSE` ファイルを追加する場合は、この All rights reserved 方針と矛盾しない内容にする
+
 ## 技術スタック
 
 - Python 3.14
@@ -40,6 +60,8 @@ Syncnesto のバックエンドAPIです。FastAPI、SQLAlchemy、Alembic、Post
 ## 環境変数
 
 開発用の設定は `.env` に置きます。
+
+以下はローカル開発用のサンプルです。公開リポジトリには実際の `.env` をコミットしません。本番環境では `SECRET_KEY`, `INITIAL_ADMIN_PASSWORD`, DBパスワード, AWS認証情報を必ず安全な値に差し替えてください。
 
 ```env
 DB_USER=admin
