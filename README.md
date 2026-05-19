@@ -17,12 +17,6 @@ All rights reserved.
 
 このリポジトリを参照できることは、利用・改変・再配布の許諾を意味しません。利用条件が必要な場合は、著作者から個別に許可を得てください。
 
-公開前に確認すること:
-
-- `.env`, `.env.test`, `.venv`, `docker/postgres/pgdata`, `docker/pgadmin` はコミットしない
-- 実運用の `SECRET_KEY`, DBパスワード, AWS認証情報, JWT, Cookie, 個人情報をコミットしない
-- README内の環境変数はサンプル値であり、本番値ではない
-- `LICENSE` ファイルを追加する場合は、この All rights reserved 方針と矛盾しない内容にする
 
 ## 技術スタック
 
