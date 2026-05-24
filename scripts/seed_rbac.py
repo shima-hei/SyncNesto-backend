@@ -41,6 +41,14 @@ PERMISSIONS = [
     ("document:create", "ドキュメントを作成する"),
     ("document:update", "ドキュメントを更新する"),
     ("document:delete", "ドキュメントを削除する"),
+    ("requirement:read", "要件定義を閲覧する"),
+    ("requirement:create", "要件定義を作成する"),
+    ("requirement:update", "要件定義を更新する"),
+    ("requirement:delete", "要件定義を削除する"),
+    ("requirement:comment", "要件定義にコメントする"),
+    ("requirement:review", "要件定義をレビューする"),
+    ("requirement:approve", "要件定義を承認する"),
+    ("requirement:link", "要件定義と成果物を紐づける"),
 ]
 
 ROLES = [
@@ -76,6 +84,14 @@ ROLE_PERMISSIONS = {
         "document:create",
         "document:update",
         "document:delete",
+        "requirement:read",
+        "requirement:create",
+        "requirement:update",
+        "requirement:delete",
+        "requirement:comment",
+        "requirement:review",
+        "requirement:approve",
+        "requirement:link",
     ],
     "manager": [
         "project:read",
@@ -93,6 +109,12 @@ ROLE_PERMISSIONS = {
         "document:read",
         "document:create",
         "document:update",
+        "requirement:read",
+        "requirement:create",
+        "requirement:update",
+        "requirement:comment",
+        "requirement:review",
+        "requirement:link",
     ],
     "member": [
         "project:read",
@@ -107,6 +129,11 @@ ROLE_PERMISSIONS = {
         "document:read",
         "document:create",
         "document:update",
+        "requirement:read",
+        "requirement:create",
+        "requirement:update",
+        "requirement:comment",
+        "requirement:link",
     ],
     "viewer": [
         "project:read",
@@ -114,6 +141,7 @@ ROLE_PERMISSIONS = {
         "test_plan:read",
         "test_case:read",
         "document:read",
+        "requirement:read",
     ],
 }
 

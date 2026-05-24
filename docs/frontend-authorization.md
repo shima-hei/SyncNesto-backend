@@ -131,10 +131,10 @@ viewer
 
 | role key | 表示名 | 主な操作権限 |
 |---|---|---|
-| `project_admin` | プロジェクト管理者 | プロジェクト閲覧/更新/削除、メンバー招待/削除、タスクCRUD、テスト設計書CRUD、テストケースCRUD/実行、ドキュメントCRUD |
-| `manager` | マネージャー | プロジェクト閲覧、タスクCRUD、テスト設計書閲覧/作成/更新、テストケース閲覧/作成/更新/実行、ドキュメント閲覧/作成/更新 |
-| `member` | メンバー | プロジェクト閲覧、タスク閲覧/作成/更新、テスト設計書閲覧/作成/更新、テストケース閲覧/実行、ドキュメント閲覧/作成/更新 |
-| `viewer` | 閲覧者 | プロジェクト、タスク、テスト設計書、テストケース、ドキュメントの閲覧 |
+| `project_admin` | プロジェクト管理者 | プロジェクト閲覧/更新/削除、メンバー招待/削除、タスクCRUD、テスト設計書CRUD、テストケースCRUD/実行、ドキュメントCRUD、要件定義CRUD/コメント/レビュー/承認/リンク |
+| `manager` | マネージャー | プロジェクト閲覧、タスクCRUD、テスト設計書閲覧/作成/更新、テストケース閲覧/作成/更新/実行、ドキュメント閲覧/作成/更新、要件定義閲覧/作成/更新/コメント/レビュー/リンク |
+| `member` | メンバー | プロジェクト閲覧、タスク閲覧/作成/更新、テスト設計書閲覧/作成/更新、テストケース閲覧/実行、ドキュメント閲覧/作成/更新、要件定義閲覧/作成/更新/コメント/リンク |
+| `viewer` | 閲覧者 | プロジェクト、タスク、テスト設計書、テストケース、ドキュメント、要件定義の閲覧 |
 
 ## API別の認可
 
@@ -226,6 +226,7 @@ is_active: true/false
 POST   /projects                project:create
 GET    /projects                ログイン必須、page/page_size/q/status対応
 GET    /projects/{project_id}   project:read
+GET    /projects/{project_id}/me ログイン必須
 PATCH  /projects/{project_id}   project:update, version必須
 DELETE /projects/{project_id}   project:delete
 ```
@@ -233,6 +234,33 @@ DELETE /projects/{project_id}   project:delete
 `GET /projects` は、`project:read` を持つ system role のユーザーには全プロジェクトを返します。それ以外のログインユーザーには、所属プロジェクトのみ返します。
 
 `project_code` は必須かつ一意のプロジェクト識別子です。一覧レスポンスには `version` を含めません。編集画面では `GET /projects/{project_id}` で詳細を取得してください。
+
+`GET /projects/{project_id}/me` は、現在ログイン中のユーザーが対象プロジェクトで持つproject roleと、system_admin判定を返します。プロジェクト配下画面のメニューやボタン表示制御に使います。API実行可否はバックエンドが各エンドポイントで再判定します。
+
+プロジェクトメンバーの場合:
+
+```json
+{
+  "project_id": 1,
+  "role": {
+    "key": "manager",
+    "name": "マネージャー"
+  },
+  "is_system_admin": false
+}
+```
+
+`system_admin` で、対象プロジェクトのメンバーではない場合:
+
+```json
+{
+  "project_id": 1,
+  "role": null,
+  "is_system_admin": true
+}
+```
+
+未参加かつ `system_admin` でもない場合は `403 Forbidden`、プロジェクトが存在しない場合は `404 Not Found` を返します。
 
 `GET /projects` のクエリ:
 
@@ -300,6 +328,172 @@ DELETE /projects/{project_id}/members/{user_id}    project:remove_member
 
 `DELETE /projects/{project_id}/members/{user_id}` は物理削除です。同じユーザーを再度メンバー追加できます。
 
+### Requirements
+
+要件定義APIはプロジェクト配下のリソースとして扱います。すべてのエンドポイントは `/projects/{project_id}` 配下です。
+
+要件定義書:
+
+```text
+POST   /projects/{project_id}/requirement-documents                 requirement:create
+GET    /projects/{project_id}/requirement-documents                 requirement:read, page/page_size/q/status対応
+GET    /projects/{project_id}/requirement-documents/{document_id}   requirement:read
+PATCH  /projects/{project_id}/requirement-documents/{document_id}   requirement:update, version必須
+DELETE /projects/{project_id}/requirement-documents/{document_id}   requirement:delete
+```
+
+要件:
+
+```text
+POST   /projects/{project_id}/requirements                          requirement:create
+GET    /projects/{project_id}/requirements                          requirement:read, page/page_size/document_id/q/status/requirement_type対応
+GET    /projects/{project_id}/requirements/{requirement_id}         requirement:read
+GET    /projects/{project_id}/requirements/{requirement_id}/summary requirement:read
+PATCH  /projects/{project_id}/requirements/{requirement_id}         requirement:update, version必須
+DELETE /projects/{project_id}/requirements/{requirement_id}         requirement:delete
+GET    /projects/{project_id}/requirements/{requirement_id}/revisions requirement:read
+```
+
+要件詳細:
+
+```text
+POST   /projects/{project_id}/requirements/{requirement_id}/details             requirement:update
+GET    /projects/{project_id}/requirements/{requirement_id}/details             requirement:read
+PATCH  /projects/{project_id}/requirements/{requirement_id}/details/{detail_id} requirement:update
+DELETE /projects/{project_id}/requirements/{requirement_id}/details/{detail_id} requirement:update
+```
+
+要件リンク:
+
+```text
+POST   /projects/{project_id}/requirements/{requirement_id}/links           requirement:link
+GET    /projects/{project_id}/requirements/{requirement_id}/links           requirement:read
+DELETE /projects/{project_id}/requirements/{requirement_id}/links/{link_id} requirement:link
+```
+
+要件コメント:
+
+```text
+POST   /projects/{project_id}/requirements/{requirement_id}/comments              requirement:comment
+GET    /projects/{project_id}/requirements/{requirement_id}/comments              requirement:read
+DELETE /projects/{project_id}/requirements/{requirement_id}/comments/{comment_id} requirement:comment
+```
+
+要件レビュー:
+
+```text
+POST   /projects/{project_id}/requirements/{requirement_id}/reviews             requirement:review
+GET    /projects/{project_id}/requirements/{requirement_id}/reviews             requirement:read
+PATCH  /projects/{project_id}/requirements/{requirement_id}/reviews/{review_id} requirement:review
+DELETE /projects/{project_id}/requirements/{requirement_id}/reviews/{review_id} requirement:review
+```
+
+`system_admin` は system permission により全プロジェクトの要件定義APIを操作できます。project roleでは、`project_admin` がすべて、`manager` が作成/更新/コメント/レビュー/リンク、`member` が作成/更新/コメント/リンク、`viewer` が閲覧のみ可能です。
+
+要件定義書作成リクエスト例:
+
+```json
+{
+  "title": "Syncnesto 要件定義書",
+  "document_code": "RD-001",
+  "status": "draft",
+  "purpose": "業務要件と機能要件を管理する",
+  "target_system_name": "Syncnesto",
+  "client_name": "QA部門",
+  "vendor_name": "Internal"
+}
+```
+
+要件作成リクエスト例:
+
+```json
+{
+  "document_id": 1,
+  "requirement_code": "REQ-001",
+  "requirement_type": "functional",
+  "category": "auth",
+  "title": "ログインできる",
+  "description": "登録済みユーザーがメールアドレスとパスワードでログインできる。",
+  "rationale": "認証済みユーザーのみ業務データへアクセスさせるため。",
+  "acceptance_criteria": "正しい認証情報でログインするとHttpOnly Cookieが発行される。",
+  "priority": "must",
+  "status": "draft",
+  "source": "業務ヒアリング",
+  "owner_id": 1
+}
+```
+
+要件更新時は `change_summary` と `reason` を送ると、改訂履歴に保存されます。
+
+```json
+{
+  "title": "ログインできること",
+  "version": 1,
+  "change_summary": "タイトルを明確化",
+  "reason": "レビュー指摘対応"
+}
+```
+
+要件詳細画面の初期表示には `GET /projects/{project_id}/requirements/{requirement_id}/summary` を使います。要件本体と関連情報をまとめて返します。
+
+```json
+{
+  "requirement": {
+    "id": 1,
+    "document_id": 1,
+    "requirement_code": "REQ-001",
+    "requirement_type": "functional",
+    "category": "auth",
+    "title": "ログインできる",
+    "description": "登録済みユーザーがログインできる。",
+    "priority": "must",
+    "status": "draft",
+    "version": 1,
+    "created_at": "2026-05-21T10:00:00Z",
+    "updated_at": "2026-05-21T10:00:00Z"
+  },
+  "details": [],
+  "links": [],
+  "comments": [],
+  "reviews": [],
+  "revisions": []
+}
+```
+
+`summary` の `comments` と `revisions` は直近20件のみ返します。コメント一覧や改訂履歴を全件表示する画面では、個別APIを使ってください。
+
+要件詳細は `detail_json` に種別ごとの差分情報を保存します。
+
+```json
+{
+  "detail_type": "screen",
+  "detail_json": {
+    "screen_name": "ログイン画面",
+    "url_path": "/login",
+    "input_items": ["email", "password"],
+    "actions": ["login"]
+  }
+}
+```
+
+要件リンクは成果物とのトレーサビリティに使います。
+
+```json
+{
+  "linked_type": "api",
+  "linked_id": "POST /auth/login"
+}
+```
+
+レビューの `status` は以下を想定しています。
+
+```text
+pending
+approved
+rejected
+commented
+```
+
 ## 排他制御
 
 更新APIは楽観的排他制御を行います。バックエンドは取得レスポンスに `version` を含め、フロントエンドは更新時にその `version` をリクエストへ含めます。
@@ -311,6 +505,8 @@ PATCH /auth/me
 PATCH /users/{user_id}
 PATCH /projects/{project_id}
 PATCH /projects/{project_id}/members/{user_id}
+PATCH /projects/{project_id}/requirement-documents/{document_id}
+PATCH /projects/{project_id}/requirements/{requirement_id}
 ```
 
 更新リクエスト例:
@@ -353,6 +549,32 @@ PATCH /projects/{project_id}/members/{user_id}
 ```
 
 フロントエンドでは、`409` を受け取った場合に `current` を画面へ反映し、ユーザーに再編集または再送信を促してください。
+
+## 重複エラー
+
+一意であるべき値が既に存在する場合、バックエンドは `409 Conflict` を返します。排他制御の `409` とは `code` で区別してください。
+
+```http
+409 Conflict
+```
+
+```json
+{
+  "message": "Requirement document code already exists",
+  "code": "DUPLICATE_RESOURCE"
+}
+```
+
+主な発生例:
+
+```text
+project_code が既に存在する
+同一プロジェクト内の document_code が既に存在する
+同一要件定義書内の requirement_code が既に存在する
+同一プロジェクトへ同じユーザーを追加しようとした
+```
+
+論理削除済みの行とDBの一意制約が衝突した場合も、バックエンドは `500` ではなく `409 DUPLICATE_RESOURCE` を返します。
 
 ## 本人プロフィール更新
 
@@ -497,4 +719,17 @@ const canViewProject = [
 }
 ```
 
-フロントエンドでは、`401` はログイン画面への誘導、`403` は権限なし表示、`409` は最新データの再表示として扱ってください。
+重複:
+
+```http
+409 Conflict
+```
+
+```json
+{
+  "message": "Resource already exists",
+  "code": "DUPLICATE_RESOURCE"
+}
+```
+
+フロントエンドでは、`401` はログイン画面への誘導、`403` は権限なし表示として扱ってください。`409 VERSION_CONFLICT` は最新データの再表示、`409 DUPLICATE_RESOURCE` は入力値の重複エラーとして扱ってください。

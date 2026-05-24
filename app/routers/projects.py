@@ -14,6 +14,7 @@ from app.models.project import Project, ProjectMember
 from app.models.user import User
 from app.repositories.rbac import RbacRepository
 from app.schemas.project import (
+    CurrentProjectRoleRead,
     ProjectCreate,
     ProjectListItem,
     ProjectListResponse,
@@ -144,6 +145,37 @@ def read_project(
         取得されたプロジェクト。
     """
     return project_service.get_project(db, project_id)
+
+
+@router.get(
+    "/{project_id}/me",
+    response_model=CurrentProjectRoleRead,
+)
+def read_current_project_role(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CurrentProjectRoleRead:
+    """現在のログインユーザーの対象プロジェクト内ロールを取得する。
+
+    Args:
+        project_id: 対象プロジェクトID。
+        current_user: 認証済みユーザー。
+        db: DBセッション。
+
+    Returns:
+        対象プロジェクト内ロールとsystem_admin判定。
+    """
+    role, is_system_admin = project_service.get_current_project_role(
+        db,
+        project_id=project_id,
+        current_user=current_user,
+    )
+    return CurrentProjectRoleRead(
+        project_id=project_id,
+        role=RoleRead.model_validate(role) if role is not None else None,
+        is_system_admin=is_system_admin,
+    )
 
 
 @router.patch(

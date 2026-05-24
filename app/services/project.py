@@ -1,14 +1,16 @@
 """プロジェクト関連のサービス層を定義するモジュール。"""
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
-    BadRequestError,
-    ConflictError,
+    DuplicateResourceError,
+    ForbiddenError,
     NotFoundError,
     VersionConflictError,
 )
 from app.models.project import Project, ProjectMember
+from app.models.rbac import Role
 from app.models.user import User
 from app.repositories.project import ProjectMemberRepository, ProjectRepository
 from app.repositories.rbac import RbacRepository
@@ -57,9 +59,13 @@ class ProjectService:
             作成されたプロジェクト。
         """
         if self.repository.get_by_project_code(db, project_in.project_code) is not None:
-            raise BadRequestError("Project code already exists")
+            raise DuplicateResourceError("Project code already exists")
 
-        return self.repository.create(db, project_in, actor_id=actor_id)
+        try:
+            return self.repository.create(db, project_in, actor_id=actor_id)
+        except IntegrityError as exc:
+            db.rollback()
+            raise DuplicateResourceError("Project code already exists") from exc
 
     def list_projects(self, db: Session, current_user: User) -> list[Project]:
         """ユーザーが閲覧可能なプロジェクト一覧を取得する。
@@ -176,14 +182,18 @@ class ProjectService:
             and self.repository.get_by_project_code(db, project_in.project_code)
             is not None
         ):
-            raise BadRequestError("Project code already exists")
+            raise DuplicateResourceError("Project code already exists")
 
-        return self.repository.update(
-            db,
-            project=project,
-            project_in=project_in,
-            actor_id=actor_id,
-        )
+        try:
+            return self.repository.update(
+                db,
+                project=project,
+                project_in=project_in,
+                actor_id=actor_id,
+            )
+        except IntegrityError as exc:
+            db.rollback()
+            raise DuplicateResourceError("Project code already exists") from exc
 
     def delete_project(
         self,
@@ -200,6 +210,43 @@ class ProjectService:
         """
         project = self.get_project(db, project_id)
         self.repository.soft_delete(db, project, actor_id=actor_id)
+
+    def get_current_project_role(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        current_user: User,
+    ) -> tuple[Role | None, bool]:
+        """現在のユーザーの対象プロジェクト内ロールを取得する。
+
+        Args:
+            db: DBセッション。
+            project_id: 対象プロジェクトID。
+            current_user: 認証済みユーザー。
+
+        Returns:
+            プロジェクトロールとsystem_admin判定。
+
+        Raises:
+            ForbiddenError: system_adminでもプロジェクトメンバーでもない場合。
+            NotFoundError: プロジェクトが存在しない場合。
+        """
+        self.get_project(db, project_id)
+        is_system_admin = self.authorization_service.has_system_permission(
+            db,
+            user=current_user,
+            permission_code="project:read",
+        )
+        role = ProjectMemberRepository().get_role_by_project_user(
+            db,
+            project_id=project_id,
+            user_id=current_user.id,
+        )
+        if role is None and not is_system_admin:
+            raise ForbiddenError()
+
+        return role, is_system_admin
 
 
 class ProjectMemberService:
@@ -256,7 +303,7 @@ class ProjectMemberService:
             追加されたプロジェクトメンバー。
 
         Raises:
-            ConflictError: 既に所属している場合。
+            DuplicateResourceError: 既に所属している場合。
         """
         self._ensure_project_exists(db, project_id)
         self._ensure_user_exists(db, member_in.user_id)
@@ -267,14 +314,18 @@ class ProjectMemberService:
             user_id=member_in.user_id,
         )
         if existing_member is not None:
-            raise ConflictError("Project member already exists")
+            raise DuplicateResourceError("Project member already exists")
 
-        return self.repository.create(
-            db,
-            project_id=project_id,
-            user_id=member_in.user_id,
-            role_id=role.id,
-        )
+        try:
+            return self.repository.create(
+                db,
+                project_id=project_id,
+                user_id=member_in.user_id,
+                role_id=role.id,
+            )
+        except IntegrityError as exc:
+            db.rollback()
+            raise DuplicateResourceError("Project member already exists") from exc
 
     def update_member(
         self,

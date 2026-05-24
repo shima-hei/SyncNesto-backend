@@ -94,10 +94,10 @@ def test_create_project_rejects_duplicate_project_code(
         },
     )
 
-    assert response.status_code == 400
+    assert response.status_code == 409
     assert response.json() == {
         "message": "Project code already exists",
-        "code": "BAD_REQUEST",
+        "code": "DUPLICATE_RESOURCE",
     }
 
 
@@ -263,6 +263,120 @@ def test_read_project_rejects_non_member(
     response = client.get(f"/projects/{project.id}")
 
     assert response.status_code == 403
+
+
+def test_read_current_project_role_returns_project_role_for_member(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+) -> None:
+    """プロジェクトメンバーの対象プロジェクト内ロールを返すことを確認する。"""
+    user = create_test_user(email="manager@example.com")
+    project = create_test_project(name="Project")
+    assign_project_role(user=user, project=project, role_key="manager")
+    authorize_as(client, user)
+
+    response = client.get(f"/projects/{project.id}/me")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "project_id": project.id,
+        "role": {"key": "manager", "name": "マネージャー"},
+        "is_system_admin": False,
+    }
+
+
+def test_read_current_project_role_returns_system_admin_without_project_role(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+) -> None:
+    """system_adminが未所属プロジェクトでもis_system_admin=trueで取得できることを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    project = create_test_project(name="Project")
+    authorize_as(client, admin_user)
+
+    response = client.get(f"/projects/{project.id}/me")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "project_id": project.id,
+        "role": None,
+        "is_system_admin": True,
+    }
+
+
+def test_read_current_project_role_returns_both_for_system_admin_member(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+) -> None:
+    """system_adminがプロジェクトロールも持つ場合は両方返すことを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    project = create_test_project(name="Project")
+    assign_project_role(user=admin_user, project=project, role_key="project_admin")
+    authorize_as(client, admin_user)
+
+    response = client.get(f"/projects/{project.id}/me")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "project_id": project.id,
+        "role": {"key": "project_admin", "name": "プロジェクト管理者"},
+        "is_system_admin": True,
+    }
+
+
+def test_read_current_project_role_rejects_non_member(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+) -> None:
+    """未参加かつsystem_adminでないユーザーの対象プロジェクト内ロール取得を拒否する。"""
+    user = create_test_user(email="outsider@example.com")
+    project = create_test_project(name="Project")
+    authorize_as(client, user)
+
+    response = client.get(f"/projects/{project.id}/me")
+
+    assert response.status_code == 403
+
+
+def test_read_current_project_role_returns_not_found_for_unknown_project(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """存在しないプロジェクトでは404を返すことを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    authorize_as(client, admin_user)
+
+    response = client.get("/projects/999/me")
+
+    assert response.status_code == 404
+    assert response.json() == {"message": "Project not found", "code": "NOT_FOUND"}
+
+
+def test_read_current_project_role_requires_authentication(
+    client: TestClient,
+    create_test_project: Callable[..., Project],
+) -> None:
+    """未認証の対象プロジェクト内ロール取得を拒否する。"""
+    project = create_test_project(name="Project")
+
+    response = client.get(f"/projects/{project.id}/me")
+
+    assert response.status_code == 401
 
 
 def test_update_project_allows_project_admin(

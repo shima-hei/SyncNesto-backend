@@ -52,6 +52,13 @@ class ConflictError(AppError):
     code = "CONFLICT"
 
 
+class DuplicateResourceError(ConflictError):
+    """一意であるべきリソースが既に存在する場合の例外。"""
+
+    message = "Resource already exists"
+    code = "DUPLICATE_RESOURCE"
+
+
 class VersionConflictError(ConflictError):
     """更新対象のバージョンが最新ではない場合の例外。"""
 

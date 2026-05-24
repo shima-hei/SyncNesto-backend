@@ -6,6 +6,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.project import Project, ProjectMember
+from app.models.rbac import Role
 from app.schemas.project import ProjectCreate, ProjectUpdate
 
 
@@ -343,6 +344,35 @@ class ProjectMemberRepository:
                 ProjectMember.project_id == project_id,
                 ProjectMember.user_id == user_id,
                 ProjectMember.deleted_at.is_(None),
+            )
+            .first()
+        )
+
+    def get_role_by_project_user(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        user_id: int,
+    ) -> Role | None:
+        """プロジェクトIDとユーザーIDでプロジェクトロールを取得する。
+
+        Args:
+            db: DBセッション。
+            project_id: プロジェクトID。
+            user_id: ユーザーID。
+
+        Returns:
+            一致するプロジェクトロール。存在しない場合はNone。
+        """
+        return (
+            db.query(Role)
+            .join(ProjectMember, ProjectMember.role_id == Role.id)
+            .filter(
+                ProjectMember.project_id == project_id,
+                ProjectMember.user_id == user_id,
+                ProjectMember.deleted_at.is_(None),
+                Role.scope == "project",
             )
             .first()
         )

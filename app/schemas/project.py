@@ -87,3 +87,11 @@ class ProjectMemberRead(BaseModel):
     user_id: int
     role: RoleRead
     version: int
+
+
+class CurrentProjectRoleRead(BaseModel):
+    """現在のログインユーザーのプロジェクトロール読み取りschema。"""
+
+    project_id: int
+    role: RoleRead | None
+    is_system_admin: bool

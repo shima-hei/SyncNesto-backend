@@ -1,0 +1,816 @@
+"""要件定義APIのテスト。"""
+
+from collections.abc import Callable
+from datetime import UTC, datetime
+
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from app.core.config import settings
+from app.core.security import create_access_token
+from app.models.project import Project, ProjectMember
+from app.models.requirement import (
+    Requirement,
+    RequirementComment,
+    RequirementDetail,
+    RequirementDocument,
+    RequirementLink,
+    RequirementReview,
+    RequirementRevision,
+)
+from app.models.user import User
+
+
+def authorize_as(client: TestClient, user: User) -> None:
+    """TestClientを指定ユーザーとして認証済みにする。"""
+    access_token = create_access_token(subject=user.email)
+    client.cookies.set(settings.auth_cookie_name, access_token)
+
+
+def test_create_requirement_document_allows_project_member(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+) -> None:
+    """memberが要件定義書を作成できることを確認する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(project_code="REQ", name="Requirement Project")
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/requirement-documents",
+        json={
+            "title": "Requirements",
+            "document_code": "RD-001",
+            "purpose": "Manage requirements",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["project_id"] == project.id
+    assert response.json()["title"] == "Requirements"
+    assert response.json()["document_code"] == "RD-001"
+    assert response.json()["version"] == 1
+    assert response.json()["created_by"] == user.id
+    assert response.json()["updated_by"] == user.id
+
+
+def test_create_requirement_document_rejects_viewer(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+) -> None:
+    """viewerの要件定義書作成を拒否する。"""
+    user = create_test_user(email="viewer@example.com")
+    project = create_test_project(name="Project")
+    assign_project_role(user=user, project=project, role_key="viewer")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/requirement-documents",
+        json={"title": "Requirements", "document_code": "RD-001"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_create_requirement_document_rejects_duplicate_document_code(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+) -> None:
+    """重複document_codeでの要件定義書作成を409で拒否する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    assign_project_role(user=user, project=project, role_key="member")
+    create_test_requirement_document(project=project, document_code="RD-DUP")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/requirement-documents",
+        json={"title": "Duplicate", "document_code": "RD-DUP"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "message": "Requirement document code already exists",
+        "code": "DUPLICATE_RESOURCE",
+    }
+
+
+def test_create_requirement_document_rejects_deleted_duplicate_document_code(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """論理削除済み行と衝突するdocument_codeを409で拒否する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    assign_project_role(user=user, project=project, role_key="member")
+    deleted_document = create_test_requirement_document(
+        project=project,
+        document_code="RD-DELETED",
+    )
+    deleted_document.deleted_at = datetime.now(UTC)
+    db.commit()
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/requirement-documents",
+        json={"title": "Duplicate", "document_code": "RD-DELETED"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "message": "Requirement document code already exists",
+        "code": "DUPLICATE_RESOURCE",
+    }
+
+
+def test_list_requirement_documents_allows_viewer(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+) -> None:
+    """viewerが要件定義書一覧を取得できることを確認する。"""
+    user = create_test_user(email="viewer@example.com")
+    project = create_test_project(name="Project")
+    assign_project_role(user=user, project=project, role_key="viewer")
+    create_test_requirement_document(project=project, title="A", document_code="RD-A")
+    create_test_requirement_document(project=project, title="B", document_code="RD-B")
+    authorize_as(client, user)
+
+    response = client.get(f"/projects/{project.id}/requirement-documents?page_size=1")
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 2
+    assert response.json()["page_size"] == 1
+    assert response.json()["items"][0]["document_code"] == "RD-A"
+
+
+def test_update_requirement_document_rejects_stale_version(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """古いversionでの要件定義書更新を409で拒否し、最新情報を返す。"""
+    user = create_test_user(email="manager@example.com")
+    project = create_test_project(name="Project")
+    assign_project_role(user=user, project=project, role_key="manager")
+    document = create_test_requirement_document(project=project, title="Current")
+    document.title = "Latest"
+    document.version = 2
+    db.commit()
+    db.refresh(document)
+    authorize_as(client, user)
+
+    response = client.patch(
+        f"/projects/{project.id}/requirement-documents/{document.id}",
+        json={"title": "Stale", "version": 1},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "VERSION_CONFLICT"
+    assert response.json()["current"]["id"] == document.id
+    assert response.json()["current"]["title"] == "Latest"
+    assert response.json()["current"]["version"] == 2
+
+
+def test_create_requirement_allows_member(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+) -> None:
+    """memberが要件を作成できることを確認する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/requirements",
+        json={
+            "document_id": document.id,
+            "requirement_code": "REQ-001",
+            "requirement_type": "functional",
+            "title": "Login",
+            "description": "User can login.",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["document_id"] == document.id
+    assert response.json()["requirement_code"] == "REQ-001"
+    assert response.json()["requirement_type"] == "functional"
+    assert response.json()["title"] == "Login"
+    assert response.json()["version"] == 1
+    assert response.json()["created_by"] == user.id
+
+
+def test_create_requirement_rejects_document_from_other_project(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+) -> None:
+    """別プロジェクトのdocument_idを使った要件作成を拒否する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(project_code="A", name="Project A")
+    other_project = create_test_project(project_code="B", name="Project B")
+    document = create_test_requirement_document(project=other_project)
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/requirements",
+        json={
+            "document_id": document.id,
+            "requirement_code": "REQ-001",
+            "requirement_type": "functional",
+            "title": "Login",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "message": "Requirement document not found",
+        "code": "NOT_FOUND",
+    }
+
+
+def test_create_requirement_rejects_duplicate_requirement_code(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """重複requirement_codeでの要件作成を409で拒否する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="member")
+    db.add(
+        Requirement(
+            document_id=document.id,
+            requirement_code="REQ-DUP",
+            requirement_type="functional",
+            title="Existing",
+        )
+    )
+    db.commit()
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/requirements",
+        json={
+            "document_id": document.id,
+            "requirement_code": "REQ-DUP",
+            "requirement_type": "functional",
+            "title": "Duplicate",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "message": "Requirement code already exists",
+        "code": "DUPLICATE_RESOURCE",
+    }
+
+
+def test_list_requirements_filters_by_document_and_status(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """要件一覧がdocument_id/statusで絞り込みできることを確認する。"""
+    user = create_test_user(email="viewer@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    other_document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="viewer")
+    db.add_all(
+        [
+            Requirement(
+                document_id=document.id,
+                requirement_code="REQ-A",
+                requirement_type="functional",
+                title="A",
+                status="approved",
+            ),
+            Requirement(
+                document_id=document.id,
+                requirement_code="REQ-B",
+                requirement_type="business",
+                title="B",
+                status="draft",
+            ),
+            Requirement(
+                document_id=other_document.id,
+                requirement_code="REQ-C",
+                requirement_type="functional",
+                title="C",
+                status="approved",
+            ),
+        ]
+    )
+    db.commit()
+    authorize_as(client, user)
+
+    response = client.get(
+        f"/projects/{project.id}/requirements"
+        f"?document_id={document.id}&status=approved"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["requirement_code"] == "REQ-A"
+
+
+def test_update_requirement_creates_revision(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """要件更新時に改訂履歴が作成されることを確認する。"""
+    user = create_test_user(email="manager@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="manager")
+    requirement = Requirement(
+        document_id=document.id,
+        requirement_code="REQ-001",
+        requirement_type="functional",
+        title="Before",
+    )
+    db.add(requirement)
+    db.commit()
+    db.refresh(requirement)
+    authorize_as(client, user)
+
+    response = client.patch(
+        f"/projects/{project.id}/requirements/{requirement.id}",
+        json={
+            "title": "After",
+            "version": requirement.version,
+            "change_summary": "タイトル変更",
+            "reason": "表現調整",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["title"] == "After"
+    assert response.json()["version"] == 2
+
+    revisions = db.query(RequirementRevision).all()
+    assert len(revisions) == 1
+    assert revisions[0].requirement_id == requirement.id
+    assert revisions[0].version == 2
+    assert revisions[0].changed_by == user.id
+    assert revisions[0].change_summary == "タイトル変更"
+    assert revisions[0].reason == "表現調整"
+    assert revisions[0].before_value["title"] == "Before"
+    assert revisions[0].after_value["title"] == "After"
+
+
+def test_update_requirement_rejects_viewer(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """viewerの要件更新を拒否する。"""
+    user = create_test_user(email="viewer@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="viewer")
+    requirement = Requirement(
+        document_id=document.id,
+        requirement_code="REQ-001",
+        requirement_type="functional",
+        title="Before",
+    )
+    db.add(requirement)
+    db.commit()
+    db.refresh(requirement)
+    authorize_as(client, user)
+
+    response = client.patch(
+        f"/projects/{project.id}/requirements/{requirement.id}",
+        json={"title": "After", "version": requirement.version},
+    )
+
+    assert response.status_code == 403
+
+
+def test_list_requirement_revisions_allows_viewer(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """viewerが要件改訂履歴を取得できることを確認する。"""
+    user = create_test_user(email="viewer@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="viewer")
+    requirement = Requirement(
+        document_id=document.id,
+        requirement_code="REQ-001",
+        requirement_type="functional",
+        title="Title",
+    )
+    db.add(requirement)
+    db.flush()
+    revision = RequirementRevision(
+        requirement_id=requirement.id,
+        version=1,
+        changed_by=user.id,
+        before_value=None,
+        after_value={"title": "Title"},
+    )
+    db.add(revision)
+    db.commit()
+    authorize_as(client, user)
+
+    response = client.get(
+        f"/projects/{project.id}/requirements/{requirement.id}/revisions"
+    )
+
+    assert response.status_code == 200
+    assert response.json()[0]["requirement_id"] == requirement.id
+    assert response.json()[0]["version"] == 1
+    assert response.json()[0]["after_value"] == {"title": "Title"}
+
+
+def test_requirement_detail_crud_allows_manager(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """managerが要件詳細を作成、取得、更新、削除できることを確認する。"""
+    user = create_test_user(email="manager@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="manager")
+    requirement = Requirement(
+        document_id=document.id,
+        requirement_code="REQ-001",
+        requirement_type="screen",
+        title="Screen",
+    )
+    db.add(requirement)
+    db.commit()
+    db.refresh(requirement)
+    authorize_as(client, user)
+
+    create_response = client.post(
+        f"/projects/{project.id}/requirements/{requirement.id}/details",
+        json={
+            "detail_type": "screen",
+            "detail_json": {"screen_name": "ログイン画面", "url_path": "/login"},
+        },
+    )
+    detail_id = create_response.json()["id"]
+    list_response = client.get(
+        f"/projects/{project.id}/requirements/{requirement.id}/details"
+    )
+    update_response = client.patch(
+        f"/projects/{project.id}/requirements/{requirement.id}/details/{detail_id}",
+        json={"detail_json": {"screen_name": "ログイン", "url_path": "/login"}},
+    )
+    delete_response = client.delete(
+        f"/projects/{project.id}/requirements/{requirement.id}/details/{detail_id}"
+    )
+
+    assert create_response.status_code == 201
+    assert create_response.json()["detail_type"] == "screen"
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["id"] == detail_id
+    assert update_response.status_code == 200
+    assert update_response.json()["detail_json"]["screen_name"] == "ログイン"
+    assert delete_response.status_code == 204
+    assert db.get(RequirementDetail, detail_id) is None
+
+
+def test_create_requirement_detail_rejects_viewer(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """viewerの要件詳細作成を拒否する。"""
+    user = create_test_user(email="viewer@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="viewer")
+    requirement = Requirement(
+        document_id=document.id,
+        requirement_code="REQ-001",
+        requirement_type="screen",
+        title="Screen",
+    )
+    db.add(requirement)
+    db.commit()
+    db.refresh(requirement)
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/requirements/{requirement.id}/details",
+        json={"detail_type": "screen", "detail_json": {"screen_name": "Login"}},
+    )
+
+    assert response.status_code == 403
+
+
+def test_requirement_link_create_list_delete_allows_member(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """memberが要件リンクを作成、取得、削除できることを確認する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="member")
+    requirement = Requirement(
+        document_id=document.id,
+        requirement_code="REQ-001",
+        requirement_type="functional",
+        title="Login",
+    )
+    db.add(requirement)
+    db.commit()
+    db.refresh(requirement)
+    authorize_as(client, user)
+
+    create_response = client.post(
+        f"/projects/{project.id}/requirements/{requirement.id}/links",
+        json={"linked_type": "api", "linked_id": "POST /auth/login"},
+    )
+    link_id = create_response.json()["id"]
+    list_response = client.get(
+        f"/projects/{project.id}/requirements/{requirement.id}/links"
+    )
+    delete_response = client.delete(
+        f"/projects/{project.id}/requirements/{requirement.id}/links/{link_id}"
+    )
+
+    assert create_response.status_code == 201
+    assert create_response.json()["linked_type"] == "api"
+    assert create_response.json()["linked_id"] == "POST /auth/login"
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["id"] == link_id
+    assert delete_response.status_code == 204
+    assert db.get(RequirementLink, link_id) is None
+
+
+def test_requirement_comment_create_list_delete_allows_member(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """memberが要件コメントを作成、取得、削除できることを確認する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="member")
+    requirement = Requirement(
+        document_id=document.id,
+        requirement_code="REQ-001",
+        requirement_type="functional",
+        title="Login",
+    )
+    db.add(requirement)
+    db.commit()
+    db.refresh(requirement)
+    authorize_as(client, user)
+
+    create_response = client.post(
+        f"/projects/{project.id}/requirements/{requirement.id}/comments",
+        json={"comment": "確認してください"},
+    )
+    comment_id = create_response.json()["id"]
+    list_response = client.get(
+        f"/projects/{project.id}/requirements/{requirement.id}/comments"
+    )
+    delete_response = client.delete(
+        f"/projects/{project.id}/requirements/{requirement.id}/comments/{comment_id}"
+    )
+
+    assert create_response.status_code == 201
+    assert create_response.json()["user_id"] == user.id
+    assert create_response.json()["comment"] == "確認してください"
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["id"] == comment_id
+    assert delete_response.status_code == 204
+    assert db.get(RequirementComment, comment_id) is None
+
+
+def test_requirement_review_crud_allows_manager(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """managerが要件レビューを作成、取得、更新、削除できることを確認する。"""
+    user = create_test_user(email="manager@example.com")
+    reviewer = create_test_user(email="reviewer@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="manager")
+    requirement = Requirement(
+        document_id=document.id,
+        requirement_code="REQ-001",
+        requirement_type="functional",
+        title="Login",
+    )
+    db.add(requirement)
+    db.commit()
+    db.refresh(requirement)
+    authorize_as(client, user)
+
+    create_response = client.post(
+        f"/projects/{project.id}/requirements/{requirement.id}/reviews",
+        json={
+            "reviewer_id": reviewer.id,
+            "status": "pending",
+            "comment": "レビューお願いします",
+        },
+    )
+    review_id = create_response.json()["id"]
+    list_response = client.get(
+        f"/projects/{project.id}/requirements/{requirement.id}/reviews"
+    )
+    update_response = client.patch(
+        f"/projects/{project.id}/requirements/{requirement.id}/reviews/{review_id}",
+        json={"status": "approved", "comment": "OK"},
+    )
+    delete_response = client.delete(
+        f"/projects/{project.id}/requirements/{requirement.id}/reviews/{review_id}"
+    )
+
+    assert create_response.status_code == 201
+    assert create_response.json()["reviewer_id"] == reviewer.id
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["id"] == review_id
+    assert update_response.status_code == 200
+    assert update_response.json()["status"] == "approved"
+    assert update_response.json()["comment"] == "OK"
+    assert delete_response.status_code == 204
+    assert db.get(RequirementReview, review_id) is None
+
+
+def test_create_requirement_review_rejects_member(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """memberの要件レビュー作成を拒否する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="member")
+    requirement = Requirement(
+        document_id=document.id,
+        requirement_code="REQ-001",
+        requirement_type="functional",
+        title="Login",
+    )
+    db.add(requirement)
+    db.commit()
+    db.refresh(requirement)
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/requirements/{requirement.id}/reviews",
+        json={"reviewer_id": user.id, "status": "pending"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_read_requirement_summary_returns_related_resources_with_latest_limits(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """要件summaryが関連情報をまとめて返し、コメントと履歴を直近20件に絞ることを確認する。"""
+    user = create_test_user(email="viewer@example.com")
+    reviewer = create_test_user(email="reviewer@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="viewer")
+    requirement = Requirement(
+        document_id=document.id,
+        requirement_code="REQ-001",
+        requirement_type="functional",
+        title="Login",
+    )
+    db.add(requirement)
+    db.flush()
+    db.add(
+        RequirementDetail(
+            requirement_id=requirement.id,
+            detail_type="screen",
+            detail_json={"screen_name": "ログイン画面"},
+        )
+    )
+    db.add(
+        RequirementLink(
+            requirement_id=requirement.id,
+            linked_type="api",
+            linked_id="POST /auth/login",
+        )
+    )
+    db.add(
+        RequirementReview(
+            requirement_id=requirement.id,
+            reviewer_id=reviewer.id,
+            status="pending",
+        )
+    )
+    for index in range(21):
+        db.add(
+            RequirementComment(
+                requirement_id=requirement.id,
+                user_id=user.id,
+                comment=f"comment-{index}",
+            )
+        )
+        db.add(
+            RequirementRevision(
+                requirement_id=requirement.id,
+                version=index + 1,
+                changed_by=user.id,
+                before_value=None,
+                after_value={"title": f"Title {index}"},
+            )
+        )
+    db.commit()
+    authorize_as(client, user)
+
+    response = client.get(
+        f"/projects/{project.id}/requirements/{requirement.id}/summary"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["requirement"]["id"] == requirement.id
+    assert response.json()["details"][0]["detail_json"] == {
+        "screen_name": "ログイン画面"
+    }
+    assert response.json()["links"][0]["linked_id"] == "POST /auth/login"
+    assert response.json()["reviews"][0]["reviewer_id"] == reviewer.id
+    assert len(response.json()["comments"]) == 20
+    assert response.json()["comments"][0]["comment"] == "comment-1"
+    assert response.json()["comments"][-1]["comment"] == "comment-20"
+    assert len(response.json()["revisions"]) == 20
+    assert response.json()["revisions"][0]["version"] == 2
+    assert response.json()["revisions"][-1]["version"] == 21

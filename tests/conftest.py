@@ -262,3 +262,39 @@ def assign_project_role(db: Session) -> Callable[..., "ProjectMember"]:
         return member
 
     return _assign_project_role
+
+
+@pytest.fixture
+def create_test_requirement_document(
+    db: Session,
+) -> Callable[..., "RequirementDocument"]:
+    """テスト用要件定義書をDBへ直接作成するfixture。
+
+    Args:
+        db: テスト用DBセッション。
+
+    Returns:
+        任意のproject/title/document_codeで要件定義書を作成する関数。
+    """
+    from app.models.project import Project
+    from app.models.requirement import RequirementDocument
+
+    def _create_test_requirement_document(
+        *,
+        project: Project,
+        title: str = "Requirement Document",
+        document_code: str | None = None,
+        status: str = "draft",
+    ) -> RequirementDocument:
+        document = RequirementDocument(
+            project_id=project.id,
+            title=title,
+            document_code=document_code or f"RD-{uuid4().hex[:8].upper()}",
+            status=status,
+        )
+        db.add(document)
+        db.commit()
+        db.refresh(document)
+        return document
+
+    return _create_test_requirement_document
