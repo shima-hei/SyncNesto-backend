@@ -1,8 +1,10 @@
 """認証APIのテスト。"""
 
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
+import jwt
 import pytest
 from sqlalchemy.orm import Session
 
@@ -484,8 +486,31 @@ def test_update_me_avatar_requires_login(client: TestClient) -> None:
 
     assert response.status_code == 401
     assert response.json() == {
-        "message": "Invalid email or password",
-        "code": "INVALID_CREDENTIALS",
+        "message": "Authentication required",
+        "code": "AUTHENTICATION_REQUIRED",
+    }
+
+
+def test_get_me_rejects_expired_token(client: TestClient) -> None:
+    """期限切れtokenで現在ユーザー取得を拒否する。"""
+    expired_token = jwt.encode(
+        {
+            "sub": "expired@example.com",
+            "exp": datetime.now(UTC) - timedelta(minutes=1),
+        },
+        settings.secret_key,
+        algorithm=settings.algorithm,
+    )
+
+    response = client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {expired_token}"},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "message": "Token expired",
+        "code": "TOKEN_EXPIRED",
     }
 
 
@@ -566,8 +591,8 @@ def test_delete_me_avatar_requires_login(client: TestClient) -> None:
 
     assert response.status_code == 401
     assert response.json() == {
-        "message": "Invalid email or password",
-        "code": "INVALID_CREDENTIALS",
+        "message": "Authentication required",
+        "code": "AUTHENTICATION_REQUIRED",
     }
 
 
@@ -622,8 +647,8 @@ def test_update_me_requires_login(client: TestClient) -> None:
 
     assert response.status_code == 401
     assert response.json() == {
-        "message": "Invalid email or password",
-        "code": "INVALID_CREDENTIALS",
+        "message": "Authentication required",
+        "code": "AUTHENTICATION_REQUIRED",
     }
 
 
@@ -633,8 +658,8 @@ def test_get_me_rejects_missing_token(client: TestClient) -> None:
 
     assert response.status_code == 401
     assert response.json() == {
-        "message": "Invalid email or password",
-        "code": "INVALID_CREDENTIALS",
+        "message": "Authentication required",
+        "code": "AUTHENTICATION_REQUIRED",
     }
 
 
@@ -647,8 +672,8 @@ def test_get_me_rejects_invalid_token(client: TestClient) -> None:
 
     assert response.status_code == 401
     assert response.json() == {
-        "message": "Invalid email or password",
-        "code": "INVALID_CREDENTIALS",
+        "message": "Invalid token",
+        "code": "INVALID_TOKEN",
     }
 
 
@@ -696,6 +721,6 @@ def test_get_me_rejects_after_logout(
     assert logout_response.status_code == 204
     assert response.status_code == 401
     assert response.json() == {
-        "message": "Invalid email or password",
-        "code": "INVALID_CREDENTIALS",
+        "message": "Authentication required",
+        "code": "AUTHENTICATION_REQUIRED",
     }

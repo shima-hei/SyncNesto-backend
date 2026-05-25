@@ -679,7 +679,7 @@ const canViewProject = [
 
 ## エラーハンドリング
 
-未ログイン:
+ログイン失敗:
 
 ```http
 401 Unauthorized
@@ -689,6 +689,45 @@ const canViewProject = [
 {
   "message": "Invalid email or password",
   "code": "INVALID_CREDENTIALS"
+}
+```
+
+未ログイン:
+
+```http
+401 Unauthorized
+```
+
+```json
+{
+  "message": "Authentication required",
+  "code": "AUTHENTICATION_REQUIRED"
+}
+```
+
+トークン期限切れ:
+
+```http
+401 Unauthorized
+```
+
+```json
+{
+  "message": "Token expired",
+  "code": "TOKEN_EXPIRED"
+}
+```
+
+不正トークン:
+
+```http
+401 Unauthorized
+```
+
+```json
+{
+  "message": "Invalid token",
+  "code": "INVALID_TOKEN"
 }
 ```
 
@@ -732,4 +771,4 @@ const canViewProject = [
 }
 ```
 
-フロントエンドでは、`401` はログイン画面への誘導、`403` は権限なし表示として扱ってください。`409 VERSION_CONFLICT` は最新データの再表示、`409 DUPLICATE_RESOURCE` は入力値の重複エラーとして扱ってください。
+フロントエンドでは、`401 INVALID_CREDENTIALS` はログイン画面の入力エラー、`401 AUTHENTICATION_REQUIRED` は未ログイン、`401 TOKEN_EXPIRED` はセッション期限切れ、`401 INVALID_TOKEN` はCookie破棄後の再ログイン誘導として扱ってください。`403` は権限なし表示として扱ってください。`409 VERSION_CONFLICT` は最新データの再表示、`409 DUPLICATE_RESOURCE` は入力値の重複エラーとして扱ってください。

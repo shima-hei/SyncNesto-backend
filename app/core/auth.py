@@ -5,7 +5,12 @@ from fastapi import Cookie, Depends, Header
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.exceptions import ForbiddenError, InvalidCredentialsError
+from app.core.exceptions import (
+    AuthenticationRequiredError,
+    ForbiddenError,
+    InvalidTokenError,
+    TokenExpiredError,
+)
 from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.models.user import User
@@ -48,27 +53,31 @@ def get_current_user(
         現在のログインユーザー。
 
     Raises:
-        InvalidCredentialsError: tokenがない、または認証できない場合。
+        AuthenticationRequiredError: tokenがない場合。
+        TokenExpiredError: tokenの有効期限が切れている場合。
+        InvalidTokenError: tokenが不正な場合。
     """
     token = access_token
     if token is None and settings.allow_authorization_header:
         token = extract_bearer_token(authorization)
 
     if token is None:
-        raise InvalidCredentialsError()
+        raise AuthenticationRequiredError()
 
     try:
         payload = decode_access_token(token)
+    except jwt.ExpiredSignatureError as exc:
+        raise TokenExpiredError() from exc
     except jwt.PyJWTError as exc:
-        raise InvalidCredentialsError() from exc
+        raise InvalidTokenError() from exc
 
     email = payload.get("sub")
     if not isinstance(email, str):
-        raise InvalidCredentialsError()
+        raise InvalidTokenError()
 
     user = UserRepository().get_by_email(db, email)
     if user is None or not user.is_active:
-        raise InvalidCredentialsError()
+        raise InvalidTokenError()
 
     return user
 

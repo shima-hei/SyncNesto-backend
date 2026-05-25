@@ -33,6 +33,27 @@ class UnauthorizedError(AppError):
     code = "UNAUTHORIZED"
 
 
+class AuthenticationRequiredError(UnauthorizedError):
+    """認証トークンが存在しない場合の例外。"""
+
+    message = error_messages.AUTHENTICATION_REQUIRED
+    code = "AUTHENTICATION_REQUIRED"
+
+
+class TokenExpiredError(UnauthorizedError):
+    """認証トークンの有効期限が切れている場合の例外。"""
+
+    message = error_messages.TOKEN_EXPIRED
+    code = "TOKEN_EXPIRED"
+
+
+class InvalidTokenError(UnauthorizedError):
+    """認証トークンが不正な場合の例外。"""
+
+    message = error_messages.INVALID_TOKEN
+    code = "INVALID_TOKEN"
+
+
 class ForbiddenError(AppError):
     """操作権限がない場合の例外。"""
 

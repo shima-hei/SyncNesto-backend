@@ -273,8 +273,8 @@ def test_create_user_requires_login(client: TestClient) -> None:
 
     assert response.status_code == 401
     assert response.json() == {
-        "message": "Invalid email or password",
-        "code": "INVALID_CREDENTIALS",
+        "message": "Authentication required",
+        "code": "AUTHENTICATION_REQUIRED",
     }
 
 
