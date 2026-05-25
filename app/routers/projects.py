@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
+from app.core import error_messages
 from app.core.auth import (
     get_current_user,
     require_project_permission,
@@ -51,7 +52,7 @@ def build_project_member_response(
     """
     role = RbacRepository().get_role_by_id(db, member.role_id)
     if role is None:
-        raise NotFoundError("Project role not found")
+        raise NotFoundError(error_messages.PROJECT_ROLE_NOT_FOUND)
 
     return ProjectMemberRead(
         id=member.id,

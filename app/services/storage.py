@@ -4,6 +4,7 @@ from typing import Protocol
 
 import boto3
 
+from app.core import error_messages
 from app.core.config import settings
 from app.core.exceptions import BadRequestError
 
@@ -122,14 +123,14 @@ class StorageService:
     def _get_image_extension(self, content_type: str | None) -> str:
         """Content-Typeに対応する画像拡張子を取得する。"""
         if content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
-            raise BadRequestError("Unsupported image content type")
+            raise BadRequestError(error_messages.UNSUPPORTED_IMAGE_CONTENT_TYPE)
 
         return ALLOWED_IMAGE_CONTENT_TYPES[content_type]
 
     def _validate_image_size(self, content: bytes) -> None:
         """画像サイズが上限以内であることを確認する。"""
         if not content:
-            raise BadRequestError("Image file is required")
+            raise BadRequestError(error_messages.IMAGE_FILE_REQUIRED)
 
         if len(content) > MAX_IMAGE_BYTES:
-            raise BadRequestError("Image file is too large")
+            raise BadRequestError(error_messages.IMAGE_FILE_TOO_LARGE)

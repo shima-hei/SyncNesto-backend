@@ -10,6 +10,8 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from app.core import error_messages
+from app.core.config import settings
 from app.core.exceptions import (
     BadRequestError,
     EmailAlreadyRegisteredError,
@@ -17,7 +19,6 @@ from app.core.exceptions import (
     NotFoundError,
     VersionConflictError,
 )
-from app.core.config import settings
 from app.core.security import get_password_hash, verify_password
 from app.models.rbac import Role
 from app.models.user import User
@@ -73,7 +74,9 @@ class UserService:
                 scope="system",
             )
             if role is None:
-                raise BadRequestError(f"Invalid system role key: {role_key}")
+                raise BadRequestError(
+                    error_messages.INVALID_SYSTEM_ROLE_KEY.format(role_key=role_key)
+                )
             roles.append(role)
 
         return roles
@@ -194,7 +197,7 @@ class UserService:
         """
         user = self.repository.get_by_id(db, user_id)
         if user is None:
-            raise NotFoundError("User not found")
+            raise NotFoundError(error_messages.USER_NOT_FOUND)
 
         return user
 

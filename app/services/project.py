@@ -3,6 +3,7 @@
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core import error_messages
 from app.core.exceptions import (
     DuplicateResourceError,
     ForbiddenError,
@@ -59,13 +60,15 @@ class ProjectService:
             作成されたプロジェクト。
         """
         if self.repository.get_by_project_code(db, project_in.project_code) is not None:
-            raise DuplicateResourceError("Project code already exists")
+            raise DuplicateResourceError(error_messages.PROJECT_CODE_ALREADY_EXISTS)
 
         try:
             return self.repository.create(db, project_in, actor_id=actor_id)
         except IntegrityError as exc:
             db.rollback()
-            raise DuplicateResourceError("Project code already exists") from exc
+            raise DuplicateResourceError(
+                error_messages.PROJECT_CODE_ALREADY_EXISTS
+            ) from exc
 
     def list_projects(self, db: Session, current_user: User) -> list[Project]:
         """ユーザーが閲覧可能なプロジェクト一覧を取得する。
@@ -146,7 +149,7 @@ class ProjectService:
         """
         project = self.repository.get_by_id(db, project_id)
         if project is None:
-            raise NotFoundError("Project not found")
+            raise NotFoundError(error_messages.PROJECT_NOT_FOUND)
 
         return project
 
@@ -182,7 +185,7 @@ class ProjectService:
             and self.repository.get_by_project_code(db, project_in.project_code)
             is not None
         ):
-            raise DuplicateResourceError("Project code already exists")
+            raise DuplicateResourceError(error_messages.PROJECT_CODE_ALREADY_EXISTS)
 
         try:
             return self.repository.update(
@@ -193,7 +196,9 @@ class ProjectService:
             )
         except IntegrityError as exc:
             db.rollback()
-            raise DuplicateResourceError("Project code already exists") from exc
+            raise DuplicateResourceError(
+                error_messages.PROJECT_CODE_ALREADY_EXISTS
+            ) from exc
 
     def delete_project(
         self,
@@ -314,7 +319,7 @@ class ProjectMemberService:
             user_id=member_in.user_id,
         )
         if existing_member is not None:
-            raise DuplicateResourceError("Project member already exists")
+            raise DuplicateResourceError(error_messages.PROJECT_MEMBER_ALREADY_EXISTS)
 
         try:
             return self.repository.create(
@@ -325,7 +330,9 @@ class ProjectMemberService:
             )
         except IntegrityError as exc:
             db.rollback()
-            raise DuplicateResourceError("Project member already exists") from exc
+            raise DuplicateResourceError(
+                error_messages.PROJECT_MEMBER_ALREADY_EXISTS
+            ) from exc
 
     def update_member(
         self,
@@ -371,12 +378,12 @@ class ProjectMemberService:
     def _ensure_project_exists(self, db: Session, project_id: int) -> None:
         """プロジェクトが存在することを確認する。"""
         if self.project_repository.get_by_id(db, project_id) is None:
-            raise NotFoundError("Project not found")
+            raise NotFoundError(error_messages.PROJECT_NOT_FOUND)
 
     def _ensure_user_exists(self, db: Session, user_id: int) -> None:
         """ユーザーが存在することを確認する。"""
         if self.user_repository.get_by_id(db, user_id) is None:
-            raise NotFoundError("User not found")
+            raise NotFoundError(error_messages.USER_NOT_FOUND)
 
     def _get_project_role_by_key(self, db: Session, role_key: str):
         """project scopeのロールkeyからロールを取得する。
@@ -397,7 +404,7 @@ class ProjectMemberService:
             scope="project",
         )
         if role is None:
-            raise NotFoundError("Project role not found")
+            raise NotFoundError(error_messages.PROJECT_ROLE_NOT_FOUND)
 
         return role
 
@@ -409,7 +416,7 @@ class ProjectMemberService:
         """バージョン競合時に返す最新メンバー情報を組み立てる。"""
         role = self.rbac_repository.get_role_by_id(db, member.role_id)
         if role is None:
-            raise NotFoundError("Project role not found")
+            raise NotFoundError(error_messages.PROJECT_ROLE_NOT_FOUND)
 
         return {
             "id": member.id,
@@ -437,6 +444,6 @@ class ProjectMemberService:
             user_id=user_id,
         )
         if member is None:
-            raise NotFoundError("Project member not found")
+            raise NotFoundError(error_messages.PROJECT_MEMBER_NOT_FOUND)
 
         return member

@@ -5,6 +5,7 @@ from typing import TypedDict
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core import error_messages
 from app.core.exceptions import (
     DuplicateResourceError,
     NotFoundError,
@@ -86,7 +87,9 @@ class RequirementDocumentService:
             )
             is not None
         ):
-            raise DuplicateResourceError("Requirement document code already exists")
+            raise DuplicateResourceError(
+                error_messages.REQUIREMENT_DOCUMENT_CODE_ALREADY_EXISTS
+            )
 
         try:
             return self.repository.create(
@@ -98,7 +101,7 @@ class RequirementDocumentService:
         except IntegrityError as exc:
             db.rollback()
             raise DuplicateResourceError(
-                "Requirement document code already exists"
+                error_messages.REQUIREMENT_DOCUMENT_CODE_ALREADY_EXISTS
             ) from exc
 
     def list_documents_paginated(
@@ -132,7 +135,7 @@ class RequirementDocumentService:
         """要件定義書を取得する。"""
         document = self.repository.get_by_id(db, document_id)
         if document is None or document.project_id != project_id:
-            raise NotFoundError("Requirement document not found")
+            raise NotFoundError(error_messages.REQUIREMENT_DOCUMENT_NOT_FOUND)
         return document
 
     def update_document(
@@ -160,7 +163,9 @@ class RequirementDocumentService:
             )
             is not None
         ):
-            raise DuplicateResourceError("Requirement document code already exists")
+            raise DuplicateResourceError(
+                error_messages.REQUIREMENT_DOCUMENT_CODE_ALREADY_EXISTS
+            )
 
         try:
             return self.repository.update(
@@ -172,7 +177,7 @@ class RequirementDocumentService:
         except IntegrityError as exc:
             db.rollback()
             raise DuplicateResourceError(
-                "Requirement document code already exists"
+                error_messages.REQUIREMENT_DOCUMENT_CODE_ALREADY_EXISTS
             ) from exc
 
     def delete_document(
@@ -190,7 +195,7 @@ class RequirementDocumentService:
     def _ensure_project_exists(self, db: Session, project_id: int) -> None:
         """プロジェクトが存在することを確認する。"""
         if self.project_repository.get_by_id(db, project_id) is None:
-            raise NotFoundError("Project not found")
+            raise NotFoundError(error_messages.PROJECT_NOT_FOUND)
 
 
 class RequirementService:
@@ -229,7 +234,9 @@ class RequirementService:
             )
             is not None
         ):
-            raise DuplicateResourceError("Requirement code already exists")
+            raise DuplicateResourceError(
+                error_messages.REQUIREMENT_CODE_ALREADY_EXISTS
+            )
 
         try:
             return self.repository.create(
@@ -239,7 +246,9 @@ class RequirementService:
             )
         except IntegrityError as exc:
             db.rollback()
-            raise DuplicateResourceError("Requirement code already exists") from exc
+            raise DuplicateResourceError(
+                error_messages.REQUIREMENT_CODE_ALREADY_EXISTS
+            ) from exc
 
     def list_requirements_paginated(
         self,
@@ -287,7 +296,7 @@ class RequirementService:
         """要件を取得する。"""
         requirement = self.repository.get_by_id(db, requirement_id)
         if requirement is None:
-            raise NotFoundError("Requirement not found")
+            raise NotFoundError(error_messages.REQUIREMENT_NOT_FOUND)
 
         self._get_document_in_project(
             db,
@@ -325,7 +334,9 @@ class RequirementService:
             )
             is not None
         ):
-            raise DuplicateResourceError("Requirement code already exists")
+            raise DuplicateResourceError(
+                error_messages.REQUIREMENT_CODE_ALREADY_EXISTS
+            )
 
         before_value = self._build_revision_snapshot(requirement)
         try:
@@ -351,7 +362,9 @@ class RequirementService:
             return updated_requirement
         except IntegrityError as exc:
             db.rollback()
-            raise DuplicateResourceError("Requirement code already exists") from exc
+            raise DuplicateResourceError(
+                error_messages.REQUIREMENT_CODE_ALREADY_EXISTS
+            ) from exc
 
     def delete_requirement(
         self,
@@ -394,7 +407,7 @@ class RequirementService:
         """プロジェクト内の要件定義書を取得する。"""
         document = self.document_repository.get_by_id(db, document_id)
         if document is None or document.project_id != project_id:
-            raise NotFoundError("Requirement document not found")
+            raise NotFoundError(error_messages.REQUIREMENT_DOCUMENT_NOT_FOUND)
         return document
 
     def _build_revision_snapshot(self, requirement: Requirement) -> dict[str, object]:
@@ -682,7 +695,7 @@ class RequirementChildService:
         self._ensure_requirement_in_project(db, project_id, requirement_id)
         detail = self.detail_repository.get_by_id(db, detail_id)
         if detail is None or detail.requirement_id != requirement_id:
-            raise NotFoundError("Requirement detail not found")
+            raise NotFoundError(error_messages.REQUIREMENT_DETAIL_NOT_FOUND)
         return detail
 
     def _get_link_in_requirement(
@@ -696,7 +709,7 @@ class RequirementChildService:
         self._ensure_requirement_in_project(db, project_id, requirement_id)
         link = self.link_repository.get_by_id(db, link_id)
         if link is None or link.requirement_id != requirement_id:
-            raise NotFoundError("Requirement link not found")
+            raise NotFoundError(error_messages.REQUIREMENT_LINK_NOT_FOUND)
         return link
 
     def _get_comment_in_requirement(
@@ -710,7 +723,7 @@ class RequirementChildService:
         self._ensure_requirement_in_project(db, project_id, requirement_id)
         comment = self.comment_repository.get_by_id(db, comment_id)
         if comment is None or comment.requirement_id != requirement_id:
-            raise NotFoundError("Requirement comment not found")
+            raise NotFoundError(error_messages.REQUIREMENT_COMMENT_NOT_FOUND)
         return comment
 
     def _get_review_in_requirement(
@@ -724,5 +737,5 @@ class RequirementChildService:
         self._ensure_requirement_in_project(db, project_id, requirement_id)
         review = self.review_repository.get_by_id(db, review_id)
         if review is None or review.requirement_id != requirement_id:
-            raise NotFoundError("Requirement review not found")
+            raise NotFoundError(error_messages.REQUIREMENT_REVIEW_NOT_FOUND)
         return review
