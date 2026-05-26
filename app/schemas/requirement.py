@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from app.schemas.user import UserSummary
+
 
 class RequirementDocumentBase(BaseModel):
     """要件定義書schemaの共通フィールドを定義する基底schema。"""
@@ -52,6 +54,9 @@ class RequirementDocumentRead(RequirementDocumentBase):
     updated_by: int | None = None
     created_at: datetime
     updated_at: datetime
+    author: UserSummary | None = None
+    reviewer: UserSummary | None = None
+    approver: UserSummary | None = None
 
     model_config = {"from_attributes": True}
 

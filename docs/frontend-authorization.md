@@ -227,6 +227,7 @@ POST   /projects                project:create
 GET    /projects                ログイン必須、page/page_size/q/status対応
 GET    /projects/{project_id}   project:read
 GET    /projects/{project_id}/me ログイン必須
+GET    /projects/{project_id}/member-users project:read, q/limit対応
 PATCH  /projects/{project_id}   project:update, version必須
 DELETE /projects/{project_id}   project:delete
 ```
@@ -261,6 +262,31 @@ DELETE /projects/{project_id}   project:delete
 ```
 
 未参加かつ `system_admin` でもない場合は `403 Forbidden`、プロジェクトが存在しない場合は `404 Not Found` を返します。
+
+`GET /projects/{project_id}/member-users` は、対象プロジェクトに所属するユーザーを担当者選択用に返します。
+
+クエリ:
+
+```text
+q: email, name の部分一致検索
+limit: 1-100。default 20
+```
+
+レスポンス例:
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "email": "user@example.com",
+      "name": "User Name",
+      "avatar_url": "https://example.com/avatar.png",
+      "is_active": true
+    }
+  ]
+}
+```
 
 `GET /projects` のクエリ:
 
@@ -401,6 +427,36 @@ DELETE /projects/{project_id}/requirements/{requirement_id}/reviews/{review_id} 
   "target_system_name": "Syncnesto",
   "client_name": "QA部門",
   "vendor_name": "Internal"
+}
+```
+
+要件定義書レスポンスでは、`author_id`, `reviewer_id`, `approver_id` に加えて、担当者表示用の軽量ユーザー情報を返します。未設定または対象ユーザーが存在しない場合は `null` です。
+
+```json
+{
+  "id": 1,
+  "project_id": 1,
+  "title": "Syncnesto 要件定義書",
+  "document_code": "RD-001",
+  "author_id": 1,
+  "reviewer_id": 2,
+  "approver_id": null,
+  "author": {
+    "id": 1,
+    "email": "author@example.com",
+    "name": "Author",
+    "avatar_url": "https://example.com/author.png",
+    "is_active": true
+  },
+  "reviewer": {
+    "id": 2,
+    "email": "reviewer@example.com",
+    "name": "Reviewer",
+    "avatar_url": null,
+    "is_active": true
+  },
+  "approver": null,
+  "version": 1
 }
 ```
 

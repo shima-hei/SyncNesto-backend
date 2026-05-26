@@ -3,17 +3,16 @@
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.core import error_messages
 from app.core.auth import (
     get_current_user,
     require_project_permission,
     require_system_permission,
 )
-from app.core.exceptions import NotFoundError
 from app.db.session import get_db
 from app.models.project import Project, ProjectMember
 from app.models.user import User
-from app.repositories.rbac import RbacRepository
+from app.presenters.project import build_project_member_response
+from app.presenters.user import build_user_summary
 from app.schemas.project import (
     CurrentProjectRoleRead,
     ProjectCreate,
@@ -25,42 +24,15 @@ from app.schemas.project import (
     ProjectRead,
     ProjectUpdate,
 )
-from app.schemas.user import RoleRead
+from app.schemas.user import RoleRead, UserSummaryListResponse
 from app.services.project import ProjectMemberService, ProjectService
+from app.services.storage import StorageService
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 project_service = ProjectService()
 project_member_service = ProjectMemberService()
-
-
-def build_project_member_response(
-    db: Session,
-    member: ProjectMember,
-) -> ProjectMemberRead:
-    """プロジェクトメンバーレスポンスを組み立てる。
-
-    Args:
-        db: DBセッション。
-        member: レスポンスへ変換するプロジェクトメンバー。
-
-    Returns:
-        プロジェクトメンバー読み取りレスポンス。
-
-    Raises:
-        NotFoundError: 紐づくロールが存在しない場合。
-    """
-    role = RbacRepository().get_role_by_id(db, member.role_id)
-    if role is None:
-        raise NotFoundError(error_messages.PROJECT_ROLE_NOT_FOUND)
-
-    return ProjectMemberRead(
-        id=member.id,
-        project_id=member.project_id,
-        user_id=member.user_id,
-        role=RoleRead(key=role.key, name=role.name),
-        version=member.version,
-    )
+storage_service = StorageService()
 
 
 @router.post(
@@ -176,6 +148,39 @@ def read_current_project_role(
         project_id=project_id,
         role=RoleRead.model_validate(role) if role is not None else None,
         is_system_admin=is_system_admin,
+    )
+
+
+@router.get(
+    "/{project_id}/member-users",
+    response_model=UserSummaryListResponse,
+)
+def list_project_member_users(
+    project_id: int,
+    q: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+    _: User = Depends(require_project_permission("project:read")),
+    db: Session = Depends(get_db),
+) -> UserSummaryListResponse:
+    """プロジェクト所属ユーザー一覧を取得する。
+
+    Args:
+        project_id: プロジェクトID。
+        q: 検索キーワード。
+        limit: 最大取得件数。
+        db: DBセッション。
+
+    Returns:
+        プロジェクト所属ユーザー一覧。
+    """
+    users = project_member_service.list_member_users(
+        db,
+        project_id=project_id,
+        q=q,
+        limit=limit,
+    )
+    return UserSummaryListResponse(
+        items=[build_user_summary(user, storage_service) for user in users],
     )
 
 

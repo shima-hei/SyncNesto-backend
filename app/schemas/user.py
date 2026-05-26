@@ -63,6 +63,20 @@ class RoleRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class UserSummary(UserBase):
+    """ユーザー選択や担当者表示で返す軽量schema。"""
+
+    id: int
+    avatar_url: str | None = None
+    is_active: bool
+
+
+class UserSummaryListResponse(BaseModel):
+    """軽量ユーザー一覧レスポンスschema。"""
+
+    items: list[UserSummary]
+
+
 class UserRead(UserBase):
     """ユーザー読み取り時に返すschema。"""
 

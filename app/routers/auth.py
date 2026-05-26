@@ -8,10 +8,9 @@ from app.core.config import settings
 from app.core.security import create_access_token
 from app.db.session import get_db
 from app.models.user import User
-from app.repositories.rbac import RbacRepository
+from app.presenters.user import build_current_user_response
 from app.schemas.user import (
     CurrentUserRead,
-    RoleRead,
     UserLogin,
     UserLoginResponse,
     UserProfileUpdate,
@@ -22,33 +21,6 @@ from app.services.user import UserService
 router = APIRouter(prefix="/auth", tags=["auth"])
 user_service = UserService()
 storage_service = StorageService()
-
-
-def build_current_user_response(db: Session, current_user: User) -> CurrentUserRead:
-    """現在のログインユーザーレスポンスを組み立てる。
-
-    Args:
-        db: DBセッション。
-        current_user: 認証済みユーザー。
-
-    Returns:
-        現在のログインユーザー情報。
-    """
-    system_roles = RbacRepository().list_system_roles_by_user(db, current_user.id)
-    return CurrentUserRead(
-        id=current_user.id,
-        email=current_user.email,
-        name=current_user.name,
-        version=current_user.version,
-        department=current_user.department,
-        position=current_user.position,
-        avatar_url=storage_service.generate_presigned_url(current_user.avatar_key),
-        is_active=current_user.is_active,
-        last_login_at=current_user.last_login_at,
-        created_by=current_user.created_by,
-        updated_by=current_user.updated_by,
-        system_roles=[RoleRead(key=role.key, name=role.name) for role in system_roles],
-    )
 
 
 @router.post(
@@ -125,7 +97,8 @@ def read_current_user(
     Returns:
         現在のログインユーザー情報。
     """
-    return build_current_user_response(db, current_user)
+    system_roles = user_service.list_system_roles_by_user(db, current_user.id)
+    return build_current_user_response(current_user, system_roles, storage_service)
 
 
 @router.patch(
@@ -148,7 +121,8 @@ def update_current_user(
         更新された現在のログインユーザー情報。
     """
     user = user_service.update_profile(db, current_user=current_user, user_in=user_in)
-    return build_current_user_response(db, user)
+    system_roles = user_service.list_system_roles_by_user(db, user.id)
+    return build_current_user_response(user, system_roles, storage_service)
 
 
 @router.put(
@@ -177,7 +151,8 @@ def update_current_user_avatar(
         content_type=file.content_type,
         storage_service=storage_service,
     )
-    return build_current_user_response(db, user)
+    system_roles = user_service.list_system_roles_by_user(db, user.id)
+    return build_current_user_response(user, system_roles, storage_service)
 
 
 @router.delete(
@@ -202,4 +177,5 @@ def delete_current_user_avatar(
         current_user=current_user,
         storage_service=storage_service,
     )
-    return build_current_user_response(db, user)
+    system_roles = user_service.list_system_roles_by_user(db, user.id)
+    return build_current_user_response(user, system_roles, storage_service)

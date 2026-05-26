@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models.project import Project, ProjectMember
 from app.models.rbac import Role
+from app.models.user import User
 from app.schemas.project import ProjectCreate, ProjectUpdate
 
 
@@ -320,6 +321,45 @@ class ProjectMemberRepository:
             .order_by(ProjectMember.id)
             .all()
         )
+
+    def list_users_by_project(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        q: str | None = None,
+        limit: int = 20,
+    ) -> list[User]:
+        """プロジェクトに所属するユーザー一覧を取得する。
+
+        Args:
+            db: DBセッション。
+            project_id: プロジェクトID。
+            q: 検索キーワード。
+            limit: 最大取得件数。
+
+        Returns:
+            プロジェクト所属ユーザー一覧。
+        """
+        query = (
+            db.query(User)
+            .join(ProjectMember, ProjectMember.user_id == User.id)
+            .filter(
+                ProjectMember.project_id == project_id,
+                ProjectMember.deleted_at.is_(None),
+                User.deleted_at.is_(None),
+            )
+        )
+        if q:
+            like_pattern = f"%{q}%"
+            query = query.filter(
+                or_(
+                    User.email.ilike(like_pattern),
+                    User.name.ilike(like_pattern),
+                )
+            )
+
+        return query.order_by(User.id).limit(limit).all()
 
     def get_by_project_user(
         self,

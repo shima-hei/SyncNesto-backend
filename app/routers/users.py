@@ -5,12 +5,10 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import require_system_permission
 from app.db.session import get_db
-from app.models.rbac import Role
 from app.models.user import User
+from app.presenters.user import build_user_list_item, build_user_response
 from app.schemas.user import (
-    RoleRead,
     UserCreate,
-    UserListItem,
     UserListResponse,
     UserRead,
     UserUpdate,
@@ -22,67 +20,6 @@ from app.services.user import UserService
 router = APIRouter(prefix="/users", tags=["users"])
 user_service = UserService()
 storage_service = StorageService()
-
-
-def build_role_reads(roles: list[Role]) -> list[RoleRead]:
-    """ロールモデルをレスポンスschemaへ変換する。
-
-    Args:
-        roles: ロール一覧。
-
-    Returns:
-        ロール読み取りレスポンス一覧。
-    """
-    return [RoleRead(key=role.key, name=role.name) for role in roles]
-
-
-def build_user_response(user: User, system_roles: list[Role]) -> UserRead:
-    """ユーザーレスポンスを組み立てる。
-
-    Args:
-        user: レスポンスへ変換するユーザー。
-        system_roles: ユーザーに付与されたシステムロール一覧。
-
-    Returns:
-        ユーザー読み取りレスポンス。
-    """
-    return UserRead(
-        id=user.id,
-        email=user.email,
-        name=user.name,
-        version=user.version,
-        department=user.department,
-        position=user.position,
-        avatar_url=storage_service.generate_presigned_url(user.avatar_key),
-        is_active=user.is_active,
-        last_login_at=user.last_login_at,
-        created_by=user.created_by,
-        updated_by=user.updated_by,
-        system_roles=build_role_reads(system_roles),
-    )
-
-
-def build_user_list_item(user: User, system_roles: list[Role]) -> UserListItem:
-    """ユーザー一覧itemレスポンスを組み立てる。
-
-    Args:
-        user: レスポンスへ変換するユーザー。
-        system_roles: ユーザーに付与されたシステムロール一覧。
-
-    Returns:
-        ユーザー一覧itemレスポンス。
-    """
-    return UserListItem(
-        id=user.id,
-        email=user.email,
-        name=user.name,
-        department=user.department,
-        position=user.position,
-        avatar_url=storage_service.generate_presigned_url(user.avatar_key),
-        is_active=user.is_active,
-        last_login_at=user.last_login_at,
-        system_roles=build_role_reads(system_roles),
-    )
 
 
 @router.post(
@@ -107,7 +44,7 @@ def create_user(
     """
     user = user_service.create_user(db, user_in, actor_id=current_user.id)
     system_roles = user_service.list_system_roles_by_user(db, user.id)
-    return build_user_response(user, system_roles)
+    return build_user_response(user, system_roles, storage_service)
 
 
 @router.get(
@@ -147,7 +84,11 @@ def list_users(
     )
     return UserListResponse(
         items=[
-            build_user_list_item(user, roles_by_user_id.get(user.id, []))
+            build_user_list_item(
+                user,
+                roles_by_user_id.get(user.id, []),
+                storage_service,
+            )
             for user in users
         ],
         total=total,
@@ -176,7 +117,7 @@ def read_user(
     """
     user = user_service.get_user(db, user_id)
     system_roles = user_service.list_system_roles_by_user(db, user.id)
-    return build_user_response(user, system_roles)
+    return build_user_response(user, system_roles, storage_service)
 
 
 @router.patch(
@@ -202,7 +143,7 @@ def update_user(
     """
     user = user_service.update_user(db, user_id, user_in, actor_id=current_user.id)
     system_roles = user_service.list_system_roles_by_user(db, user.id)
-    return build_user_response(user, system_roles)
+    return build_user_response(user, system_roles, storage_service)
 
 
 @router.delete(

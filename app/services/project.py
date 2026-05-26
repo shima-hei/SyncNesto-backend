@@ -290,6 +290,33 @@ class ProjectMemberService:
         self._ensure_project_exists(db, project_id)
         return self.repository.list_by_project(db, project_id)
 
+    def list_member_users(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        q: str | None = None,
+        limit: int = 20,
+    ) -> list[User]:
+        """プロジェクト所属ユーザー一覧を取得する。
+
+        Args:
+            db: DBセッション。
+            project_id: プロジェクトID。
+            q: 検索キーワード。
+            limit: 最大取得件数。
+
+        Returns:
+            プロジェクト所属ユーザー一覧。
+        """
+        self._ensure_project_exists(db, project_id)
+        return self.repository.list_users_by_project(
+            db,
+            project_id=project_id,
+            q=q,
+            limit=limit,
+        )
+
     def add_member(
         self,
         db: Session,

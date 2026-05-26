@@ -21,10 +21,114 @@ from app.models.requirement import (
 from app.models.user import User
 
 
+class FakeStorageService:
+    """テスト用StorageService。"""
+
+    def generate_presigned_url(self, avatar_key: str | None) -> str | None:
+        """固定の署名付きURLを返す。"""
+        if avatar_key is None:
+            return None
+
+        return f"https://example.com/{avatar_key}?signature=test"
+
+
 def authorize_as(client: TestClient, user: User) -> None:
     """TestClientを指定ユーザーとして認証済みにする。"""
     access_token = create_access_token(subject=user.email)
     client.cookies.set(settings.auth_cookie_name, access_token)
+
+
+def test_read_requirement_document_returns_assignee_users(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+    monkeypatch,
+) -> None:
+    """要件定義書詳細が担当者の軽量ユーザー情報を返すことを確認する。"""
+    from app.routers import requirements
+
+    monkeypatch.setattr(requirements, "storage_service", FakeStorageService())
+    viewer = create_test_user(email="viewer@example.com")
+    author = create_test_user(email="author@example.com", name="Author")
+    reviewer = create_test_user(email="reviewer@example.com", name="Reviewer")
+    approver = create_test_user(email="approver@example.com", name="Approver")
+    author.avatar_key = "users/author.png"
+    reviewer.avatar_key = None
+    approver.avatar_key = "users/approver.png"
+    project = create_test_project(name="Project")
+    assign_project_role(user=viewer, project=project, role_key="viewer")
+    document = create_test_requirement_document(project=project)
+    document.author_id = author.id
+    document.reviewer_id = reviewer.id
+    document.approver_id = approver.id
+    db.commit()
+    authorize_as(client, viewer)
+
+    response = client.get(
+        f"/projects/{project.id}/requirement-documents/{document.id}",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["author"] == {
+        "id": author.id,
+        "email": "author@example.com",
+        "name": "Author",
+        "avatar_url": "https://example.com/users/author.png?signature=test",
+        "is_active": True,
+    }
+    assert response.json()["reviewer"] == {
+        "id": reviewer.id,
+        "email": "reviewer@example.com",
+        "name": "Reviewer",
+        "avatar_url": None,
+        "is_active": True,
+    }
+    assert response.json()["approver"] == {
+        "id": approver.id,
+        "email": "approver@example.com",
+        "name": "Approver",
+        "avatar_url": "https://example.com/users/approver.png?signature=test",
+        "is_active": True,
+    }
+
+
+def test_list_requirement_documents_returns_assignee_users(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+    monkeypatch,
+) -> None:
+    """要件定義書一覧が担当者の軽量ユーザー情報を返すことを確認する。"""
+    from app.routers import requirements
+
+    monkeypatch.setattr(requirements, "storage_service", FakeStorageService())
+    viewer = create_test_user(email="viewer@example.com")
+    author = create_test_user(email="author@example.com", name="Author")
+    project = create_test_project(name="Project")
+    assign_project_role(user=viewer, project=project, role_key="viewer")
+    document = create_test_requirement_document(project=project)
+    document.author_id = author.id
+    db.commit()
+    authorize_as(client, viewer)
+
+    response = client.get(f"/projects/{project.id}/requirement-documents")
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["author"] == {
+        "id": author.id,
+        "email": "author@example.com",
+        "name": "Author",
+        "avatar_url": "https://example.com/default-avatar.png?signature=test",
+        "is_active": True,
+    }
+    assert response.json()["items"][0]["reviewer"] is None
+    assert response.json()["items"][0]["approver"] is None
 
 
 def test_create_requirement_document_allows_project_member(

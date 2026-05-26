@@ -7,6 +7,10 @@ from app.core.auth import require_project_permission
 from app.db.session import get_db
 from app.models.requirement import Requirement, RequirementDocument
 from app.models.user import User
+from app.presenters.requirement import (
+    build_requirement_document_responses_with_users,
+    build_requirement_document_response_with_users,
+)
 from app.schemas.requirement import (
     RequirementCommentCreate,
     RequirementCommentRead,
@@ -34,12 +38,14 @@ from app.services.requirement import (
     RequirementDocumentService,
     RequirementService,
 )
+from app.services.storage import StorageService
 
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["requirements"])
 document_service = RequirementDocumentService()
 requirement_service = RequirementService()
 requirement_child_service = RequirementChildService()
+storage_service = StorageService()
 
 
 @router.post(
@@ -52,13 +58,18 @@ def create_requirement_document(
     document_in: RequirementDocumentCreate,
     current_user: User = Depends(require_project_permission("requirement:create")),
     db: Session = Depends(get_db),
-) -> RequirementDocument:
+) -> RequirementDocumentRead:
     """要件定義書を作成する。"""
-    return document_service.create_document(
+    document = document_service.create_document(
         db,
         project_id=project_id,
         document_in=document_in,
         actor_id=current_user.id,
+    )
+    return build_requirement_document_response_with_users(
+        db,
+        document,
+        storage_service,
     )
 
 
@@ -85,7 +96,11 @@ def list_requirement_documents(
         status=status,
     )
     return RequirementDocumentListResponse(
-        items=[RequirementDocumentRead.model_validate(document) for document in documents],
+        items=build_requirement_document_responses_with_users(
+            db,
+            documents,
+            storage_service,
+        ),
         total=total,
         page=page,
         page_size=page_size,
@@ -101,12 +116,17 @@ def read_requirement_document(
     document_id: int,
     _: User = Depends(require_project_permission("requirement:read")),
     db: Session = Depends(get_db),
-) -> RequirementDocument:
+) -> RequirementDocumentRead:
     """要件定義書を取得する。"""
-    return document_service.get_document(
+    document = document_service.get_document(
         db,
         project_id=project_id,
         document_id=document_id,
+    )
+    return build_requirement_document_response_with_users(
+        db,
+        document,
+        storage_service,
     )
 
 
@@ -120,14 +140,19 @@ def update_requirement_document(
     document_in: RequirementDocumentUpdate,
     current_user: User = Depends(require_project_permission("requirement:update")),
     db: Session = Depends(get_db),
-) -> RequirementDocument:
+) -> RequirementDocumentRead:
     """要件定義書を更新する。"""
-    return document_service.update_document(
+    document = document_service.update_document(
         db,
         project_id=project_id,
         document_id=document_id,
         document_in=document_in,
         actor_id=current_user.id,
+    )
+    return build_requirement_document_response_with_users(
+        db,
+        document,
+        storage_service,
     )
 
 

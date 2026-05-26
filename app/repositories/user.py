@@ -93,6 +93,26 @@ class UserRepository:
         """
         return db.query(User).filter(User.deleted_at.is_(None)).order_by(User.id).all()
 
+    def list_by_ids(self, db: Session, user_ids: list[int]) -> list[User]:
+        """id一覧に一致する削除されていないユーザー一覧を取得する。
+
+        Args:
+            db: DBセッション。
+            user_ids: 検索対象ユーザーID一覧。
+
+        Returns:
+            一致するユーザー一覧。
+        """
+        if not user_ids:
+            return []
+
+        return (
+            db.query(User)
+            .filter(User.id.in_(user_ids), User.deleted_at.is_(None))
+            .order_by(User.id)
+            .all()
+        )
+
     def list_paginated(
         self,
         db: Session,

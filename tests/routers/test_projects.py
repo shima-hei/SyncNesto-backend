@@ -12,6 +12,17 @@ from app.models.user import User
 from app.repositories.rbac import RbacRepository
 
 
+class FakeStorageService:
+    """テスト用StorageService。"""
+
+    def generate_presigned_url(self, avatar_key: str | None) -> str | None:
+        """固定の署名付きURLを返す。"""
+        if avatar_key is None:
+            return None
+
+        return f"https://example.com/{avatar_key}?signature=test"
+
+
 def authorize_as(client: TestClient, user: User) -> None:
     """TestClientを指定ユーザーとして認証済みにする。"""
     access_token = create_access_token(subject=user.email)
@@ -200,6 +211,57 @@ def test_list_projects_searches_projects(
     assert response.status_code == 200
     assert response.json()["total"] == 1
     assert response.json()["items"][0]["project_code"] == "SYNC"
+
+
+def test_list_project_member_users_returns_project_members(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    monkeypatch,
+) -> None:
+    """プロジェクト所属ユーザー検索が所属メンバーのみ返すことを確認する。"""
+    from app.routers import projects
+
+    monkeypatch.setattr(projects, "storage_service", FakeStorageService())
+    current_user = create_test_user(email="current@example.com")
+    target_user = create_test_user(email="target@example.com", name="Target User")
+    non_member = create_test_user(email="non-member@example.com", name="Target User")
+    project = create_test_project(project_code="MEMBERS", name="Members")
+    assign_project_role(user=current_user, project=project, role_key="viewer")
+    assign_project_role(user=target_user, project=project, role_key="member")
+    authorize_as(client, current_user)
+
+    response = client.get(f"/projects/{project.id}/member-users?q=target")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [
+            {
+                "id": target_user.id,
+                "email": "target@example.com",
+                "name": "Target User",
+                "avatar_url": "https://example.com/default-avatar.png?signature=test",
+                "is_active": True,
+            }
+        ]
+    }
+    assert non_member.id != response.json()["items"][0]["id"]
+
+
+def test_list_project_member_users_requires_project_read_permission(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+) -> None:
+    """プロジェクト未参加ユーザーの所属ユーザー検索を拒否する。"""
+    user = create_test_user(email="outsider@example.com")
+    project = create_test_project(project_code="MEMBERS", name="Members")
+    authorize_as(client, user)
+
+    response = client.get(f"/projects/{project.id}/member-users")
+
+    assert response.status_code == 403
 
 
 def test_list_projects_filters_by_status(
