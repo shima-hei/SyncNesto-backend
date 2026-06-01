@@ -2,9 +2,9 @@
 
 from sqlalchemy.orm import Session
 
+from app.models.project import ProjectMember
 from app.models.rbac import Permission, Role, RolePermission, UserRole
 from app.models.user import User
-from app.models.project import ProjectMember
 
 
 class RbacRepository:

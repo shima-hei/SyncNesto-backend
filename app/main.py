@@ -3,8 +3,8 @@
 FastAPIアプリの生成、ルーティングの登録を行う
 """
 
-from fastapi import FastAPI
 import uvicorn
+from fastapi import FastAPI
 
 from app.core.config import settings
 from app.core.exception_handlers import register_exception_handlers

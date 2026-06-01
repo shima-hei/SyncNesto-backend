@@ -2,7 +2,15 @@
 
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import (
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -26,7 +34,10 @@ class Project(Base):
         String(100),
         unique=True,
         index=True,
-        comment=db_comment("プロジェクトコード", "画面表示や外部連携で使用する一意なプロジェクト識別子"),
+        comment=db_comment(
+            "プロジェクトコード",
+            "画面表示や外部連携で使用する一意なプロジェクト識別子",
+        ),
     )
     name: Mapped[str] = mapped_column(
         String(255),
@@ -95,14 +106,20 @@ class ProjectMember(Base):
     __table_args__ = (
         UniqueConstraint("project_id", "user_id", name="uq_project_members"),
         {
-            "comment": db_comment("プロジェクトメンバー", "プロジェクト所属とプロジェクト内ロールを管理するテーブル"),
+            "comment": db_comment(
+                "プロジェクトメンバー",
+                "プロジェクト所属とプロジェクト内ロールを管理するテーブル",
+            ),
         },
     )
 
     id: Mapped[int] = mapped_column(
         primary_key=True,
         index=True,
-        comment=db_comment("プロジェクトメンバーID", "プロジェクトメンバーを一意に識別するID"),
+        comment=db_comment(
+            "プロジェクトメンバーID",
+            "プロジェクトメンバーを一意に識別するID",
+        ),
     )
     project_id: Mapped[int] = mapped_column(
         ForeignKey("projects.id"),

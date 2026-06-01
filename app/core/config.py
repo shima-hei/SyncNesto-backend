@@ -1,12 +1,11 @@
 """アプリケーション設定を定義するモジュール。"""
 
-from dataclasses import dataclass, field
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
-
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 

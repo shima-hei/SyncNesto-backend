@@ -2,7 +2,15 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -136,7 +144,10 @@ class Requirement(Base):
             name="uq_requirements_document_requirement_code",
         ),
         {
-            "comment": db_comment("要件", "要件定義を構成する個別要件を管理するテーブル"),
+            "comment": db_comment(
+                "要件",
+                "要件定義を構成する個別要件を管理するテーブル",
+            ),
         },
     )
 
@@ -311,7 +322,10 @@ class RequirementDetail(Base):
 
     __tablename__ = "requirement_details"
     __table_args__ = {
-        "comment": db_comment("要件詳細", "要件種別ごとの差分項目をJSONで管理するテーブル"),
+        "comment": db_comment(
+            "要件詳細",
+            "要件種別ごとの差分項目をJSONで管理するテーブル",
+        ),
     }
 
     id: Mapped[int] = mapped_column(
@@ -409,7 +423,10 @@ class RequirementReview(Base):
         String(50),
         nullable=False,
         default="pending",
-        comment=db_comment("レビューステータス", "pending/approved/rejected/commentedの状態"),
+        comment=db_comment(
+            "レビューステータス",
+            "pending/approved/rejected/commentedの状態",
+        ),
     )
     comment: Mapped[str | None] = mapped_column(
         Text,

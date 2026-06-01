@@ -27,7 +27,6 @@ from app.repositories.user import UserRepository
 from app.schemas.user import UserCreate, UserProfileUpdate, UserRead, UserUpdate
 from app.services.storage import StorageService
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -411,7 +410,11 @@ class UserService:
             raise InvalidCredentialsError()
 
         if not user.is_active:
-            logger.warning("Inactive user login attempt: id=%s email=%s", user.id, email)
+            logger.warning(
+                "Inactive user login attempt: id=%s email=%s",
+                user.id,
+                email,
+            )
             raise InvalidCredentialsError()
 
         if not verify_password(password, user.hashed_password):

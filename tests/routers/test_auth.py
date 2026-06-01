@@ -3,9 +3,9 @@
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
-from fastapi.testclient import TestClient
 import jwt
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -75,6 +75,7 @@ def test_login_user_returns_access_token_and_cookie_in_development(
     )
 
     assert response.status_code == 200
+    assert response.json()["message"] == "Login successful"
     assert isinstance(response.json()["access_token"], str)
     assert response.json()["token_type"] == "bearer"
     assert response.cookies.get(settings.auth_cookie_name)
@@ -108,8 +109,7 @@ def test_login_user_does_not_return_access_token_in_production(
     )
 
     assert response.status_code == 200
-    assert "access_token" not in response.json()
-    assert response.json()["token_type"] == "bearer"
+    assert response.json() == {"message": "Login successful"}
     assert response.cookies.get(settings.auth_cookie_name)
     assert "httponly" in response.headers["set-cookie"].lower()
     assert "secure" in response.headers["set-cookie"].lower()

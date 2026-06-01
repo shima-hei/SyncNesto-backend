@@ -452,7 +452,11 @@ class RequirementDetailRepository:
 
     def get_by_id(self, db: Session, detail_id: int) -> RequirementDetail | None:
         """idに一致する要件詳細を取得する。"""
-        return db.query(RequirementDetail).filter(RequirementDetail.id == detail_id).first()
+        return (
+            db.query(RequirementDetail)
+            .filter(RequirementDetail.id == detail_id)
+            .first()
+        )
 
     def update(
         self,
@@ -497,7 +501,11 @@ class RequirementLinkRepository:
         db.refresh(link)
         return link
 
-    def list_by_requirement(self, db: Session, requirement_id: int) -> list[RequirementLink]:
+    def list_by_requirement(
+        self,
+        db: Session,
+        requirement_id: int,
+    ) -> list[RequirementLink]:
         """要件リンク一覧を取得する。"""
         return (
             db.query(RequirementLink)
@@ -604,7 +612,11 @@ class RequirementReviewRepository:
         db.refresh(review)
         return review
 
-    def list_by_requirement(self, db: Session, requirement_id: int) -> list[RequirementReview]:
+    def list_by_requirement(
+        self,
+        db: Session,
+        requirement_id: int,
+    ) -> list[RequirementReview]:
         """要件レビュー一覧を取得する。"""
         return (
             db.query(RequirementReview)
@@ -615,7 +627,11 @@ class RequirementReviewRepository:
 
     def get_by_id(self, db: Session, review_id: int) -> RequirementReview | None:
         """idに一致する要件レビューを取得する。"""
-        return db.query(RequirementReview).filter(RequirementReview.id == review_id).first()
+        return (
+            db.query(RequirementReview)
+            .filter(RequirementReview.id == review_id)
+            .first()
+        )
 
     def update(
         self,

@@ -37,7 +37,10 @@ class User(Base):
     )
     hashed_password: Mapped[str] = mapped_column(
         String(255),
-        comment=db_comment("ハッシュ化パスワード", "Argon2idでハッシュ化したパスワード"),
+        comment=db_comment(
+            "ハッシュ化パスワード",
+            "Argon2idでハッシュ化したパスワード",
+        ),
     )
     department: Mapped[str | None] = mapped_column(
         String(255),
@@ -53,7 +56,10 @@ class User(Base):
         String(1000),
         nullable=True,
         default=settings.default_avatar_key,
-        comment=db_comment("アバターキー", "S3に保存したユーザーアイコン画像のオブジェクトキー"),
+        comment=db_comment(
+            "アバターキー",
+            "S3に保存したユーザーアイコン画像のオブジェクトキー",
+        ),
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean,

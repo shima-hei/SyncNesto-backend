@@ -1,14 +1,13 @@
 """アプリケーション全体のロギング設定を行うモジュール。"""
 
-from contextvars import ContextVar, Token
 import json
 import logging
-from logging import LogRecord
 import sys
+from contextvars import ContextVar, Token
+from logging import LogRecord
 from typing import Any
 
 from app.core.config import settings
-
 
 request_id_context: ContextVar[str] = ContextVar(
     "request_id",

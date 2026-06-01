@@ -17,7 +17,10 @@ class Role(Base):
         UniqueConstraint("key", "scope", name="uq_roles_key_scope"),
         UniqueConstraint("name", "scope", name="uq_roles_name_scope"),
         {
-            "comment": db_comment("ロール", "システムロールとプロジェクトロールを管理するテーブル"),
+            "comment": db_comment(
+                "ロール",
+                "システムロールとプロジェクトロールを管理するテーブル",
+            ),
         },
     )
 
@@ -137,7 +140,10 @@ class UserRole(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "role_id", name="uq_user_roles"),
         {
-            "comment": db_comment("ユーザーロール", "ユーザーに付与されたシステムロールを管理するテーブル"),
+            "comment": db_comment(
+                "ユーザーロール",
+                "ユーザーに付与されたシステムロールを管理するテーブル",
+            ),
         },
     )
 

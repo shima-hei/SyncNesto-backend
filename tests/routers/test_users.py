@@ -2,8 +2,8 @@
 
 from collections.abc import Callable
 
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.config import settings

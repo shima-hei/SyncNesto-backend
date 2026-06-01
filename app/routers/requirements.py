@@ -5,11 +5,11 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import require_project_permission
 from app.db.session import get_db
-from app.models.requirement import Requirement, RequirementDocument
+from app.models.requirement import Requirement
 from app.models.user import User
 from app.presenters.requirement import (
-    build_requirement_document_responses_with_users,
     build_requirement_document_response_with_users,
+    build_requirement_document_responses_with_users,
 )
 from app.schemas.requirement import (
     RequirementCommentCreate,
@@ -39,7 +39,6 @@ from app.services.requirement import (
     RequirementService,
 )
 from app.services.storage import StorageService
-
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["requirements"])
 document_service = RequirementDocumentService()
@@ -222,7 +221,9 @@ def list_requirements(
         requirement_type=requirement_type,
     )
     return RequirementListResponse(
-        items=[RequirementRead.model_validate(requirement) for requirement in requirements],
+        items=[
+            RequirementRead.model_validate(requirement) for requirement in requirements
+        ],
         total=total,
         page=page,
         page_size=page_size,

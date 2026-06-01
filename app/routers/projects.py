@@ -9,7 +9,7 @@ from app.core.auth import (
     require_system_permission,
 )
 from app.db.session import get_db
-from app.models.project import Project, ProjectMember
+from app.models.project import Project
 from app.models.user import User
 from app.presenters.project import build_project_member_response
 from app.presenters.user import build_user_summary
@@ -27,7 +27,6 @@ from app.schemas.project import (
 from app.schemas.user import RoleRead, UserSummaryListResponse
 from app.services.project import ProjectMemberService, ProjectService
 from app.services.storage import StorageService
-
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 project_service = ProjectService()

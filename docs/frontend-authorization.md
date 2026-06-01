@@ -24,6 +24,14 @@ permission を使ってAPI実行可否を最終判定する
 Set-Cookie: access_token=<JWT>; HttpOnly; Path=/; SameSite=lax
 ```
 
+本番相当の `ALLOW_BEARER_TOKEN_RESPONSE=false` では、ログインレスポンスbodyには成功メッセージだけを返します。
+
+```json
+{
+  "message": "Login successful"
+}
+```
+
 Cookie名:
 
 ```text

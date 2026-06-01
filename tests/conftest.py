@@ -1,18 +1,23 @@
 """pytest共通設定。"""
 
-from collections.abc import Callable, Generator
-from pathlib import Path
 import subprocess
 import sys
 import time
+from collections.abc import Callable, Generator
+from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
+import pytest
 from dotenv import load_dotenv
 from fastapi.testclient import TestClient
-import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+if TYPE_CHECKING:
+    from app.models.project import Project, ProjectMember
+    from app.models.requirement import RequirementDocument
+    from app.models.user import User
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -153,8 +158,8 @@ def create_test_user(db: Session) -> Callable[..., "User"]:
         任意のemail/name/passwordでユーザーを作成する関数。
     """
     from app.core.security import get_password_hash
-    from app.repositories.rbac import RbacRepository
     from app.models.user import User
+    from app.repositories.rbac import RbacRepository
 
     def _create_test_user(
         *,

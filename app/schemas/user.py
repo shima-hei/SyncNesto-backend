@@ -118,8 +118,6 @@ class UserListResponse(BaseModel):
 class CurrentUserRead(UserRead):
     """現在のログインユーザー読み取り時に返すschema。"""
 
-    system_roles: list[RoleRead]
-
 
 class UserLogin(BaseModel):
     """
@@ -136,5 +134,6 @@ class UserLoginResponse(BaseModel):
     ログイン成功時のレスポンスschema。
     """
 
+    message: str
     access_token: str | None = None
-    token_type: str = "bearer"
+    token_type: str | None = None

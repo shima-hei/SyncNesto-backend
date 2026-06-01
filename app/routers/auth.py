@@ -56,9 +56,13 @@ def login_user(
     )
 
     if settings.allow_bearer_token_response:
-        return UserLoginResponse(access_token=access_token)
+        return UserLoginResponse(
+            message="Login successful",
+            access_token=access_token,
+            token_type="bearer",
+        )
 
-    return UserLoginResponse()
+    return UserLoginResponse(message="Login successful")
 
 
 @router.post(

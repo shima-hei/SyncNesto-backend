@@ -16,7 +16,6 @@ from app.schemas.user import (
 from app.services.storage import StorageService
 from app.services.user import UserService
 
-
 router = APIRouter(prefix="/users", tags=["users"])
 user_service = UserService()
 storage_service = StorageService()

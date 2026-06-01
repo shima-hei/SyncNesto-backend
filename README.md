@@ -219,7 +219,7 @@ GET /
 }
 ```
 
-ログイン成功時はHttpOnly Cookieにもaccess tokenをセットします。開発環境ではSwagger UIや手動検証をしやすくするため、レスポンスbodyにも `access_token` を返します。本番では `ALLOW_BEARER_TOKEN_RESPONSE=false` にして、bodyにはaccess tokenを返さない運用を想定しています。
+ログイン成功時はHttpOnly Cookieにもaccess tokenをセットします。開発環境ではSwagger UIや手動検証をしやすくするため、レスポンスbodyにも `access_token` を返します。本番では `ALLOW_BEARER_TOKEN_RESPONSE=false` にして、bodyには成功メッセージだけを返す運用を想定しています。
 
 ### Users
 
@@ -339,8 +339,17 @@ POST /auth/login
 
 ```json
 {
+  "message": "Login successful",
   "access_token": "jwt-access-token",
   "token_type": "bearer"
+}
+```
+
+`ALLOW_BEARER_TOKEN_RESPONSE=false` の場合:
+
+```json
+{
+  "message": "Login successful"
 }
 ```
 

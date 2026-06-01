@@ -8,7 +8,6 @@ from app.core import error_messages
 from app.core.config import settings
 from app.core.exceptions import BadRequestError
 
-
 ALLOWED_IMAGE_CONTENT_TYPES = {
     "image/jpeg": "jpg",
     "image/png": "png",

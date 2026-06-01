@@ -209,8 +209,12 @@ class RequirementService:
     ) -> None:
         """RequirementServiceを初期化する。"""
         self.repository = repository or RequirementRepository()
-        self.document_repository = document_repository or RequirementDocumentRepository()
-        self.revision_repository = revision_repository or RequirementRevisionRepository()
+        self.document_repository = (
+            document_repository or RequirementDocumentRepository()
+        )
+        self.revision_repository = (
+            revision_repository or RequirementRevisionRepository()
+        )
 
     def create_requirement(
         self,
@@ -449,7 +453,9 @@ class RequirementChildService:
         self.link_repository = link_repository or RequirementLinkRepository()
         self.comment_repository = comment_repository or RequirementCommentRepository()
         self.review_repository = review_repository or RequirementReviewRepository()
-        self.revision_repository = revision_repository or RequirementRevisionRepository()
+        self.revision_repository = (
+            revision_repository or RequirementRevisionRepository()
+        )
 
     def get_summary(
         self,
@@ -519,7 +525,12 @@ class RequirementChildService:
         detail_in: RequirementDetailUpdate,
     ) -> RequirementDetail:
         """要件詳細を更新する。"""
-        detail = self._get_detail_in_requirement(db, project_id, requirement_id, detail_id)
+        detail = self._get_detail_in_requirement(
+            db,
+            project_id,
+            requirement_id,
+            detail_id,
+        )
         return self.detail_repository.update(db, detail=detail, detail_in=detail_in)
 
     def delete_detail(
@@ -531,7 +542,12 @@ class RequirementChildService:
         detail_id: int,
     ) -> None:
         """要件詳細を物理削除する。"""
-        detail = self._get_detail_in_requirement(db, project_id, requirement_id, detail_id)
+        detail = self._get_detail_in_requirement(
+            db,
+            project_id,
+            requirement_id,
+            detail_id,
+        )
         self.detail_repository.delete(db, detail)
 
     def create_link(
@@ -656,7 +672,12 @@ class RequirementChildService:
         review_in: RequirementReviewUpdate,
     ) -> RequirementReview:
         """要件レビューを更新する。"""
-        review = self._get_review_in_requirement(db, project_id, requirement_id, review_id)
+        review = self._get_review_in_requirement(
+            db,
+            project_id,
+            requirement_id,
+            review_id,
+        )
         return self.review_repository.update(db, review=review, review_in=review_in)
 
     def delete_review(
@@ -668,7 +689,12 @@ class RequirementChildService:
         review_id: int,
     ) -> None:
         """要件レビューを物理削除する。"""
-        review = self._get_review_in_requirement(db, project_id, requirement_id, review_id)
+        review = self._get_review_in_requirement(
+            db,
+            project_id,
+            requirement_id,
+            review_id,
+        )
         self.review_repository.delete(db, review)
 
     def _ensure_requirement_in_project(
