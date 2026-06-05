@@ -4,6 +4,7 @@
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID
 
 import jwt
 from pwdlib import PasswordHash
@@ -38,22 +39,33 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return password_hash.verify(plain_password, hashed_password)
 
 
-def create_access_token(subject: str) -> str:
+def create_access_token(
+    subject: str,
+    session_id: UUID | str | None = None,
+    expires_at: datetime | None = None,
+) -> str:
     """アクセストークンを作成する。
 
     Args:
         subject: トークンの主体を表す値。
+        session_id: セッションID。
+        expires_at: トークンの有効期限。未指定の場合は設定値から算出する。
 
     Returns:
         JWTアクセストークン。
     """
-    expires_at = datetime.now(UTC) + timedelta(
-        minutes=settings.access_token_expire_minutes
-    )
+    if expires_at is None:
+        expires_at = datetime.now(UTC) + timedelta(
+            minutes=settings.access_token_expire_minutes
+        )
+
     payload = {
         "sub": subject,
         "exp": expires_at,
+        "iat": datetime.now(UTC),
     }
+    if session_id is not None:
+        payload["sid"] = str(session_id)
 
     return jwt.encode(
         payload,
@@ -62,11 +74,12 @@ def create_access_token(subject: str) -> str:
     )
 
 
-def decode_access_token(token: str) -> dict[str, Any]:
+def decode_access_token(token: str, verify_exp: bool = True) -> dict[str, Any]:
     """アクセストークンをデコードする。
 
     Args:
         token: JWTアクセストークン。
+        verify_exp: expを検証するか。
 
     Returns:
         デコードされたJWT payload。
@@ -75,4 +88,5 @@ def decode_access_token(token: str) -> dict[str, Any]:
         token,
         settings.secret_key,
         algorithms=[settings.algorithm],
+        options={"verify_exp": verify_exp},
     )

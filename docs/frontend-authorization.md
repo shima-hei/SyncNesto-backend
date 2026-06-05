@@ -21,7 +21,13 @@ permission を使ってAPI実行可否を最終判定する
 ログイン成功時、バックエンドは HttpOnly Cookie に JWT access token をセットします。
 
 ```http
-Set-Cookie: access_token=<JWT>; HttpOnly; Path=/; SameSite=lax
+Set-Cookie: access_token=<JWT>; HttpOnly; Path=/; SameSite=Lax
+```
+
+本番環境で `AUTH_COOKIE_SECURE=true` の場合は `Secure` も付与されます。
+
+```http
+Set-Cookie: access_token=<JWT>; HttpOnly; Secure; Path=/; SameSite=Lax
 ```
 
 本番相当の `ALLOW_BEARER_TOKEN_RESPONSE=false` では、ログインレスポンスbodyには成功メッセージだけを返します。
@@ -37,6 +43,29 @@ Cookie名:
 ```text
 access_token
 ```
+
+Cookieに入るJWTには、ユーザー識別子 `sub` とDBセッションID `sid` が含まれます。バックエンドは `sid` を使って `sessions` テーブルの状態を確認します。
+
+セッションは以下の方針で管理します。
+
+```text
+idle timeout:
+一定時間操作がない場合に期限切れにする
+
+sliding expiration:
+期限切れが近い状態で認証済みAPIを呼び出した場合、DBセッションとCookieを延長する
+
+absolute timeout:
+操作が続いていても、ログインから一定時間を超えたら必ず期限切れにする
+```
+
+期限切れになったセッションは物理削除せず、`sessions.revoked_at` と `sessions.revoked_reason` を更新します。`401 TOKEN_EXPIRED` または `401 INVALID_TOKEN` では、バックエンドが削除用の `Set-Cookie` も返します。
+
+```http
+Set-Cookie: access_token=; Max-Age=0; HttpOnly; Path=/; SameSite=Lax
+```
+
+フロントエンドは Next.js BFF でバックエンドの `Set-Cookie` をブラウザへ中継し、Cookie破棄後にログイン画面へ誘導してください。Cookieが存在しない `401 AUTHENTICATION_REQUIRED` では、削除用Cookieは必須ではありません。
 
 Server Component / Server Guard からバックエンドへアクセスする場合は、ブラウザから受け取った Cookie をそのまま転送します。
 
@@ -773,6 +802,7 @@ const canViewProject = [
 
 ```http
 401 Unauthorized
+Set-Cookie: access_token=; Max-Age=0; HttpOnly; Path=/; SameSite=Lax
 ```
 
 ```json
@@ -786,6 +816,7 @@ const canViewProject = [
 
 ```http
 401 Unauthorized
+Set-Cookie: access_token=; Max-Age=0; HttpOnly; Path=/; SameSite=Lax
 ```
 
 ```json
@@ -835,4 +866,4 @@ const canViewProject = [
 }
 ```
 
-フロントエンドでは、`401 INVALID_CREDENTIALS` はログイン画面の入力エラー、`401 AUTHENTICATION_REQUIRED` は未ログイン、`401 TOKEN_EXPIRED` はセッション期限切れ、`401 INVALID_TOKEN` はCookie破棄後の再ログイン誘導として扱ってください。`403` は権限なし表示として扱ってください。`409 VERSION_CONFLICT` は最新データの再表示、`409 DUPLICATE_RESOURCE` は入力値の重複エラーとして扱ってください。
+フロントエンドでは、`401 INVALID_CREDENTIALS` はログイン画面の入力エラー、`401 AUTHENTICATION_REQUIRED` は未ログイン、`401 TOKEN_EXPIRED` はセッション期限切れ、`401 INVALID_TOKEN` はCookie破棄後の再ログイン誘導として扱ってください。`TOKEN_EXPIRED` / `INVALID_TOKEN` ではバックエンドの `Set-Cookie` をBFFからブラウザへ中継してください。`403` は権限なし表示として扱ってください。`409 VERSION_CONFLICT` は最新データの再表示、`409 DUPLICATE_RESOURCE` は入力値の重複エラーとして扱ってください。

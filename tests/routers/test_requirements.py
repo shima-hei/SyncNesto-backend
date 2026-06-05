@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import create_access_token
+from app.db.session import session_local
 from app.models.project import Project, ProjectMember
 from app.models.requirement import (
     Requirement,
@@ -19,6 +20,7 @@ from app.models.requirement import (
     RequirementRevision,
 )
 from app.models.user import User
+from app.repositories.session import UserSessionRepository
 
 
 class FakeStorageService:
@@ -34,7 +36,14 @@ class FakeStorageService:
 
 def authorize_as(client: TestClient, user: User) -> None:
     """TestClientを指定ユーザーとして認証済みにする。"""
-    access_token = create_access_token(subject=user.email)
+    with session_local() as db:
+        managed_user = db.merge(user)
+        user_session = UserSessionRepository().create(db, managed_user)
+        access_token = create_access_token(
+            subject=user.email,
+            session_id=user_session.id,
+            expires_at=user_session.expires_at,
+        )
     client.cookies.set(settings.auth_cookie_name, access_token)
 
 

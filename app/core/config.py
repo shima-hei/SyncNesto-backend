@@ -103,6 +103,18 @@ class Settings:
         "ACCESS_TOKEN_EXPIRE_MINUTES",
         30,
     )
+    session_idle_timeout_minutes: int = get_int_env(
+        "SESSION_IDLE_TIMEOUT_MINUTES",
+        30,
+    )
+    session_refresh_threshold_minutes: int = get_int_env(
+        "SESSION_REFRESH_THRESHOLD_MINUTES",
+        10,
+    )
+    session_absolute_timeout_minutes: int = get_int_env(
+        "SESSION_ABSOLUTE_TIMEOUT_MINUTES",
+        480,
+    )
     auth_cookie_name: str = os.getenv("AUTH_COOKIE_NAME", "access_token")
     auth_cookie_secure: bool = get_bool_env("AUTH_COOKIE_SECURE")
     auth_cookie_samesite: CookieSameSite = get_cookie_samesite_env(

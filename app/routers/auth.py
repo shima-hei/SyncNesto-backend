@@ -1,14 +1,22 @@
 """認証関連APIのルーティングを定義するモジュール。"""
 
-from fastapi import APIRouter, Depends, File, Response, UploadFile
+import jwt
+from fastapi import APIRouter, Cookie, Depends, File, Response, UploadFile
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_user
+from app.core.auth import (
+    delete_auth_cookie,
+    get_current_user,
+    get_session_id,
+    set_auth_cookie,
+)
 from app.core.config import settings
-from app.core.security import create_access_token
+from app.core.exceptions import InvalidTokenError
+from app.core.security import create_access_token, decode_access_token
 from app.db.session import get_db
 from app.models.user import User
 from app.presenters.user import build_current_user_response
+from app.repositories.session import UserSessionRepository
 from app.schemas.user import (
     CurrentUserRead,
     UserLogin,
@@ -20,7 +28,10 @@ from app.services.user import UserService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 user_service = UserService()
+session_repository = UserSessionRepository()
 storage_service = StorageService()
+
+SESSION_REVOKE_REASON_LOGOUT = "logout"
 
 
 @router.post(
@@ -45,14 +56,16 @@ def login_user(
     """
     user = user_service.authenticate_user(db, user_in.email, user_in.password)
     user_service.update_last_login_at(db, user)
-    access_token = create_access_token(subject=user.email)
-    response.set_cookie(
-        key=settings.auth_cookie_name,
-        value=access_token,
-        httponly=True,
-        secure=settings.auth_cookie_secure,
-        samesite=settings.auth_cookie_samesite,
-        max_age=settings.access_token_expire_minutes * 60,
+    user_session = session_repository.create(db, user)
+    access_token = create_access_token(
+        subject=user.email,
+        session_id=user_session.id,
+        expires_at=user_session.expires_at,
+    )
+    set_auth_cookie(
+        response,
+        access_token,
+        max_age_seconds=settings.session_idle_timeout_minutes * 60,
     )
 
     if settings.allow_bearer_token_response:
@@ -69,19 +82,33 @@ def login_user(
     "/logout",
     status_code=204,
 )
-def logout_user(response: Response) -> None:
+def logout_user(
+    response: Response,
+    access_token: str | None = Cookie(default=None, alias=settings.auth_cookie_name),
+    db: Session = Depends(get_db),
+) -> None:
     """ユーザーログアウトを行う。
 
     Args:
         response: HTTPレスポンス。
-
+        access_token: 認証Cookieに含まれるアクセストークン。
+        db: DBセッション。
     """
-    response.delete_cookie(
-        key=settings.auth_cookie_name,
-        httponly=True,
-        secure=settings.auth_cookie_secure,
-        samesite=settings.auth_cookie_samesite,
-    )
+    if access_token is not None:
+        try:
+            payload = decode_access_token(access_token, verify_exp=False)
+            session_id = get_session_id(payload)
+            user_session = session_repository.get_by_id(db, session_id)
+            if user_session is not None:
+                session_repository.revoke(
+                    db,
+                    user_session,
+                    SESSION_REVOKE_REASON_LOGOUT,
+                )
+        except (jwt.PyJWTError, InvalidTokenError):
+            pass
+
+    delete_auth_cookie(response)
 
 
 @router.get(

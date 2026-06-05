@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import jwt
 import pytest
@@ -9,8 +10,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.security import create_access_token, verify_password
+from app.core.security import create_access_token, decode_access_token, verify_password
+from app.db.session import session_local
 from app.models.user import User
+from app.repositories.session import UserSessionRepository
 
 
 class FakeStorageService:
@@ -48,6 +51,33 @@ def use_fake_storage_service(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.routers import auth
 
     monkeypatch.setattr(auth, "storage_service", FakeStorageService())
+
+
+def create_session_token(user: User) -> tuple[str, UUID]:
+    """テスト用セッションを作成してsid入りアクセストークンを返す。"""
+    with session_local() as db:
+        managed_user = db.merge(user)
+        user_session = UserSessionRepository().create(db, managed_user)
+        session_id = user_session.id
+        expires_at = user_session.expires_at
+        access_token = create_access_token(
+            subject=user.email,
+            session_id=session_id,
+            expires_at=expires_at,
+        )
+        return access_token, session_id
+
+
+def authorize_as(client: TestClient, user: User) -> UUID:
+    """TestClientを指定ユーザーとして認証済みにする。"""
+    access_token, session_id = create_session_token(user)
+    client.cookies.set(
+        settings.auth_cookie_name,
+        access_token,
+        domain="testserver.local",
+        path="/",
+    )
+    return session_id
 
 
 def test_login_user_returns_access_token_and_cookie_in_development(
@@ -140,6 +170,39 @@ def test_login_user_updates_last_login_at_without_incrementing_version(
     db.refresh(user)
     assert user.last_login_at is not None
     assert user.version == 1
+
+
+def test_login_user_creates_session_and_returns_sid_token(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """ログイン成功時にDBセッションを作成し、sid入りtokenを返すことを確認する。"""
+    password = "password123"
+    user = create_test_user(
+        email="session-login@example.com",
+        name="Session Login User",
+        password=password,
+    )
+
+    response = client.post(
+        "/auth/login",
+        json={
+            "email": "session-login@example.com",
+            "password": password,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = decode_access_token(response.cookies[settings.auth_cookie_name])
+    assert payload["sub"] == "session-login@example.com"
+    assert isinstance(payload["sid"], str)
+
+    user_session = UserSessionRepository().get_by_id(db, UUID(payload["sid"]))
+    assert user_session is not None
+    assert user_session.user_id == user.id
+    assert user_session.revoked_at is None
+    assert user_session.revoked_reason is None
 
 
 def test_login_user_rejects_inactive_user(
@@ -237,13 +300,7 @@ def test_get_me_returns_current_user_with_cookie_token(
         name="Me Cookie User",
         password="password123",
     )
-    access_token = create_access_token(subject=user.email)
-    client.cookies.set(
-        settings.auth_cookie_name,
-        access_token,
-        domain="testserver.local",
-        path="/",
-    )
+    authorize_as(client, user)
 
     response = client.get("/auth/me")
 
@@ -276,7 +333,7 @@ def test_get_me_returns_current_user_with_authorization_header(
         name="Me Bearer User",
         password="password123",
     )
-    access_token = create_access_token(subject=user.email)
+    access_token, _ = create_session_token(user)
 
     response = client.get(
         "/auth/me",
@@ -310,13 +367,7 @@ def test_get_me_returns_system_roles(
         name="Admin",
         system_role="system_admin",
     )
-    access_token = create_access_token(subject=user.email)
-    client.cookies.set(
-        settings.auth_cookie_name,
-        access_token,
-        domain="testserver.local",
-        path="/",
-    )
+    authorize_as(client, user)
 
     response = client.get("/auth/me")
 
@@ -353,13 +404,7 @@ def test_update_me_updates_current_user_profile(
         name="Before",
         password="password123",
     )
-    access_token = create_access_token(subject=user.email)
-    client.cookies.set(
-        settings.auth_cookie_name,
-        access_token,
-        domain="testserver.local",
-        path="/",
-    )
+    authorize_as(client, user)
 
     response = client.patch(
         "/auth/me",
@@ -397,13 +442,7 @@ def test_update_me_rejects_email_update(
 ) -> None:
     """本人プロフィール更新でemail変更を拒否することを確認する。"""
     user = create_test_user(email="profile@example.com")
-    access_token = create_access_token(subject=user.email)
-    client.cookies.set(
-        settings.auth_cookie_name,
-        access_token,
-        domain="testserver.local",
-        path="/",
-    )
+    authorize_as(client, user)
 
     response = client.patch(
         "/auth/me",
@@ -422,13 +461,7 @@ def test_update_me_rejects_admin_only_profile_fields(
 ) -> None:
     """本人プロフィール更新で管理者用項目の変更を拒否することを確認する。"""
     user = create_test_user(email="profile@example.com")
-    access_token = create_access_token(subject=user.email)
-    client.cookies.set(
-        settings.auth_cookie_name,
-        access_token,
-        domain="testserver.local",
-        path="/",
-    )
+    authorize_as(client, user)
 
     response = client.patch(
         "/auth/me",
@@ -454,13 +487,7 @@ def test_update_me_avatar_uploads_image_and_returns_presigned_url(
 
     monkeypatch.setattr(auth, "storage_service", FakeStorageService())
     user = create_test_user(email="avatar@example.com")
-    access_token = create_access_token(subject=user.email)
-    client.cookies.set(
-        settings.auth_cookie_name,
-        access_token,
-        domain="testserver.local",
-        path="/",
-    )
+    authorize_as(client, user)
 
     response = client.put(
         "/auth/me/avatar",
@@ -491,11 +518,18 @@ def test_update_me_avatar_requires_login(client: TestClient) -> None:
     }
 
 
-def test_get_me_rejects_expired_token(client: TestClient) -> None:
+def test_get_me_rejects_expired_token(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
     """期限切れtokenで現在ユーザー取得を拒否する。"""
+    user = create_test_user(email="expired@example.com")
+    _, session_id = create_session_token(user)
     expired_token = jwt.encode(
         {
             "sub": "expired@example.com",
+            "sid": str(session_id),
             "exp": datetime.now(UTC) - timedelta(minutes=1),
         },
         settings.secret_key,
@@ -512,6 +546,151 @@ def test_get_me_rejects_expired_token(client: TestClient) -> None:
         "message": "Token expired",
         "code": "TOKEN_EXPIRED",
     }
+    user_session = UserSessionRepository().get_by_id(db, session_id)
+    assert user_session is not None
+    assert user_session.revoked_reason == "expired"
+
+
+def test_get_me_rejects_expired_session_and_revokes_it(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """DBセッションのidle期限切れを拒否し、expiredとして失効する。"""
+    user = create_test_user(email="expired-session@example.com")
+    session_id = authorize_as(client, user)
+    user_session = UserSessionRepository().get_by_id(db, session_id)
+    assert user_session is not None
+    user_session.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    db.commit()
+
+    response = client.get("/auth/me")
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "message": "Token expired",
+        "code": "TOKEN_EXPIRED",
+    }
+    assert settings.auth_cookie_name in response.headers["set-cookie"]
+    assert "max-age=0" in response.headers["set-cookie"].lower()
+    db.refresh(user_session)
+    assert user_session.revoked_reason == "expired"
+
+
+def test_get_me_rejects_absolute_expired_session_and_revokes_it(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """DBセッションの絶対期限切れを拒否し、absolute_expiredとして失効する。"""
+    user = create_test_user(email="absolute-expired@example.com")
+    session_id = authorize_as(client, user)
+    user_session = UserSessionRepository().get_by_id(db, session_id)
+    assert user_session is not None
+    user_session.absolute_expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    db.commit()
+
+    response = client.get("/auth/me")
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "message": "Token expired",
+        "code": "TOKEN_EXPIRED",
+    }
+    assert settings.auth_cookie_name in response.headers["set-cookie"]
+    assert "max-age=0" in response.headers["set-cookie"].lower()
+    db.refresh(user_session)
+    assert user_session.revoked_reason == "absolute_expired"
+
+
+def test_get_me_refreshes_cookie_when_session_is_near_expiration(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """セッション期限が閾値以下の場合にCookieを再発行する。"""
+    user = create_test_user(email="refresh@example.com")
+    session_id = authorize_as(client, user)
+    user_session = UserSessionRepository().get_by_id(db, session_id)
+    assert user_session is not None
+    previous_expires_at = datetime.now(UTC) + timedelta(minutes=5)
+    user_session.expires_at = previous_expires_at
+    db.commit()
+    access_token = create_access_token(
+        subject=user.email,
+        session_id=session_id,
+        expires_at=previous_expires_at,
+    )
+    client.cookies.set(
+        settings.auth_cookie_name,
+        access_token,
+        domain="testserver.local",
+        path="/",
+    )
+
+    response = client.get("/auth/me")
+
+    assert response.status_code == 200
+    assert settings.auth_cookie_name in response.headers["set-cookie"]
+    db.refresh(user_session)
+    assert user_session.expires_at > previous_expires_at
+
+
+def test_get_me_does_not_refresh_cookie_when_session_has_enough_time(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """セッション期限に余裕がある場合はCookieを再発行しない。"""
+    user = create_test_user(email="no-refresh@example.com")
+    authorize_as(client, user)
+
+    response = client.get("/auth/me")
+
+    assert response.status_code == 200
+    assert "set-cookie" not in response.headers
+
+
+def test_get_me_rejects_revoked_session(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """失効済みセッションを拒否する。"""
+    user = create_test_user(email="revoked@example.com")
+    session_id = authorize_as(client, user)
+    user_session = UserSessionRepository().get_by_id(db, session_id)
+    assert user_session is not None
+    UserSessionRepository().revoke(db, user_session, "admin_revoked")
+
+    response = client.get("/auth/me")
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "message": "Invalid token",
+        "code": "INVALID_TOKEN",
+    }
+    assert settings.auth_cookie_name in response.headers["set-cookie"]
+    assert "max-age=0" in response.headers["set-cookie"].lower()
+
+
+def test_get_me_deletes_cookie_for_invalid_cookie_token(client: TestClient) -> None:
+    """Cookieに不正tokenがある場合は削除Cookieを返す。"""
+    client.cookies.set(
+        settings.auth_cookie_name,
+        "invalid-token",
+        domain="testserver.local",
+        path="/",
+    )
+
+    response = client.get("/auth/me")
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "message": "Invalid token",
+        "code": "INVALID_TOKEN",
+    }
+    assert settings.auth_cookie_name in response.headers["set-cookie"]
+    assert "max-age=0" in response.headers["set-cookie"].lower()
 
 
 def test_delete_me_avatar_resets_avatar_key_and_deletes_s3_object(
@@ -529,13 +708,7 @@ def test_delete_me_avatar_resets_avatar_key_and_deletes_s3_object(
     user.avatar_key = "users/1.png"
     db.commit()
     db.refresh(user)
-    access_token = create_access_token(subject=user.email)
-    client.cookies.set(
-        settings.auth_cookie_name,
-        access_token,
-        domain="testserver.local",
-        path="/",
-    )
+    authorize_as(client, user)
 
     response = client.delete("/auth/me/avatar")
 
@@ -566,13 +739,7 @@ def test_delete_me_avatar_does_not_delete_default_avatar(
     db.commit()
     db.refresh(user)
     current_version = user.version
-    access_token = create_access_token(subject=user.email)
-    client.cookies.set(
-        settings.auth_cookie_name,
-        access_token,
-        domain="testserver.local",
-        path="/",
-    )
+    authorize_as(client, user)
 
     response = client.delete("/auth/me/avatar")
 
@@ -607,13 +774,7 @@ def test_update_me_rejects_stale_version_with_current_user(
     user.version = 2
     db.commit()
     db.refresh(user)
-    access_token = create_access_token(subject=user.email)
-    client.cookies.set(
-        settings.auth_cookie_name,
-        access_token,
-        domain="testserver.local",
-        path="/",
-    )
+    authorize_as(client, user)
 
     response = client.patch(
         "/auth/me",
@@ -661,6 +822,7 @@ def test_get_me_rejects_missing_token(client: TestClient) -> None:
         "message": "Authentication required",
         "code": "AUTHENTICATION_REQUIRED",
     }
+    assert "set-cookie" not in response.headers
 
 
 def test_get_me_rejects_invalid_token(client: TestClient) -> None:
@@ -680,16 +842,11 @@ def test_get_me_rejects_invalid_token(client: TestClient) -> None:
 def test_logout_deletes_auth_cookie(
     client: TestClient,
     create_test_user: Callable[..., User],
+    db: Session,
 ) -> None:
     """ログアウトAPIが認証Cookieを削除することを確認する。"""
     user = create_test_user(email="logout@example.com")
-    access_token = create_access_token(subject=user.email)
-    client.cookies.set(
-        settings.auth_cookie_name,
-        access_token,
-        domain="testserver.local",
-        path="/",
-    )
+    session_id = authorize_as(client, user)
 
     response = client.post("/auth/logout")
 
@@ -699,6 +856,9 @@ def test_logout_deletes_auth_cookie(
     assert settings.auth_cookie_name in response.headers["set-cookie"]
     assert "max-age=0" in response.headers["set-cookie"].lower()
     assert "httponly" in response.headers["set-cookie"].lower()
+    user_session = UserSessionRepository().get_by_id(db, session_id)
+    assert user_session is not None
+    assert user_session.revoked_reason == "logout"
 
 
 def test_get_me_rejects_after_logout(
@@ -707,13 +867,7 @@ def test_get_me_rejects_after_logout(
 ) -> None:
     """ログアウト後に現在ユーザー取得を拒否する。"""
     user = create_test_user(email="logout-me@example.com")
-    access_token = create_access_token(subject=user.email)
-    client.cookies.set(
-        settings.auth_cookie_name,
-        access_token,
-        domain="testserver.local",
-        path="/",
-    )
+    authorize_as(client, user)
 
     logout_response = client.post("/auth/logout")
     response = client.get("/auth/me")

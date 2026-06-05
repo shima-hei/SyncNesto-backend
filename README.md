@@ -70,6 +70,9 @@ SQL_ECHO=false
 SECRET_KEY=change-me-at-least-32-bytes
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
+SESSION_IDLE_TIMEOUT_MINUTES=30
+SESSION_REFRESH_THRESHOLD_MINUTES=10
+SESSION_ABSOLUTE_TIMEOUT_MINUTES=480
 AUTH_COOKIE_NAME=access_token
 AUTH_COOKIE_SECURE=false
 AUTH_COOKIE_SAMESITE=lax
@@ -220,6 +223,8 @@ GET /
 ```
 
 ログイン成功時はHttpOnly Cookieにもaccess tokenをセットします。開発環境ではSwagger UIや手動検証をしやすくするため、レスポンスbodyにも `access_token` を返します。本番では `ALLOW_BEARER_TOKEN_RESPONSE=false` にして、bodyには成功メッセージだけを返す運用を想定しています。
+
+認証CookieはDBセッションの `sid` と紐づきます。期限が近い状態で認証済みAPIを呼び出すと、sliding expirationによりDBセッションとCookieを更新します。`TOKEN_EXPIRED` または `INVALID_TOKEN` の401レスポンスでは、BFFがブラウザへ中継できるように削除用の `Set-Cookie` を返します。
 
 ### Users
 
@@ -398,6 +403,9 @@ AUTH_COOKIE_SECURE=true
 AUTH_COOKIE_SAMESITE=lax
 ALLOW_BEARER_TOKEN_RESPONSE=false
 ALLOW_AUTHORIZATION_HEADER=false
+SESSION_IDLE_TIMEOUT_MINUTES=30
+SESSION_REFRESH_THRESHOLD_MINUTES=10
+SESSION_ABSOLUTE_TIMEOUT_MINUTES=480
 ```
 
 ## 認可

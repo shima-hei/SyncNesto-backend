@@ -6,12 +6,16 @@ from fastapi import FastAPI, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
+from app.core.auth import delete_auth_cookie
+from app.core.config import settings
 from app.core.exceptions import (
     AppError,
     BadRequestError,
     ConflictError,
     ForbiddenError,
+    InvalidTokenError,
     NotFoundError,
+    TokenExpiredError,
     UnauthorizedError,
     VersionConflictError,
 )
@@ -44,6 +48,22 @@ def get_status_code(exc: AppError) -> int:
     return status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
+def should_delete_auth_cookie(request: Request, exc: AppError) -> bool:
+    """認証Cookieを削除すべきか判定する。
+
+    Args:
+        request: 例外が発生したリクエスト。
+        exc: 発生したアプリケーション独自例外。
+
+    Returns:
+        認証Cookieを削除すべき場合はTrue。
+    """
+    return (
+        settings.auth_cookie_name in request.cookies
+        and isinstance(exc, TokenExpiredError | InvalidTokenError)
+    )
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """アプリケーション共通の例外ハンドラーを登録する。
 
@@ -53,13 +73,13 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(AppError)
     async def app_error_handler(
-        _request: Request,
+        request: Request,
         exc: AppError,
     ) -> JSONResponse:
         """アプリケーション独自例外をHTTPレスポンスへ変換する。
 
         Args:
-            _request: 例外が発生したリクエスト。
+            request: 例外が発生したリクエスト。
             exc: 発生したアプリケーション独自例外。
 
         Returns:
@@ -81,4 +101,8 @@ def register_exception_handlers(app: FastAPI) -> None:
         if isinstance(exc, VersionConflictError):
             content["current"] = jsonable_encoder(exc.current)
 
-        return JSONResponse(status_code=status_code, content=content)
+        response = JSONResponse(status_code=status_code, content=content)
+        if should_delete_auth_cookie(request, exc):
+            delete_auth_cookie(response)
+
+        return response

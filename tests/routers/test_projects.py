@@ -1,15 +1,19 @@
 """プロジェクトAPIのテスト。"""
 
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import create_access_token
+from app.db.session import session_local
 from app.models.project import Project, ProjectMember
 from app.models.user import User
 from app.repositories.rbac import RbacRepository
+from app.repositories.session import UserSessionRepository
 
 
 class FakeStorageService:
@@ -23,10 +27,19 @@ class FakeStorageService:
         return f"https://example.com/{avatar_key}?signature=test"
 
 
-def authorize_as(client: TestClient, user: User) -> None:
+def authorize_as(client: TestClient, user: User) -> UUID:
     """TestClientを指定ユーザーとして認証済みにする。"""
-    access_token = create_access_token(subject=user.email)
+    with session_local() as db:
+        managed_user = db.merge(user)
+        user_session = UserSessionRepository().create(db, managed_user)
+        session_id = user_session.id
+        access_token = create_access_token(
+            subject=user.email,
+            session_id=session_id,
+            expires_at=user_session.expires_at,
+        )
     client.cookies.set(settings.auth_cookie_name, access_token)
+    return session_id
 
 
 def get_project_role_id(db: Session, role_key: str) -> int:
@@ -136,6 +149,37 @@ def test_list_projects_returns_all_projects_for_system_admin(
         "Project A",
         "Project B",
     ]
+
+
+def test_list_projects_refreshes_cookie_when_session_is_near_expiration(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """プロジェクト一覧取得でも期限が近いセッションのCookieを再発行する。"""
+    admin_user = create_test_user(
+        email="refresh-projects@example.com",
+        system_role="system_admin",
+    )
+    session_id = authorize_as(client, admin_user)
+    user_session = UserSessionRepository().get_by_id(db, session_id)
+    assert user_session is not None
+    previous_expires_at = datetime.now(UTC) + timedelta(minutes=5)
+    user_session.expires_at = previous_expires_at
+    db.commit()
+    access_token = create_access_token(
+        subject=admin_user.email,
+        session_id=session_id,
+        expires_at=previous_expires_at,
+    )
+    client.cookies.set(settings.auth_cookie_name, access_token)
+
+    response = client.get("/projects")
+
+    assert response.status_code == 200
+    assert settings.auth_cookie_name in response.headers["set-cookie"]
+    db.refresh(user_session)
+    assert user_session.expires_at > previous_expires_at
 
 
 def test_list_projects_returns_joined_projects_for_project_member(

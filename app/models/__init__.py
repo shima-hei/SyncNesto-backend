@@ -11,6 +11,7 @@ from app.models.requirement import (
     RequirementReview,
     RequirementRevision,
 )
+from app.models.session import UserSession
 from app.models.user import User
 
 __all__ = [
@@ -28,4 +29,5 @@ __all__ = [
     "RolePermission",
     "User",
     "UserRole",
+    "UserSession",
 ]
