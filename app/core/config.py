@@ -129,6 +129,13 @@ class Settings:
         "ALLOW_AUTHORIZATION_HEADER",
         True,
     )
+    csrf_cookie_name: str = os.getenv("CSRF_COOKIE_NAME", "csrf_token")
+    csrf_header_name: str = os.getenv("CSRF_HEADER_NAME", "X-CSRF-Token")
+    csrf_cookie_secure: bool = get_bool_env("CSRF_COOKIE_SECURE")
+    csrf_cookie_samesite: CookieSameSite = get_cookie_samesite_env(
+        "CSRF_COOKIE_SAMESITE",
+        "lax",
+    )
     initial_admin_email: str | None = os.getenv("INITIAL_ADMIN_EMAIL")
     initial_admin_password: str | None = os.getenv("INITIAL_ADMIN_PASSWORD")
     initial_admin_name: str = os.getenv("INITIAL_ADMIN_NAME", "Initial Admin")

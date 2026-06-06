@@ -46,6 +46,58 @@ access_token
 
 Cookieに入るJWTには、ユーザー識別子 `sub` とDBセッションID `sid` が含まれます。バックエンドは `sid` を使って `sessions` テーブルの状態を確認します。
 
+## CSRF対策
+
+ログイン成功時、バックエンドは認証Cookieとは別にCSRF token用のCookieをセットします。
+
+```http
+Set-Cookie: csrf_token=<CSRF_TOKEN>; Path=/; SameSite=Lax
+```
+
+Cookie名:
+
+```text
+csrf_token
+```
+
+Header名:
+
+```text
+X-CSRF-Token
+```
+
+`csrf_token` はフロントエンド/BFFが読み取れるように `HttpOnly` を付けません。`access_token` は引き続き `HttpOnly` のため、フロントエンドから読まないでください。
+
+更新系APIでは、ブラウザから受け取った `csrf_token` Cookie の値を `X-CSRF-Token` ヘッダーにも入れてバックエンドへ送ります。
+
+```http
+Cookie: access_token=<JWT>; csrf_token=<CSRF_TOKEN>
+X-CSRF-Token: <CSRF_TOKEN>
+```
+
+CSRF検証対象:
+
+```text
+POST
+PUT
+PATCH
+DELETE
+```
+
+CSRF検証対象外:
+
+```text
+GET
+HEAD
+OPTIONS
+TRACE
+POST /auth/login
+```
+
+認証CookieがないリクエストではCSRF検証ではなく、通常の認証エラーとして扱います。認証Cookieがある更新系APIで `X-CSRF-Token` が未指定、またはCookie値と一致しない場合は `403 CSRF_TOKEN_INVALID` を返します。
+
+Next.js BFFでFastAPIを呼び出す場合は、BFF側でリクエストCookieから `csrf_token` を読み取り、FastAPIへのリクエストヘッダーに `X-CSRF-Token` として付与してください。
+
 セッションは以下の方針で管理します。
 
 ```text
@@ -63,6 +115,7 @@ absolute timeout:
 
 ```http
 Set-Cookie: access_token=; Max-Age=0; HttpOnly; Path=/; SameSite=Lax
+Set-Cookie: csrf_token=; Max-Age=0; Path=/; SameSite=Lax
 ```
 
 フロントエンドは Next.js BFF でバックエンドの `Set-Cookie` をブラウザへ中継し、Cookie破棄後にログイン画面へ誘導してください。Cookieが存在しない `401 AUTHENTICATION_REQUIRED` では、削除用Cookieは必須ではありません。
@@ -839,6 +892,19 @@ Set-Cookie: access_token=; Max-Age=0; HttpOnly; Path=/; SameSite=Lax
 }
 ```
 
+CSRF token不正:
+
+```http
+403 Forbidden
+```
+
+```json
+{
+  "message": "Invalid CSRF token",
+  "code": "CSRF_TOKEN_INVALID"
+}
+```
+
 更新競合:
 
 ```http
@@ -866,4 +932,4 @@ Set-Cookie: access_token=; Max-Age=0; HttpOnly; Path=/; SameSite=Lax
 }
 ```
 
-フロントエンドでは、`401 INVALID_CREDENTIALS` はログイン画面の入力エラー、`401 AUTHENTICATION_REQUIRED` は未ログイン、`401 TOKEN_EXPIRED` はセッション期限切れ、`401 INVALID_TOKEN` はCookie破棄後の再ログイン誘導として扱ってください。`TOKEN_EXPIRED` / `INVALID_TOKEN` ではバックエンドの `Set-Cookie` をBFFからブラウザへ中継してください。`403` は権限なし表示として扱ってください。`409 VERSION_CONFLICT` は最新データの再表示、`409 DUPLICATE_RESOURCE` は入力値の重複エラーとして扱ってください。
+フロントエンドでは、`401 INVALID_CREDENTIALS` はログイン画面の入力エラー、`401 AUTHENTICATION_REQUIRED` は未ログイン、`401 TOKEN_EXPIRED` はセッション期限切れ、`401 INVALID_TOKEN` はCookie破棄後の再ログイン誘導として扱ってください。`TOKEN_EXPIRED` / `INVALID_TOKEN` ではバックエンドの `Set-Cookie` をBFFからブラウザへ中継してください。`403 FORBIDDEN` は権限なし表示、`403 CSRF_TOKEN_INVALID` はCSRF tokenの再取得または再ログイン誘導として扱ってください。`409 VERSION_CONFLICT` は最新データの再表示、`409 DUPLICATE_RESOURCE` は入力値の重複エラーとして扱ってください。

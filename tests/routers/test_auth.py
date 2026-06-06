@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.csrf import generate_csrf_token
 from app.core.security import create_access_token, decode_access_token, verify_password
 from app.models.user import User
 from app.repositories.session import UserSessionRepository
@@ -147,6 +148,36 @@ def test_login_user_creates_session_and_returns_sid_token(
     assert user_session.user_id == user.id
     assert user_session.revoked_at is None
     assert user_session.revoked_reason is None
+
+
+def test_login_user_sets_csrf_cookie(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """ログイン成功時にCSRF Cookieを設定することを確認する。"""
+    password = "password123"
+    create_test_user(
+        email="csrf-login@example.com",
+        name="CSRF Login User",
+        password=password,
+    )
+
+    response = client.post(
+        "/auth/login",
+        json={
+            "email": "csrf-login@example.com",
+            "password": password,
+        },
+    )
+
+    csrf_set_cookie = next(
+        cookie
+        for cookie in response.headers.get_list("set-cookie")
+        if cookie.startswith(f"{settings.csrf_cookie_name}=")
+    )
+    assert response.status_code == 200
+    assert response.cookies.get(settings.csrf_cookie_name)
+    assert "httponly" not in csrf_set_cookie.lower()
 
 
 def test_login_user_rejects_inactive_user(
@@ -783,6 +814,95 @@ def test_get_me_rejects_invalid_token(client: TestClient) -> None:
     }
 
 
+def test_get_me_does_not_require_csrf_token(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """GETリクエストではCSRF tokenが不要なことを確認する。"""
+    user = create_test_user(email="get-no-csrf@example.com")
+    authorize_as(client, user)
+    client.headers.pop(settings.csrf_header_name, None)
+
+    response = client.get("/auth/me")
+
+    assert response.status_code == 200
+
+
+def test_update_me_rejects_missing_csrf_header(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """認証Cookieありの更新系リクエストでCSRF header未指定を拒否する。"""
+    user = create_test_user(email="missing-csrf@example.com")
+    authorize_as(client, user)
+    client.headers.pop(settings.csrf_header_name, None)
+
+    response = client.patch(
+        "/auth/me",
+        json={"name": "Missing CSRF", "version": 1},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "message": "Invalid CSRF token",
+        "code": "CSRF_TOKEN_INVALID",
+    }
+
+
+def test_update_me_rejects_invalid_csrf_header(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """認証CookieとCSRF headerが一致しない場合に更新を拒否する。"""
+    user = create_test_user(email="invalid-csrf@example.com")
+    authorize_as(client, user)
+    client.headers[settings.csrf_header_name] = "invalid-csrf-token"
+
+    response = client.patch(
+        "/auth/me",
+        json={"name": "Invalid CSRF", "version": 1},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "message": "Invalid CSRF token",
+        "code": "CSRF_TOKEN_INVALID",
+    }
+
+
+def test_update_me_accepts_valid_csrf_header(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """認証CookieとCSRF headerが一致する場合に更新を許可する。"""
+    user = create_test_user(email="valid-csrf@example.com")
+    authorize_as(client, user)
+
+    response = client.patch(
+        "/auth/me",
+        json={"name": "Valid CSRF", "version": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Valid CSRF"
+
+
+def test_update_me_without_auth_cookie_does_not_run_csrf_check(
+    client: TestClient,
+) -> None:
+    """認証Cookieなしの場合はCSRFではなく認証エラーを返すことを確認する。"""
+    response = client.patch(
+        "/auth/me",
+        json={"name": "Anonymous", "version": 1},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "message": "Authentication required",
+        "code": "AUTHENTICATION_REQUIRED",
+    }
+
+
 def test_logout_deletes_auth_cookie(
     client: TestClient,
     create_test_user: Callable[..., User],
@@ -797,12 +917,50 @@ def test_logout_deletes_auth_cookie(
     assert response.status_code == 204
     assert response.content == b""
     assert client.cookies.get(settings.auth_cookie_name) is None
+    assert client.cookies.get(settings.csrf_cookie_name) is None
     assert settings.auth_cookie_name in response.headers["set-cookie"]
+    assert settings.csrf_cookie_name in response.headers["set-cookie"]
     assert "max-age=0" in response.headers["set-cookie"].lower()
     assert "httponly" in response.headers["set-cookie"].lower()
     user_session = UserSessionRepository().get_by_id(db, session_id)
     assert user_session is not None
     assert user_session.revoked_reason == "logout"
+
+
+def test_logout_rejects_missing_csrf_header(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """認証CookieありのログアウトでCSRF header未指定を拒否する。"""
+    user = create_test_user(email="logout-missing-csrf@example.com")
+    authorize_as(client, user)
+    client.headers.pop(settings.csrf_header_name, None)
+
+    response = client.post("/auth/logout")
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "message": "Invalid CSRF token",
+        "code": "CSRF_TOKEN_INVALID",
+    }
+
+
+def test_logout_rejects_invalid_csrf_header(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """認証CookieとCSRF headerが一致しないログアウトを拒否する。"""
+    user = create_test_user(email="logout-invalid-csrf@example.com")
+    authorize_as(client, user)
+    client.headers[settings.csrf_header_name] = generate_csrf_token()
+
+    response = client.post("/auth/logout")
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "message": "Invalid CSRF token",
+        "code": "CSRF_TOKEN_INVALID",
+    }
 
 
 def test_get_me_rejects_after_logout(

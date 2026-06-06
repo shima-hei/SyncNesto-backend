@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
+from app.core.csrf import generate_csrf_token
 from app.core.security import create_access_token
 from app.db.session import session_local
 from app.models.user import User
@@ -52,10 +53,18 @@ def authorize_as(
         作成したセッションID。
     """
     access_token, session_id = create_session_token(user)
+    csrf_token = generate_csrf_token()
     client.cookies.set(
         settings.auth_cookie_name,
         access_token,
         domain=domain,
         path=path,
     )
+    client.cookies.set(
+        settings.csrf_cookie_name,
+        csrf_token,
+        domain=domain,
+        path=path,
+    )
+    client.headers[settings.csrf_header_name] = csrf_token
     return session_id

@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.auth_cookie import delete_auth_cookie
 from app.core.config import settings
+from app.core.csrf import delete_csrf_cookie
 from app.core.exceptions import (
     AppError,
     BadRequestError,
@@ -104,5 +105,6 @@ def register_exception_handlers(app: FastAPI) -> None:
         response = JSONResponse(status_code=status_code, content=content)
         if should_delete_auth_cookie(request, exc):
             delete_auth_cookie(response)
+            delete_csrf_cookie(response)
 
         return response

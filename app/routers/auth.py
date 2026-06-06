@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import get_current_user
 from app.core.auth_cookie import delete_auth_cookie, set_auth_cookie
 from app.core.config import settings
+from app.core.csrf import delete_csrf_cookie, generate_csrf_token, set_csrf_cookie
 from app.db.session import get_db
 from app.models.user import User
 from app.presenters.user import build_current_user_response
@@ -55,6 +56,7 @@ def login_user(
         access_token,
         max_age_seconds=settings.session_idle_timeout_minutes * 60,
     )
+    set_csrf_cookie(response, generate_csrf_token())
 
     if settings.allow_bearer_token_response:
         return UserLoginResponse(
@@ -90,6 +92,7 @@ def logout_user(
         )
 
     delete_auth_cookie(response)
+    delete_csrf_cookie(response)
 
 
 @router.get(

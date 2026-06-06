@@ -61,6 +61,13 @@ class ForbiddenError(AppError):
     code = "FORBIDDEN"
 
 
+class CsrfTokenInvalidError(ForbiddenError):
+    """CSRF tokenが不正な場合の例外。"""
+
+    message = error_messages.INVALID_CSRF_TOKEN
+    code = "CSRF_TOKEN_INVALID"
+
+
 class NotFoundError(AppError):
     """対象リソースが存在しない場合の例外。"""
 
