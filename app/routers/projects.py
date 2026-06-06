@@ -257,7 +257,8 @@ def add_project_member(
         project_id=project_id,
         member_in=member_in,
     )
-    return build_project_member_response(db, member)
+    role = project_member_service.get_member_role(db, member)
+    return build_project_member_response(member, role)
 
 
 @router.get(
@@ -279,7 +280,11 @@ def list_project_members(
         プロジェクトメンバー一覧。
     """
     members = project_member_service.list_members(db, project_id)
-    return [build_project_member_response(db, member) for member in members]
+    roles_by_id = project_member_service.list_member_roles_by_role_id(db, members)
+    return [
+        build_project_member_response(member, roles_by_id[member.role_id])
+        for member in members
+    ]
 
 
 @router.patch(
@@ -310,7 +315,8 @@ def update_project_member(
         user_id=user_id,
         member_in=member_in,
     )
-    return build_project_member_response(db, member)
+    role = project_member_service.get_member_role(db, member)
+    return build_project_member_response(member, role)
 
 
 @router.delete(

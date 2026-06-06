@@ -8,7 +8,6 @@ from app.core.exceptions import (
     DuplicateResourceError,
     ForbiddenError,
     NotFoundError,
-    VersionConflictError,
 )
 from app.models.project import Project, ProjectMember
 from app.models.rbac import Role
@@ -24,6 +23,10 @@ from app.schemas.project import (
     ProjectUpdate,
 )
 from app.services.authorization import AuthorizationService
+from app.services.conflict import (
+    raise_duplicate_after_rollback,
+    raise_if_version_conflict,
+)
 
 
 class ProjectService:
@@ -65,10 +68,11 @@ class ProjectService:
         try:
             return self.repository.create(db, project_in, actor_id=actor_id)
         except IntegrityError as exc:
-            db.rollback()
-            raise DuplicateResourceError(
-                error_messages.PROJECT_CODE_ALREADY_EXISTS
-            ) from exc
+            raise_duplicate_after_rollback(
+                db,
+                error_messages.PROJECT_CODE_ALREADY_EXISTS,
+                exc,
+            )
 
     def list_projects(self, db: Session, current_user: User) -> list[Project]:
         """ユーザーが閲覧可能なプロジェクト一覧を取得する。
@@ -175,9 +179,11 @@ class ProjectService:
             VersionConflictError: リクエストのversionが最新ではない場合。
         """
         project = self.get_project(db, project_id)
-        if project.version != project_in.version:
-            current = ProjectRead.model_validate(project).model_dump()
-            raise VersionConflictError(current=current)
+        raise_if_version_conflict(
+            current_version=project.version,
+            requested_version=project_in.version,
+            current=ProjectRead.model_validate(project).model_dump(),
+        )
 
         if (
             project_in.project_code is not None
@@ -195,10 +201,11 @@ class ProjectService:
                 actor_id=actor_id,
             )
         except IntegrityError as exc:
-            db.rollback()
-            raise DuplicateResourceError(
-                error_messages.PROJECT_CODE_ALREADY_EXISTS
-            ) from exc
+            raise_duplicate_after_rollback(
+                db,
+                error_messages.PROJECT_CODE_ALREADY_EXISTS,
+                exc,
+            )
 
     def delete_project(
         self,
@@ -290,6 +297,46 @@ class ProjectMemberService:
         self._ensure_project_exists(db, project_id)
         return self.repository.list_by_project(db, project_id)
 
+    def get_member_role(self, db: Session, member: ProjectMember) -> Role:
+        """プロジェクトメンバーに紐づくロールを取得する。
+
+        Args:
+            db: DBセッション。
+            member: プロジェクトメンバー。
+
+        Returns:
+            プロジェクトロール。
+
+        Raises:
+            NotFoundError: 紐づくロールが存在しない場合。
+        """
+        role = self.rbac_repository.get_role_by_id(db, member.role_id)
+        if role is None:
+            raise NotFoundError(error_messages.PROJECT_ROLE_NOT_FOUND)
+
+        return role
+
+    def list_member_roles_by_role_id(
+        self,
+        db: Session,
+        members: list[ProjectMember],
+    ) -> dict[int, Role]:
+        """プロジェクトメンバー一覧に必要なロールを取得する。
+
+        Args:
+            db: DBセッション。
+            members: プロジェクトメンバー一覧。
+
+        Returns:
+            role_idをkeyにしたロール辞書。
+        """
+        roles: dict[int, Role] = {}
+        for member in members:
+            if member.role_id not in roles:
+                roles[member.role_id] = self.get_member_role(db, member)
+
+        return roles
+
     def list_member_users(
         self,
         db: Session,
@@ -356,10 +403,11 @@ class ProjectMemberService:
                 role_id=role.id,
             )
         except IntegrityError as exc:
-            db.rollback()
-            raise DuplicateResourceError(
-                error_messages.PROJECT_MEMBER_ALREADY_EXISTS
-            ) from exc
+            raise_duplicate_after_rollback(
+                db,
+                error_messages.PROJECT_MEMBER_ALREADY_EXISTS,
+                exc,
+            )
 
     def update_member(
         self,
@@ -384,9 +432,11 @@ class ProjectMemberService:
             VersionConflictError: リクエストのversionが最新ではない場合。
         """
         member = self._get_member(db, project_id=project_id, user_id=user_id)
-        if member.version != member_in.version:
-            current = self._build_member_current(db, member)
-            raise VersionConflictError(current=current)
+        raise_if_version_conflict(
+            current_version=member.version,
+            requested_version=member_in.version,
+            current=self._build_member_current(db, member),
+        )
 
         role = self._get_project_role_by_key(db, member_in.role_key)
         return self.repository.update_role(db, member=member, role_id=role.id)

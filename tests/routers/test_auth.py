@@ -11,38 +11,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import create_access_token, decode_access_token, verify_password
-from app.db.session import session_local
 from app.models.user import User
 from app.repositories.session import UserSessionRepository
-
-
-class FakeStorageService:
-    """テスト用StorageService。"""
-
-    def __init__(self) -> None:
-        """FakeStorageServiceを初期化する。"""
-        self.deleted_keys: list[str] = []
-
-    def upload_user_avatar(
-        self,
-        *,
-        user_id: int,
-        content: bytes,
-        content_type: str | None,
-    ) -> str:
-        """固定のavatar keyを返す。"""
-        return f"users/{user_id}.png"
-
-    def generate_presigned_url(self, avatar_key: str | None) -> str | None:
-        """固定の署名付きURLを返す。"""
-        if avatar_key is None:
-            return None
-
-        return f"https://example.com/{avatar_key}?signature=test"
-
-    def delete_object(self, key: str) -> None:
-        """削除対象keyを保持する。"""
-        self.deleted_keys.append(key)
+from tests.fakes.storage import FakeStorageService
+from tests.helpers.auth import authorize_as, create_session_token
 
 
 @pytest.fixture(autouse=True)
@@ -51,34 +23,6 @@ def use_fake_storage_service(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.routers import auth
 
     monkeypatch.setattr(auth, "storage_service", FakeStorageService())
-
-
-def create_session_token(user: User) -> tuple[str, UUID]:
-    """テスト用セッションを作成してsid入りアクセストークンを返す。"""
-    with session_local() as db:
-        managed_user = db.merge(user)
-        user_session = UserSessionRepository().create(db, managed_user)
-        session_id = user_session.id
-        expires_at = user_session.expires_at
-        access_token = create_access_token(
-            subject=user.email,
-            session_id=session_id,
-            expires_at=expires_at,
-        )
-        return access_token, session_id
-
-
-def authorize_as(client: TestClient, user: User) -> UUID:
-    """TestClientを指定ユーザーとして認証済みにする。"""
-    access_token, session_id = create_session_token(user)
-    client.cookies.set(
-        settings.auth_cookie_name,
-        access_token,
-        domain="testserver.local",
-        path="/",
-    )
-    return session_id
-
 
 def test_login_user_returns_access_token_and_cookie_in_development(
     client: TestClient,

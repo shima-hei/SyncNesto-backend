@@ -17,7 +17,6 @@ from app.core.exceptions import (
     EmailAlreadyRegisteredError,
     InvalidCredentialsError,
     NotFoundError,
-    VersionConflictError,
 )
 from app.core.security import get_password_hash, verify_password
 from app.models.rbac import Role
@@ -25,6 +24,7 @@ from app.models.user import User
 from app.repositories.rbac import RbacRepository
 from app.repositories.user import UserRepository
 from app.schemas.user import UserCreate, UserProfileUpdate, UserRead, UserUpdate
+from app.services.conflict import raise_if_version_conflict
 from app.services.storage import StorageService
 
 logger = logging.getLogger(__name__)
@@ -123,6 +123,18 @@ class UserService:
             ユーザー一覧。
         """
         return self.repository.list(db)
+
+    def list_users_by_ids(self, db: Session, user_ids: list[int]) -> list[User]:
+        """指定ID一覧のユーザーを取得する。
+
+        Args:
+            db: DBセッション。
+            user_ids: ユーザーID一覧。
+
+        Returns:
+            ユーザー一覧。
+        """
+        return self.repository.list_by_ids(db, user_ids)
 
     def list_users_paginated(
         self,
@@ -224,9 +236,11 @@ class UserService:
             VersionConflictError: リクエストのversionが最新ではない場合。
         """
         user = self.get_user(db, user_id)
-        if user.version != user_in.version:
-            current = UserRead.model_validate(user).model_dump()
-            raise VersionConflictError(current=current)
+        raise_if_version_conflict(
+            current_version=user.version,
+            requested_version=user_in.version,
+            current=UserRead.model_validate(user).model_dump(),
+        )
 
         if user_in.email is not None and user_in.email != user.email:
             existing_user = self.repository.get_by_email(db, user_in.email)
@@ -276,9 +290,11 @@ class UserService:
         Raises:
             VersionConflictError: リクエストのversionが最新ではない場合。
         """
-        if current_user.version != user_in.version:
-            current = UserRead.model_validate(current_user).model_dump()
-            raise VersionConflictError(current=current)
+        raise_if_version_conflict(
+            current_version=current_user.version,
+            requested_version=user_in.version,
+            current=UserRead.model_validate(current_user).model_dump(),
+        )
 
         hashed_password = None
         if user_in.password is not None:

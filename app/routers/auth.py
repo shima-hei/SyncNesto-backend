@@ -1,34 +1,27 @@
 """認証関連APIのルーティングを定義するモジュール。"""
 
-import jwt
 from fastapi import APIRouter, Cookie, Depends, File, Response, UploadFile
 from sqlalchemy.orm import Session
 
-from app.core.auth import (
-    delete_auth_cookie,
-    get_current_user,
-    get_session_id,
-    set_auth_cookie,
-)
+from app.core.auth import get_current_user
+from app.core.auth_cookie import delete_auth_cookie, set_auth_cookie
 from app.core.config import settings
-from app.core.exceptions import InvalidTokenError
-from app.core.security import create_access_token, decode_access_token
 from app.db.session import get_db
 from app.models.user import User
 from app.presenters.user import build_current_user_response
-from app.repositories.session import UserSessionRepository
 from app.schemas.user import (
     CurrentUserRead,
     UserLogin,
     UserLoginResponse,
     UserProfileUpdate,
 )
+from app.services.session import SessionService
 from app.services.storage import StorageService
 from app.services.user import UserService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 user_service = UserService()
-session_repository = UserSessionRepository()
+session_service = SessionService()
 storage_service = StorageService()
 
 SESSION_REVOKE_REASON_LOGOUT = "logout"
@@ -56,12 +49,7 @@ def login_user(
     """
     user = user_service.authenticate_user(db, user_in.email, user_in.password)
     user_service.update_last_login_at(db, user)
-    user_session = session_repository.create(db, user)
-    access_token = create_access_token(
-        subject=user.email,
-        session_id=user_session.id,
-        expires_at=user_session.expires_at,
-    )
+    user_session, access_token = session_service.create_session_token(db, user)
     set_auth_cookie(
         response,
         access_token,
@@ -95,18 +83,11 @@ def logout_user(
         db: DBセッション。
     """
     if access_token is not None:
-        try:
-            payload = decode_access_token(access_token, verify_exp=False)
-            session_id = get_session_id(payload)
-            user_session = session_repository.get_by_id(db, session_id)
-            if user_session is not None:
-                session_repository.revoke(
-                    db,
-                    user_session,
-                    SESSION_REVOKE_REASON_LOGOUT,
-                )
-        except (jwt.PyJWTError, InvalidTokenError):
-            pass
+        session_service.revoke_token_session(
+            db,
+            access_token,
+            SESSION_REVOKE_REASON_LOGOUT,
+        )
 
     delete_auth_cookie(response)
 

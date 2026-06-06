@@ -7,21 +7,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.security import create_access_token, verify_password
-from app.db.session import session_local
+from app.core.security import verify_password
 from app.models.user import User
-from app.repositories.session import UserSessionRepository
-
-
-class FakeStorageService:
-    """テスト用StorageService。"""
-
-    def generate_presigned_url(self, avatar_key: str | None) -> str | None:
-        """固定の署名付きURLを返す。"""
-        if avatar_key is None:
-            return None
-
-        return f"https://example.com/{avatar_key}?signature=test"
+from tests.fakes.storage import FakeStorageService
+from tests.helpers.auth import authorize_as
 
 
 @pytest.fixture(autouse=True)
@@ -30,27 +19,6 @@ def use_fake_storage_service(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.routers import users
 
     monkeypatch.setattr(users, "storage_service", FakeStorageService())
-
-
-def authorize_as(
-    client: TestClient,
-    user: User,
-) -> None:
-    """TestClientを指定ユーザーとして認証済みにする。
-
-    Args:
-        client: テスト用FastAPIクライアント。
-        user: 認証対象ユーザー。
-    """
-    with session_local() as db:
-        managed_user = db.merge(user)
-        user_session = UserSessionRepository().create(db, managed_user)
-        access_token = create_access_token(
-            subject=user.email,
-            session_id=user_session.id,
-            expires_at=user_session.expires_at,
-        )
-    client.cookies.set(settings.auth_cookie_name, access_token)
 
 
 def test_create_user_returns_created_user(

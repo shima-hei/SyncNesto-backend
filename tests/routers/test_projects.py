@@ -2,44 +2,18 @@
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import create_access_token
-from app.db.session import session_local
 from app.models.project import Project, ProjectMember
 from app.models.user import User
 from app.repositories.rbac import RbacRepository
 from app.repositories.session import UserSessionRepository
-
-
-class FakeStorageService:
-    """テスト用StorageService。"""
-
-    def generate_presigned_url(self, avatar_key: str | None) -> str | None:
-        """固定の署名付きURLを返す。"""
-        if avatar_key is None:
-            return None
-
-        return f"https://example.com/{avatar_key}?signature=test"
-
-
-def authorize_as(client: TestClient, user: User) -> UUID:
-    """TestClientを指定ユーザーとして認証済みにする。"""
-    with session_local() as db:
-        managed_user = db.merge(user)
-        user_session = UserSessionRepository().create(db, managed_user)
-        session_id = user_session.id
-        access_token = create_access_token(
-            subject=user.email,
-            session_id=session_id,
-            expires_at=user_session.expires_at,
-        )
-    client.cookies.set(settings.auth_cookie_name, access_token)
-    return session_id
+from tests.fakes.storage import FakeStorageService
+from tests.helpers.auth import authorize_as
 
 
 def get_project_role_id(db: Session, role_key: str) -> int:

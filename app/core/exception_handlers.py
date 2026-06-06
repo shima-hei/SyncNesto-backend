@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
-from app.core.auth import delete_auth_cookie
+from app.core.auth_cookie import delete_auth_cookie
 from app.core.config import settings
 from app.core.exceptions import (
     AppError,

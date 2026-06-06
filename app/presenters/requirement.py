@@ -1,10 +1,7 @@
 """要件定義関連レスポンスのPresenterを定義するモジュール。"""
 
-from sqlalchemy.orm import Session
-
 from app.models.requirement import RequirementDocument
 from app.models.user import User
-from app.repositories.user import UserRepository
 from app.schemas.requirement import RequirementDocumentRead
 from app.schemas.user import UserSummary
 from app.services.storage import StorageService
@@ -52,6 +49,7 @@ def build_requirement_document_response(
     users = users_by_id or {}
 
     def get_user_summary(user_id: int | None) -> UserSummary | None:
+        """担当者IDから軽量ユーザー情報を作成する。"""
         if user_id is None or storage_service is None:
             return None
 
@@ -75,59 +73,21 @@ def build_requirement_document_response(
         }
     )
 
-
-def build_requirement_document_response_with_users(
-    db: Session,
-    document: RequirementDocument,
-    storage_service: StorageService,
-    user_repository: UserRepository | None = None,
-) -> RequirementDocumentRead:
-    """要件定義書レスポンスを担当者取得込みで組み立てる。
-
-    Args:
-        db: DBセッション。
-        document: レスポンスへ変換する要件定義書。
-        storage_service: avatar_url生成に使用するストレージサービス。
-        user_repository: ユーザーRepository。
-
-    Returns:
-        要件定義書読み取りレスポンス。
-    """
-    repository = user_repository or UserRepository()
-    users = repository.list_by_ids(
-        db,
-        collect_requirement_document_user_ids([document]),
-    )
-    return build_requirement_document_response(
-        document,
-        {user.id: user for user in users},
-        storage_service,
-    )
-
-
-def build_requirement_document_responses_with_users(
-    db: Session,
+def build_requirement_document_responses(
     documents: list[RequirementDocument],
+    users_by_id: dict[int, User],
     storage_service: StorageService,
-    user_repository: UserRepository | None = None,
 ) -> list[RequirementDocumentRead]:
-    """要件定義書一覧レスポンスを担当者取得込みで組み立てる。
+    """要件定義書一覧レスポンスを組み立てる。
 
     Args:
-        db: DBセッション。
         documents: レスポンスへ変換する要件定義書一覧。
+        users_by_id: 担当者ユーザーIDをkeyにしたユーザー辞書。
         storage_service: avatar_url生成に使用するストレージサービス。
-        user_repository: ユーザーRepository。
 
     Returns:
         要件定義書読み取りレスポンス一覧。
     """
-    repository = user_repository or UserRepository()
-    users = repository.list_by_ids(
-        db,
-        collect_requirement_document_user_ids(documents),
-    )
-    users_by_id = {user.id: user for user in users}
     return [
         build_requirement_document_response(document, users_by_id, storage_service)
         for document in documents
