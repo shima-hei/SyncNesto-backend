@@ -16,7 +16,7 @@ from app.schemas.user import (
     UserLoginResponse,
     UserProfileUpdate,
 )
-from app.services.audit_log import AuditEventType, AuditLogService
+from app.services.audit_log import AuditLogService
 from app.services.session import SessionService
 from app.services.storage import StorageService
 from app.services.user import UserService
@@ -53,14 +53,10 @@ def login_user(
     user = user_service.authenticate_user(db, user_in.email, user_in.password)
     user_service.update_last_login_at(db, user)
     user_session, access_token = session_service.create_session_token(db, user)
-    audit_log_service.record(
+    audit_log_service.record_login_success(
         db,
-        event_type=AuditEventType.AUTH_LOGIN_SUCCESS,
-        actor_user_id=user.id,
-        target_user_id=user.id,
-        resource_type="session",
-        resource_id=None,
-        metadata={"session_id": str(user_session.id), "email": user.email},
+        user=user,
+        user_session=user_session,
     )
     set_auth_cookie(
         response,
@@ -101,18 +97,9 @@ def logout_user(
             access_token,
             SESSION_REVOKE_REASON_LOGOUT,
         )
-        audit_log_service.record(
+        audit_log_service.record_logout(
             db,
-            event_type=AuditEventType.AUTH_LOGOUT,
-            actor_user_id=user_session.user_id if user_session is not None else None,
-            target_user_id=user_session.user_id if user_session is not None else None,
-            resource_type="session",
-            resource_id=None,
-            metadata={
-                "session_id": str(user_session.id)
-                if user_session is not None
-                else None,
-            },
+            user_session=user_session,
         )
 
     delete_auth_cookie(response)

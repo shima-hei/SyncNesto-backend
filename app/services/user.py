@@ -24,7 +24,7 @@ from app.models.user import User
 from app.repositories.rbac import RbacRepository
 from app.repositories.user import UserRepository
 from app.schemas.user import UserCreate, UserProfileUpdate, UserRead, UserUpdate
-from app.services.audit_log import AuditEventType, AuditLogService
+from app.services.audit_log import AuditLogService
 from app.services.conflict import raise_if_version_conflict
 from app.services.login_attempt import LoginAttemptService
 from app.services.session import SessionService
@@ -122,14 +122,10 @@ class UserService:
         self.rbac_repository.replace_system_roles_for_user(db, user=user, roles=roles)
         db.commit()
         db.refresh(user)
-        self.audit_log_service.record(
+        self.audit_log_service.record_user_created(
             db,
-            event_type=AuditEventType.USER_CREATED,
             actor_user_id=actor_id,
-            target_user_id=user.id,
-            resource_type="user",
-            resource_id=user.id,
-            metadata={"email": user.email},
+            user=user,
         )
         logger.info("User created: id=%s email=%s", user.id, user.email)
         return user
@@ -299,17 +295,12 @@ class UserService:
                 role.key
                 for role in self.rbac_repository.list_system_roles_by_user(db, user.id)
             ]
-            self.audit_log_service.record(
+            self.audit_log_service.record_user_system_roles_changed(
                 db,
-                event_type=AuditEventType.USER_SYSTEM_ROLES_CHANGED,
                 actor_user_id=actor_id,
-                target_user_id=user.id,
-                resource_type="user",
-                resource_id=user.id,
-                metadata={
-                    "before_role_keys": before_role_keys,
-                    "after_role_keys": after_role_keys,
-                },
+                user=user,
+                before_role_keys=before_role_keys,
+                after_role_keys=after_role_keys,
             )
             self.session_service.revoke_user_sessions(
                 db,
@@ -317,14 +308,11 @@ class UserService:
                 actor_user_id=actor_id,
             )
         else:
-            self.audit_log_service.record(
+            self.audit_log_service.record_user_updated(
                 db,
-                event_type=AuditEventType.USER_UPDATED,
                 actor_user_id=actor_id,
-                target_user_id=user.id,
-                resource_type="user",
-                resource_id=user.id,
-                metadata={"updated_fields": sorted(user_in.model_fields_set)},
+                user=user,
+                updated_fields=user_in.model_fields_set,
             )
 
         return user
@@ -470,14 +458,10 @@ class UserService:
         user = self.get_user(db, user_id)
         self.repository.soft_delete(db, user)
         db.commit()
-        self.audit_log_service.record(
+        self.audit_log_service.record_user_deleted(
             db,
-            event_type=AuditEventType.USER_DELETED,
             actor_user_id=actor_id,
-            target_user_id=user.id,
-            resource_type="user",
-            resource_id=user.id,
-            metadata={"email": user.email},
+            user=user,
         )
 
     def authenticate_user(self, db: Session, email: str, password: str) -> User:
@@ -496,10 +480,10 @@ class UserService:
         """
         normalized_email = self.login_attempt_service.normalize_email(email)
         if self.login_attempt_service.is_locked(db, normalized_email):
-            self.audit_log_service.record(
+            self.audit_log_service.record_login_failure(
                 db,
-                event_type=AuditEventType.AUTH_LOGIN_FAILURE,
-                metadata={"email": normalized_email, "reason": "locked"},
+                email=normalized_email,
+                reason="locked",
             )
             logger.warning("Locked login attempt: email=%s", normalized_email)
             raise InvalidCredentialsError()
@@ -507,23 +491,21 @@ class UserService:
         user = self.repository.get_by_email(db, email)
         if user is None:
             self.login_attempt_service.record_failure(db, normalized_email)
-            self.audit_log_service.record(
+            self.audit_log_service.record_login_failure(
                 db,
-                event_type=AuditEventType.AUTH_LOGIN_FAILURE,
-                metadata={"email": normalized_email, "reason": "unknown_email"},
+                email=normalized_email,
+                reason="unknown_email",
             )
             logger.warning("Invalid login attempt: email=%s", normalized_email)
             raise InvalidCredentialsError()
 
         if not user.is_active:
             self.login_attempt_service.record_failure(db, normalized_email)
-            self.audit_log_service.record(
+            self.audit_log_service.record_login_failure(
                 db,
-                event_type=AuditEventType.AUTH_LOGIN_FAILURE,
-                target_user_id=user.id,
-                resource_type="user",
-                resource_id=user.id,
-                metadata={"email": normalized_email, "reason": "inactive_user"},
+                email=normalized_email,
+                reason="inactive_user",
+                user=user,
             )
             logger.warning(
                 "Inactive user login attempt: id=%s email=%s",
@@ -534,13 +516,11 @@ class UserService:
 
         if not verify_password(password, user.hashed_password):
             self.login_attempt_service.record_failure(db, normalized_email)
-            self.audit_log_service.record(
+            self.audit_log_service.record_login_failure(
                 db,
-                event_type=AuditEventType.AUTH_LOGIN_FAILURE,
-                target_user_id=user.id,
-                resource_type="user",
-                resource_id=user.id,
-                metadata={"email": normalized_email, "reason": "wrong_password"},
+                email=normalized_email,
+                reason="wrong_password",
+                user=user,
             )
             logger.warning("Invalid login attempt: email=%s", normalized_email)
             raise InvalidCredentialsError()

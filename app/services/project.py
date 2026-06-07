@@ -22,7 +22,7 @@ from app.schemas.project import (
     ProjectRead,
     ProjectUpdate,
 )
-from app.services.audit_log import AuditEventType, AuditLogService
+from app.services.audit_log import AuditLogService
 from app.services.authorization import AuthorizationService
 from app.services.conflict import (
     raise_duplicate_after_rollback,
@@ -72,14 +72,10 @@ class ProjectService:
 
         try:
             project = self.repository.create(db, project_in, actor_id=actor_id)
-            self.audit_log_service.record(
+            self.audit_log_service.record_project_created(
                 db,
-                event_type=AuditEventType.PROJECT_CREATED,
                 actor_user_id=actor_id,
-                project_id=project.id,
-                resource_type="project",
-                resource_id=project.id,
-                metadata={"project_code": project.project_code, "name": project.name},
+                project=project,
             )
             return project
         except IntegrityError as exc:
@@ -215,14 +211,11 @@ class ProjectService:
                 project_in=project_in,
                 actor_id=actor_id,
             )
-            self.audit_log_service.record(
+            self.audit_log_service.record_project_updated(
                 db,
-                event_type=AuditEventType.PROJECT_UPDATED,
                 actor_user_id=actor_id,
-                project_id=project.id,
-                resource_type="project",
-                resource_id=project.id,
-                metadata={"updated_fields": sorted(project_in.model_fields_set)},
+                project=project,
+                updated_fields=project_in.model_fields_set,
             )
             return project
         except IntegrityError as exc:
@@ -247,14 +240,10 @@ class ProjectService:
         """
         project = self.get_project(db, project_id)
         self.repository.soft_delete(db, project, actor_id=actor_id)
-        self.audit_log_service.record(
+        self.audit_log_service.record_project_deleted(
             db,
-            event_type=AuditEventType.PROJECT_DELETED,
             actor_user_id=actor_id,
-            project_id=project.id,
-            resource_type="project",
-            resource_id=project.id,
-            metadata={"project_code": project.project_code, "name": project.name},
+            project=project,
         )
 
     def get_current_project_role(
@@ -444,15 +433,11 @@ class ProjectMemberService:
                 user_id=member_in.user_id,
                 role_id=role.id,
             )
-            self.audit_log_service.record(
+            self.audit_log_service.record_project_member_added(
                 db,
-                event_type=AuditEventType.PROJECT_MEMBER_ADDED,
                 actor_user_id=actor_id,
-                target_user_id=member.user_id,
-                project_id=project_id,
-                resource_type="project_member",
-                resource_id=member.id,
-                metadata={"role_key": role.key},
+                member=member,
+                role_key=role.key,
             )
             self.session_service.revoke_user_sessions(
                 db,
@@ -502,18 +487,12 @@ class ProjectMemberService:
         before_role = self.get_member_role(db, member)
         role = self._get_project_role_by_key(db, member_in.role_key)
         updated_member = self.repository.update_role(db, member=member, role_id=role.id)
-        self.audit_log_service.record(
+        self.audit_log_service.record_project_member_role_changed(
             db,
-            event_type=AuditEventType.PROJECT_MEMBER_ROLE_CHANGED,
             actor_user_id=actor_id,
-            target_user_id=updated_member.user_id,
-            project_id=project_id,
-            resource_type="project_member",
-            resource_id=updated_member.id,
-            metadata={
-                "before_role_key": before_role.key,
-                "after_role_key": role.key,
-            },
+            member=updated_member,
+            before_role_key=before_role.key,
+            after_role_key=role.key,
         )
         self.session_service.revoke_user_sessions(
             db,
@@ -543,15 +522,13 @@ class ProjectMemberService:
         role = self.get_member_role(db, member)
         member_id = member.id
         self.repository.delete(db, member)
-        self.audit_log_service.record(
+        self.audit_log_service.record_project_member_removed(
             db,
-            event_type=AuditEventType.PROJECT_MEMBER_REMOVED,
             actor_user_id=actor_id,
-            target_user_id=user_id,
             project_id=project_id,
-            resource_type="project_member",
-            resource_id=member_id,
-            metadata={"role_key": role.key},
+            user_id=user_id,
+            member_id=member_id,
+            role_key=role.key,
         )
         self.session_service.revoke_user_sessions(
             db,

@@ -1,7 +1,8 @@
 """監査ログのビジネスロジックを提供するモジュール。"""
 
 import logging
-from typing import Any
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
@@ -11,6 +12,11 @@ from app.core.logging import (
     user_agent_context,
 )
 from app.repositories.audit_log import AuditLogRepository
+
+if TYPE_CHECKING:
+    from app.models.project import Project, ProjectMember
+    from app.models.session import UserSession
+    from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +108,382 @@ class AuditLogService:
         except Exception:
             db.rollback()
             logger.exception("Failed to record audit log: event_type=%s", event_type)
+
+    def record_login_success(
+        self,
+        db: Session,
+        *,
+        user: "User",
+        user_session: "UserSession",
+    ) -> None:
+        """ログイン成功の監査ログを記録する。
+
+        Args:
+            db: DBセッション。
+            user: ログインしたユーザー。
+            user_session: 作成された認証セッション。
+        """
+        self.record(
+            db,
+            event_type=AuditEventType.AUTH_LOGIN_SUCCESS,
+            actor_user_id=user.id,
+            target_user_id=user.id,
+            resource_type="session",
+            metadata={"session_id": str(user_session.id), "email": user.email},
+        )
+
+    def record_login_failure(
+        self,
+        db: Session,
+        *,
+        email: str,
+        reason: str,
+        user: "User | None" = None,
+    ) -> None:
+        """ログイン失敗の監査ログを記録する。
+
+        Args:
+            db: DBセッション。
+            email: ログイン試行に使われたemail。
+            reason: 失敗理由。
+            user: 対象ユーザー。存在しないemailの場合はNone。
+        """
+        self.record(
+            db,
+            event_type=AuditEventType.AUTH_LOGIN_FAILURE,
+            target_user_id=user.id if user is not None else None,
+            resource_type="user" if user is not None else None,
+            resource_id=user.id if user is not None else None,
+            metadata={"email": email, "reason": reason},
+        )
+
+    def record_logout(
+        self,
+        db: Session,
+        *,
+        user_session: "UserSession | None",
+    ) -> None:
+        """ログアウトの監査ログを記録する。
+
+        Args:
+            db: DBセッション。
+            user_session: 失効した認証セッション。取得できない場合はNone。
+        """
+        user_id = user_session.user_id if user_session is not None else None
+        self.record(
+            db,
+            event_type=AuditEventType.AUTH_LOGOUT,
+            actor_user_id=user_id,
+            target_user_id=user_id,
+            resource_type="session",
+            metadata={
+                "session_id": str(user_session.id)
+                if user_session is not None
+                else None,
+            },
+        )
+
+    def record_session_revoked(
+        self,
+        db: Session,
+        *,
+        actor_user_id: int | None,
+        target_user_id: int,
+        project_id: int | None,
+        reason: str,
+        revoked_count: int,
+    ) -> None:
+        """セッション失効の監査ログを記録する。
+
+        Args:
+            db: DBセッション。
+            actor_user_id: 操作ユーザーID。
+            target_user_id: セッション失効対象ユーザーID。
+            project_id: 関連プロジェクトID。
+            reason: 失効理由。
+            revoked_count: 失効したセッション件数。
+        """
+        self.record(
+            db,
+            event_type=AuditEventType.AUTH_SESSION_REVOKED,
+            actor_user_id=actor_user_id,
+            target_user_id=target_user_id,
+            project_id=project_id,
+            resource_type="session",
+            metadata={
+                "reason": reason,
+                "revoked_count": revoked_count,
+            },
+        )
+
+    def record_user_created(
+        self,
+        db: Session,
+        *,
+        actor_user_id: int | None,
+        user: "User",
+    ) -> None:
+        """ユーザー作成の監査ログを記録する。
+
+        Args:
+            db: DBセッション。
+            actor_user_id: 操作ユーザーID。
+            user: 作成されたユーザー。
+        """
+        self.record(
+            db,
+            event_type=AuditEventType.USER_CREATED,
+            actor_user_id=actor_user_id,
+            target_user_id=user.id,
+            resource_type="user",
+            resource_id=user.id,
+            metadata={"email": user.email},
+        )
+
+    def record_user_updated(
+        self,
+        db: Session,
+        *,
+        actor_user_id: int | None,
+        user: "User",
+        updated_fields: Iterable[str],
+    ) -> None:
+        """ユーザー更新の監査ログを記録する。
+
+        Args:
+            db: DBセッション。
+            actor_user_id: 操作ユーザーID。
+            user: 更新されたユーザー。
+            updated_fields: 更新された入力フィールド名。
+        """
+        self.record(
+            db,
+            event_type=AuditEventType.USER_UPDATED,
+            actor_user_id=actor_user_id,
+            target_user_id=user.id,
+            resource_type="user",
+            resource_id=user.id,
+            metadata={"updated_fields": sorted(updated_fields)},
+        )
+
+    def record_user_deleted(
+        self,
+        db: Session,
+        *,
+        actor_user_id: int | None,
+        user: "User",
+    ) -> None:
+        """ユーザー削除の監査ログを記録する。
+
+        Args:
+            db: DBセッション。
+            actor_user_id: 操作ユーザーID。
+            user: 削除されたユーザー。
+        """
+        self.record(
+            db,
+            event_type=AuditEventType.USER_DELETED,
+            actor_user_id=actor_user_id,
+            target_user_id=user.id,
+            resource_type="user",
+            resource_id=user.id,
+            metadata={"email": user.email},
+        )
+
+    def record_user_system_roles_changed(
+        self,
+        db: Session,
+        *,
+        actor_user_id: int | None,
+        user: "User",
+        before_role_keys: list[str],
+        after_role_keys: list[str],
+    ) -> None:
+        """ユーザーのシステムロール変更の監査ログを記録する。
+
+        Args:
+            db: DBセッション。
+            actor_user_id: 操作ユーザーID。
+            user: ロール変更対象ユーザー。
+            before_role_keys: 変更前ロールkey一覧。
+            after_role_keys: 変更後ロールkey一覧。
+        """
+        self.record(
+            db,
+            event_type=AuditEventType.USER_SYSTEM_ROLES_CHANGED,
+            actor_user_id=actor_user_id,
+            target_user_id=user.id,
+            resource_type="user",
+            resource_id=user.id,
+            metadata={
+                "before_role_keys": before_role_keys,
+                "after_role_keys": after_role_keys,
+            },
+        )
+
+    def record_project_created(
+        self,
+        db: Session,
+        *,
+        actor_user_id: int | None,
+        project: "Project",
+    ) -> None:
+        """プロジェクト作成の監査ログを記録する。
+
+        Args:
+            db: DBセッション。
+            actor_user_id: 操作ユーザーID。
+            project: 作成されたプロジェクト。
+        """
+        self.record(
+            db,
+            event_type=AuditEventType.PROJECT_CREATED,
+            actor_user_id=actor_user_id,
+            project_id=project.id,
+            resource_type="project",
+            resource_id=project.id,
+            metadata={"project_code": project.project_code, "name": project.name},
+        )
+
+    def record_project_updated(
+        self,
+        db: Session,
+        *,
+        actor_user_id: int | None,
+        project: "Project",
+        updated_fields: Iterable[str],
+    ) -> None:
+        """プロジェクト更新の監査ログを記録する。
+
+        Args:
+            db: DBセッション。
+            actor_user_id: 操作ユーザーID。
+            project: 更新されたプロジェクト。
+            updated_fields: 更新された入力フィールド名。
+        """
+        self.record(
+            db,
+            event_type=AuditEventType.PROJECT_UPDATED,
+            actor_user_id=actor_user_id,
+            project_id=project.id,
+            resource_type="project",
+            resource_id=project.id,
+            metadata={"updated_fields": sorted(updated_fields)},
+        )
+
+    def record_project_deleted(
+        self,
+        db: Session,
+        *,
+        actor_user_id: int | None,
+        project: "Project",
+    ) -> None:
+        """プロジェクト削除の監査ログを記録する。
+
+        Args:
+            db: DBセッション。
+            actor_user_id: 操作ユーザーID。
+            project: 削除されたプロジェクト。
+        """
+        self.record(
+            db,
+            event_type=AuditEventType.PROJECT_DELETED,
+            actor_user_id=actor_user_id,
+            project_id=project.id,
+            resource_type="project",
+            resource_id=project.id,
+            metadata={"project_code": project.project_code, "name": project.name},
+        )
+
+    def record_project_member_added(
+        self,
+        db: Session,
+        *,
+        actor_user_id: int | None,
+        member: "ProjectMember",
+        role_key: str,
+    ) -> None:
+        """プロジェクトメンバー追加の監査ログを記録する。
+
+        Args:
+            db: DBセッション。
+            actor_user_id: 操作ユーザーID。
+            member: 追加されたプロジェクトメンバー。
+            role_key: 付与したプロジェクトロールkey。
+        """
+        self.record(
+            db,
+            event_type=AuditEventType.PROJECT_MEMBER_ADDED,
+            actor_user_id=actor_user_id,
+            target_user_id=member.user_id,
+            project_id=member.project_id,
+            resource_type="project_member",
+            resource_id=member.id,
+            metadata={"role_key": role_key},
+        )
+
+    def record_project_member_role_changed(
+        self,
+        db: Session,
+        *,
+        actor_user_id: int | None,
+        member: "ProjectMember",
+        before_role_key: str,
+        after_role_key: str,
+    ) -> None:
+        """プロジェクトメンバーロール変更の監査ログを記録する。
+
+        Args:
+            db: DBセッション。
+            actor_user_id: 操作ユーザーID。
+            member: 更新されたプロジェクトメンバー。
+            before_role_key: 変更前プロジェクトロールkey。
+            after_role_key: 変更後プロジェクトロールkey。
+        """
+        self.record(
+            db,
+            event_type=AuditEventType.PROJECT_MEMBER_ROLE_CHANGED,
+            actor_user_id=actor_user_id,
+            target_user_id=member.user_id,
+            project_id=member.project_id,
+            resource_type="project_member",
+            resource_id=member.id,
+            metadata={
+                "before_role_key": before_role_key,
+                "after_role_key": after_role_key,
+            },
+        )
+
+    def record_project_member_removed(
+        self,
+        db: Session,
+        *,
+        actor_user_id: int | None,
+        project_id: int,
+        user_id: int,
+        member_id: int,
+        role_key: str,
+    ) -> None:
+        """プロジェクトメンバー削除の監査ログを記録する。
+
+        Args:
+            db: DBセッション。
+            actor_user_id: 操作ユーザーID。
+            project_id: プロジェクトID。
+            user_id: 削除対象ユーザーID。
+            member_id: 削除されたプロジェクトメンバーID。
+            role_key: 削除前プロジェクトロールkey。
+        """
+        self.record(
+            db,
+            event_type=AuditEventType.PROJECT_MEMBER_REMOVED,
+            actor_user_id=actor_user_id,
+            target_user_id=user_id,
+            project_id=project_id,
+            resource_type="project_member",
+            resource_id=member_id,
+            metadata={"role_key": role_key},
+        )
 
     def count_cleanup_targets(self, db: Session, *, older_than_days: int) -> int:
         """削除対象の監査ログ件数を取得する。

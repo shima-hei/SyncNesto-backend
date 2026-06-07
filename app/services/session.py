@@ -14,7 +14,7 @@ from app.core.security import create_access_token, decode_access_token
 from app.models.session import UserSession
 from app.models.user import User
 from app.repositories.session import UserSessionRepository
-from app.services.audit_log import AuditEventType, AuditLogService
+from app.services.audit_log import AuditLogService
 
 SESSION_REVOKE_REASON_EXPIRED = "expired"
 SESSION_REVOKE_REASON_ABSOLUTE_EXPIRED = "absolute_expired"
@@ -242,17 +242,13 @@ class SessionService:
             reason=reason,
         )
         if revoked_count > 0:
-            self.audit_log_service.record(
+            self.audit_log_service.record_session_revoked(
                 db,
-                event_type=AuditEventType.AUTH_SESSION_REVOKED,
                 actor_user_id=actor_user_id,
                 target_user_id=user_id,
                 project_id=project_id,
-                resource_type="session",
-                metadata={
-                    "reason": reason,
-                    "revoked_count": revoked_count,
-                },
+                reason=reason,
+                revoked_count=revoked_count,
             )
 
         return revoked_count
