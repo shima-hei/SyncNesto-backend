@@ -115,6 +115,8 @@ class Settings:
         "SESSION_ABSOLUTE_TIMEOUT_MINUTES",
         480,
     )
+    login_max_failed_attempts: int = get_int_env("LOGIN_MAX_FAILED_ATTEMPTS", 5)
+    login_lock_minutes: int = get_int_env("LOGIN_LOCK_MINUTES", 15)
     auth_cookie_name: str = os.getenv("AUTH_COOKIE_NAME", "access_token")
     auth_cookie_secure: bool = get_bool_env("AUTH_COOKIE_SECURE")
     auth_cookie_samesite: CookieSameSite = get_cookie_samesite_env(

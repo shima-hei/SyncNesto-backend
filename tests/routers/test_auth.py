@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.csrf import generate_csrf_token
 from app.core.security import create_access_token, decode_access_token, verify_password
 from app.models.user import User
+from app.repositories.login_attempt import LoginAttemptRepository
 from app.repositories.session import UserSessionRepository
 from tests.fakes.storage import FakeStorageService
 from tests.helpers.auth import authorize_as, create_session_token
@@ -251,6 +252,239 @@ def test_login_user_rejects_wrong_password(
         "message": "Invalid email or password",
         "code": "INVALID_CREDENTIALS",
     }
+
+
+def test_login_user_records_failed_attempt_for_wrong_password(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """誤ったpasswordでログイン失敗回数を記録することを確認する。"""
+    create_test_user(
+        email="attempt-wrong@example.com",
+        name="Attempt Wrong User",
+        password="password123",
+    )
+
+    response = client.post(
+        "/auth/login",
+        json={
+            "email": "attempt-wrong@example.com",
+            "password": "wrong-password",
+        },
+    )
+
+    login_attempt = LoginAttemptRepository().get_by_email(
+        db,
+        "attempt-wrong@example.com",
+    )
+    assert response.status_code == 401
+    assert login_attempt is not None
+    assert login_attempt.failed_count == 1
+    assert login_attempt.locked_until is None
+    assert login_attempt.last_failed_at is not None
+
+
+def test_login_user_records_failed_attempt_for_unknown_email(
+    client: TestClient,
+    db: Session,
+) -> None:
+    """存在しないemailでもログイン失敗回数を記録することを確認する。"""
+    response = client.post(
+        "/auth/login",
+        json={
+            "email": "UNKNOWN@example.com",
+            "password": "password123",
+        },
+    )
+
+    login_attempt = LoginAttemptRepository().get_by_email(db, "unknown@example.com")
+    assert response.status_code == 401
+    assert response.json() == {
+        "message": "Invalid email or password",
+        "code": "INVALID_CREDENTIALS",
+    }
+    assert login_attempt is not None
+    assert login_attempt.failed_count == 1
+
+
+def test_login_user_records_failed_attempt_for_inactive_user(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """無効ユーザーでもログイン失敗回数を記録することを確認する。"""
+    user = create_test_user(
+        email="attempt-inactive@example.com",
+        name="Attempt Inactive User",
+        password="password123",
+    )
+    user.is_active = False
+    db.commit()
+
+    response = client.post(
+        "/auth/login",
+        json={
+            "email": "attempt-inactive@example.com",
+            "password": "password123",
+        },
+    )
+
+    login_attempt = LoginAttemptRepository().get_by_email(
+        db,
+        "attempt-inactive@example.com",
+    )
+    assert response.status_code == 401
+    assert login_attempt is not None
+    assert login_attempt.failed_count == 1
+
+
+def test_login_user_locks_email_after_failed_attempt_limit(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """失敗回数が閾値に達したemailを一時ロックすることを確認する。"""
+    monkeypatch.setattr(settings, "login_max_failed_attempts", 2)
+    monkeypatch.setattr(settings, "login_lock_minutes", 15)
+    create_test_user(
+        email="locked@example.com",
+        name="Locked User",
+        password="password123",
+    )
+
+    for _ in range(2):
+        response = client.post(
+            "/auth/login",
+            json={
+                "email": "locked@example.com",
+                "password": "wrong-password",
+            },
+        )
+        assert response.status_code == 401
+
+    login_attempt = LoginAttemptRepository().get_by_email(db, "locked@example.com")
+    assert login_attempt is not None
+    assert login_attempt.failed_count == 2
+    assert login_attempt.locked_until is not None
+    assert login_attempt.locked_until > datetime.now(UTC)
+
+
+def test_login_user_rejects_correct_password_while_locked(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ロック中は正しいpasswordでもログインを拒否することを確認する。"""
+    monkeypatch.setattr(settings, "login_max_failed_attempts", 1)
+    create_test_user(
+        email="locked-correct@example.com",
+        name="Locked Correct User",
+        password="password123",
+    )
+
+    failed_response = client.post(
+        "/auth/login",
+        json={
+            "email": "locked-correct@example.com",
+            "password": "wrong-password",
+        },
+    )
+    success_attempt_response = client.post(
+        "/auth/login",
+        json={
+            "email": "locked-correct@example.com",
+            "password": "password123",
+        },
+    )
+
+    assert failed_response.status_code == 401
+    assert success_attempt_response.status_code == 401
+    assert success_attempt_response.json() == {
+        "message": "Invalid email or password",
+        "code": "INVALID_CREDENTIALS",
+    }
+
+
+def test_login_user_allows_login_after_lock_expired(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ロック期限切れ後は正しいpasswordでログインできることを確認する。"""
+    monkeypatch.setattr(settings, "login_max_failed_attempts", 1)
+    create_test_user(
+        email="expired-lock@example.com",
+        name="Expired Lock User",
+        password="password123",
+    )
+    client.post(
+        "/auth/login",
+        json={
+            "email": "expired-lock@example.com",
+            "password": "wrong-password",
+        },
+    )
+    login_attempt = LoginAttemptRepository().get_by_email(
+        db,
+        "expired-lock@example.com",
+    )
+    assert login_attempt is not None
+    login_attempt.locked_until = datetime.now(UTC) - timedelta(minutes=1)
+    db.commit()
+
+    response = client.post(
+        "/auth/login",
+        json={
+            "email": "expired-lock@example.com",
+            "password": "password123",
+        },
+    )
+
+    db.refresh(login_attempt)
+    assert response.status_code == 200
+    assert login_attempt.failed_count == 0
+    assert login_attempt.locked_until is None
+
+
+def test_login_user_resets_failed_attempts_on_success(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """ログイン成功時に失敗回数をリセットすることを確認する。"""
+    create_test_user(
+        email="reset-attempt@example.com",
+        name="Reset Attempt User",
+        password="password123",
+    )
+    client.post(
+        "/auth/login",
+        json={
+            "email": "reset-attempt@example.com",
+            "password": "wrong-password",
+        },
+    )
+
+    response = client.post(
+        "/auth/login",
+        json={
+            "email": "reset-attempt@example.com",
+            "password": "password123",
+        },
+    )
+
+    login_attempt = LoginAttemptRepository().get_by_email(
+        db,
+        "reset-attempt@example.com",
+    )
+    assert response.status_code == 200
+    assert login_attempt is not None
+    assert login_attempt.failed_count == 0
+    assert login_attempt.locked_until is None
+    assert login_attempt.last_failed_at is None
 
 
 def test_login_user_requires_password(client: TestClient) -> None:

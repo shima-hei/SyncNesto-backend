@@ -25,6 +25,7 @@ from app.repositories.rbac import RbacRepository
 from app.repositories.user import UserRepository
 from app.schemas.user import UserCreate, UserProfileUpdate, UserRead, UserUpdate
 from app.services.conflict import raise_if_version_conflict
+from app.services.login_attempt import LoginAttemptService
 from app.services.storage import StorageService
 
 logger = logging.getLogger(__name__)
@@ -42,15 +43,18 @@ class UserService:
         self,
         repository: UserRepository | None = None,
         rbac_repository: RbacRepository | None = None,
+        login_attempt_service: LoginAttemptService | None = None,
     ) -> None:
         """UserServiceを初期化する。
 
         Args:
             repository: ユーザーRepository。
             rbac_repository: RBAC Repository。
+            login_attempt_service: ログイン試行回数サービス。
         """
         self.repository = repository or UserRepository()
         self.rbac_repository = rbac_repository or RbacRepository()
+        self.login_attempt_service = login_attempt_service or LoginAttemptService()
 
     def _resolve_system_roles(self, db: Session, role_keys: list[str]) -> list[Role]:
         """システムロールkey一覧からロール一覧を取得する。
@@ -420,23 +424,32 @@ class UserService:
         Raises:
             InvalidCredentialsError: emailまたはpasswordが正しくない場合。
         """
+        normalized_email = self.login_attempt_service.normalize_email(email)
+        if self.login_attempt_service.is_locked(db, normalized_email):
+            logger.warning("Locked login attempt: email=%s", normalized_email)
+            raise InvalidCredentialsError()
+
         user = self.repository.get_by_email(db, email)
         if user is None:
-            logger.warning("Invalid login attempt: email=%s", email)
+            self.login_attempt_service.record_failure(db, normalized_email)
+            logger.warning("Invalid login attempt: email=%s", normalized_email)
             raise InvalidCredentialsError()
 
         if not user.is_active:
+            self.login_attempt_service.record_failure(db, normalized_email)
             logger.warning(
                 "Inactive user login attempt: id=%s email=%s",
                 user.id,
-                email,
+                normalized_email,
             )
             raise InvalidCredentialsError()
 
         if not verify_password(password, user.hashed_password):
-            logger.warning("Invalid login attempt: email=%s", email)
+            self.login_attempt_service.record_failure(db, normalized_email)
+            logger.warning("Invalid login attempt: email=%s", normalized_email)
             raise InvalidCredentialsError()
 
+        self.login_attempt_service.reset(db, normalized_email)
         logger.info("User authenticated: id=%s email=%s", user.id, user.email)
         return user
 
