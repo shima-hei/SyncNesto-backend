@@ -14,6 +14,7 @@ from app.core.security import create_access_token, decode_access_token
 from app.models.session import UserSession
 from app.models.user import User
 from app.repositories.session import UserSessionRepository
+from app.services.audit_log import AuditEventType, AuditLogService
 
 SESSION_REVOKE_REASON_EXPIRED = "expired"
 SESSION_REVOKE_REASON_ABSOLUTE_EXPIRED = "absolute_expired"
@@ -23,13 +24,19 @@ SESSION_REVOKE_REASON_PERMISSION_CHANGED = "permission_changed"
 class SessionService:
     """DBセッション検証、延長、失効を提供する。"""
 
-    def __init__(self, repository: UserSessionRepository | None = None) -> None:
+    def __init__(
+        self,
+        repository: UserSessionRepository | None = None,
+        audit_log_service: AuditLogService | None = None,
+    ) -> None:
         """SessionServiceを初期化する。
 
         Args:
             repository: ユーザーセッションRepository。
+            audit_log_service: 監査ログサービス。
         """
         self.repository = repository or UserSessionRepository()
+        self.audit_log_service = audit_log_service or AuditLogService()
 
     def create_session_token(
         self,
@@ -180,23 +187,33 @@ class SessionService:
         )
         set_auth_cookie(response, token, max_age_seconds)
 
-    def revoke_token_session(self, db: Session, token: str, reason: str) -> None:
+    def revoke_token_session(
+        self,
+        db: Session,
+        token: str,
+        reason: str,
+    ) -> UserSession | None:
         """JWTに紐づくDBセッションを失効する。
 
         Args:
             db: DBセッション。
             token: JWTアクセストークン。
             reason: 失効理由。
+
+        Returns:
+            失効したDBセッション。取得できない場合はNone。
         """
         try:
             payload = decode_access_token(token, verify_exp=False)
             session_id = self.get_session_id(payload)
         except (jwt.PyJWTError, InvalidTokenError):
-            return
+            return None
 
         user_session = self.repository.get_by_id(db, session_id)
         if user_session is not None:
-            self.repository.revoke(db, user_session, reason)
+            return self.repository.revoke(db, user_session, reason)
+
+        return None
 
     def revoke_user_sessions(
         self,
@@ -204,6 +221,8 @@ class SessionService:
         *,
         user_id: int,
         reason: str = SESSION_REVOKE_REASON_PERMISSION_CHANGED,
+        actor_user_id: int | None = None,
+        project_id: int | None = None,
     ) -> int:
         """ユーザーの有効セッションをすべて失効する。
 
@@ -211,15 +230,32 @@ class SessionService:
             db: DBセッション。
             user_id: セッションを失効する対象ユーザーID。
             reason: 失効理由。
+            actor_user_id: 操作ユーザーID。
+            project_id: 関連プロジェクトID。
 
         Returns:
             失効したセッション件数。
         """
-        return self.repository.revoke_all_by_user_id(
+        revoked_count = self.repository.revoke_all_by_user_id(
             db,
             user_id=user_id,
             reason=reason,
         )
+        if revoked_count > 0:
+            self.audit_log_service.record(
+                db,
+                event_type=AuditEventType.AUTH_SESSION_REVOKED,
+                actor_user_id=actor_user_id,
+                target_user_id=user_id,
+                project_id=project_id,
+                resource_type="session",
+                metadata={
+                    "reason": reason,
+                    "revoked_count": revoked_count,
+                },
+            )
+
+        return revoked_count
 
     def _get_payload_datetime(
         self,

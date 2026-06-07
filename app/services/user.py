@@ -24,6 +24,7 @@ from app.models.user import User
 from app.repositories.rbac import RbacRepository
 from app.repositories.user import UserRepository
 from app.schemas.user import UserCreate, UserProfileUpdate, UserRead, UserUpdate
+from app.services.audit_log import AuditEventType, AuditLogService
 from app.services.conflict import raise_if_version_conflict
 from app.services.login_attempt import LoginAttemptService
 from app.services.session import SessionService
@@ -46,6 +47,7 @@ class UserService:
         rbac_repository: RbacRepository | None = None,
         login_attempt_service: LoginAttemptService | None = None,
         session_service: SessionService | None = None,
+        audit_log_service: AuditLogService | None = None,
     ) -> None:
         """UserServiceを初期化する。
 
@@ -54,11 +56,13 @@ class UserService:
             rbac_repository: RBAC Repository。
             login_attempt_service: ログイン試行回数サービス。
             session_service: 認証セッションサービス。
+            audit_log_service: 監査ログサービス。
         """
         self.repository = repository or UserRepository()
         self.rbac_repository = rbac_repository or RbacRepository()
         self.login_attempt_service = login_attempt_service or LoginAttemptService()
         self.session_service = session_service or SessionService()
+        self.audit_log_service = audit_log_service or AuditLogService()
 
     def _resolve_system_roles(self, db: Session, role_keys: list[str]) -> list[Role]:
         """システムロールkey一覧からロール一覧を取得する。
@@ -118,6 +122,15 @@ class UserService:
         self.rbac_repository.replace_system_roles_for_user(db, user=user, roles=roles)
         db.commit()
         db.refresh(user)
+        self.audit_log_service.record(
+            db,
+            event_type=AuditEventType.USER_CREATED,
+            actor_user_id=actor_id,
+            target_user_id=user.id,
+            resource_type="user",
+            resource_id=user.id,
+            metadata={"email": user.email},
+        )
         logger.info("User created: id=%s email=%s", user.id, user.email)
         return user
 
@@ -244,6 +257,10 @@ class UserService:
             VersionConflictError: リクエストのversionが最新ではない場合。
         """
         user = self.get_user(db, user_id)
+        before_role_keys = [
+            role.key
+            for role in self.rbac_repository.list_system_roles_by_user(db, user.id)
+        ]
         raise_if_version_conflict(
             current_version=user.version,
             requested_version=user_in.version,
@@ -278,7 +295,37 @@ class UserService:
         db.commit()
         db.refresh(user)
         if should_revoke_sessions:
-            self.session_service.revoke_user_sessions(db, user_id=user.id)
+            after_role_keys = [
+                role.key
+                for role in self.rbac_repository.list_system_roles_by_user(db, user.id)
+            ]
+            self.audit_log_service.record(
+                db,
+                event_type=AuditEventType.USER_SYSTEM_ROLES_CHANGED,
+                actor_user_id=actor_id,
+                target_user_id=user.id,
+                resource_type="user",
+                resource_id=user.id,
+                metadata={
+                    "before_role_keys": before_role_keys,
+                    "after_role_keys": after_role_keys,
+                },
+            )
+            self.session_service.revoke_user_sessions(
+                db,
+                user_id=user.id,
+                actor_user_id=actor_id,
+            )
+        else:
+            self.audit_log_service.record(
+                db,
+                event_type=AuditEventType.USER_UPDATED,
+                actor_user_id=actor_id,
+                target_user_id=user.id,
+                resource_type="user",
+                resource_id=user.id,
+                metadata={"updated_fields": sorted(user_in.model_fields_set)},
+            )
 
         return user
 
@@ -404,12 +451,18 @@ class UserService:
 
         return user
 
-    def delete_user(self, db: Session, user_id: int) -> None:
+    def delete_user(
+        self,
+        db: Session,
+        user_id: int,
+        actor_id: int | None = None,
+    ) -> None:
         """ユーザーを論理削除する。
 
         Args:
             db: DBセッション。
             user_id: 削除対象ユーザーID。
+            actor_id: 操作ユーザーID。
 
         Raises:
             NotFoundError: ユーザーが存在しない場合。
@@ -417,6 +470,15 @@ class UserService:
         user = self.get_user(db, user_id)
         self.repository.soft_delete(db, user)
         db.commit()
+        self.audit_log_service.record(
+            db,
+            event_type=AuditEventType.USER_DELETED,
+            actor_user_id=actor_id,
+            target_user_id=user.id,
+            resource_type="user",
+            resource_id=user.id,
+            metadata={"email": user.email},
+        )
 
     def authenticate_user(self, db: Session, email: str, password: str) -> User:
         """ユーザーを認証する。
@@ -434,17 +496,35 @@ class UserService:
         """
         normalized_email = self.login_attempt_service.normalize_email(email)
         if self.login_attempt_service.is_locked(db, normalized_email):
+            self.audit_log_service.record(
+                db,
+                event_type=AuditEventType.AUTH_LOGIN_FAILURE,
+                metadata={"email": normalized_email, "reason": "locked"},
+            )
             logger.warning("Locked login attempt: email=%s", normalized_email)
             raise InvalidCredentialsError()
 
         user = self.repository.get_by_email(db, email)
         if user is None:
             self.login_attempt_service.record_failure(db, normalized_email)
+            self.audit_log_service.record(
+                db,
+                event_type=AuditEventType.AUTH_LOGIN_FAILURE,
+                metadata={"email": normalized_email, "reason": "unknown_email"},
+            )
             logger.warning("Invalid login attempt: email=%s", normalized_email)
             raise InvalidCredentialsError()
 
         if not user.is_active:
             self.login_attempt_service.record_failure(db, normalized_email)
+            self.audit_log_service.record(
+                db,
+                event_type=AuditEventType.AUTH_LOGIN_FAILURE,
+                target_user_id=user.id,
+                resource_type="user",
+                resource_id=user.id,
+                metadata={"email": normalized_email, "reason": "inactive_user"},
+            )
             logger.warning(
                 "Inactive user login attempt: id=%s email=%s",
                 user.id,
@@ -454,6 +534,14 @@ class UserService:
 
         if not verify_password(password, user.hashed_password):
             self.login_attempt_service.record_failure(db, normalized_email)
+            self.audit_log_service.record(
+                db,
+                event_type=AuditEventType.AUTH_LOGIN_FAILURE,
+                target_user_id=user.id,
+                resource_type="user",
+                resource_id=user.id,
+                metadata={"email": normalized_email, "reason": "wrong_password"},
+            )
             logger.warning("Invalid login attempt: email=%s", normalized_email)
             raise InvalidCredentialsError()
 

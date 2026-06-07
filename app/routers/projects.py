@@ -239,7 +239,7 @@ def delete_project(
 def add_project_member(
     project_id: int,
     member_in: ProjectMemberCreate,
-    _: User = Depends(require_project_permission("project:invite_member")),
+    current_user: User = Depends(require_project_permission("project:invite_member")),
     db: Session = Depends(get_db),
 ) -> ProjectMemberRead:
     """プロジェクトメンバーを追加する。
@@ -247,6 +247,7 @@ def add_project_member(
     Args:
         project_id: プロジェクトID。
         member_in: メンバー追加リクエストの入力値。
+        current_user: 認可済みユーザー。
         db: DBセッション。
 
     Returns:
@@ -256,6 +257,7 @@ def add_project_member(
         db,
         project_id=project_id,
         member_in=member_in,
+        actor_id=current_user.id,
     )
     role = project_member_service.get_member_role(db, member)
     return build_project_member_response(member, role)
@@ -295,7 +297,7 @@ def update_project_member(
     project_id: int,
     user_id: int,
     member_in: ProjectMemberUpdate,
-    _: User = Depends(require_project_permission("project:invite_member")),
+    current_user: User = Depends(require_project_permission("project:invite_member")),
     db: Session = Depends(get_db),
 ) -> ProjectMemberRead:
     """プロジェクトメンバーのロールを更新する。
@@ -304,6 +306,7 @@ def update_project_member(
         project_id: プロジェクトID。
         user_id: 更新対象ユーザーID。
         member_in: メンバー更新リクエストの入力値。
+        current_user: 認可済みユーザー。
         db: DBセッション。
 
     Returns:
@@ -314,6 +317,7 @@ def update_project_member(
         project_id=project_id,
         user_id=user_id,
         member_in=member_in,
+        actor_id=current_user.id,
     )
     role = project_member_service.get_member_role(db, member)
     return build_project_member_response(member, role)
@@ -326,7 +330,7 @@ def update_project_member(
 def remove_project_member(
     project_id: int,
     user_id: int,
-    _: User = Depends(require_project_permission("project:remove_member")),
+    current_user: User = Depends(require_project_permission("project:remove_member")),
     db: Session = Depends(get_db),
 ) -> None:
     """プロジェクトメンバーを物理削除する。
@@ -334,6 +338,12 @@ def remove_project_member(
     Args:
         project_id: プロジェクトID。
         user_id: 削除対象ユーザーID。
+        current_user: 認可済みユーザー。
         db: DBセッション。
     """
-    project_member_service.remove_member(db, project_id=project_id, user_id=user_id)
+    project_member_service.remove_member(
+        db,
+        project_id=project_id,
+        user_id=user_id,
+        actor_id=current_user.id,
+    )

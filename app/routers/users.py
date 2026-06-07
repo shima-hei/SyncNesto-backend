@@ -151,13 +151,14 @@ def update_user(
 )
 def delete_user(
     user_id: int,
-    _: User = Depends(require_system_permission("user:delete")),
+    current_user: User = Depends(require_system_permission("user:delete")),
     db: Session = Depends(get_db),
 ) -> None:
     """ユーザーを論理削除する。
 
     Args:
         user_id: 削除対象ユーザーID。
+        current_user: 認可済みユーザー。
         db: DBセッション。
     """
-    user_service.delete_user(db, user_id)
+    user_service.delete_user(db, user_id, actor_id=current_user.id)

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import create_access_token
+from app.models.audit_log import AuditLog
 from app.models.project import Project, ProjectMember
 from app.models.user import User
 from app.repositories.rbac import RbacRepository
@@ -30,6 +31,7 @@ def get_project_role_id(db: Session, role_key: str) -> int:
 def test_create_project_returns_project_for_system_admin(
     client: TestClient,
     create_test_user: Callable[..., User],
+    db: Session,
 ) -> None:
     """system_adminがプロジェクトを作成できることを確認する。"""
     admin_user = create_test_user(
@@ -56,6 +58,15 @@ def test_create_project_returns_project_for_system_admin(
     assert response.json()["version"] == 1
     assert response.json()["created_by"] == admin_user.id
     assert response.json()["updated_by"] == admin_user.id
+    audit_log = db.query(AuditLog).filter_by(event_type="project.created").one()
+    assert audit_log.actor_user_id == admin_user.id
+    assert audit_log.project_id == response.json()["id"]
+    assert audit_log.resource_type == "project"
+    assert audit_log.resource_id == response.json()["id"]
+    assert audit_log.extra_metadata == {
+        "name": "Project A",
+        "project_code": "PRJ-A",
+    }
 
 
 def test_create_project_requires_project_create_permission(
@@ -464,6 +475,7 @@ def test_update_project_allows_project_admin(
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
     assign_project_role: Callable[..., ProjectMember],
+    db: Session,
 ) -> None:
     """project_adminがプロジェクトを更新できることを確認する。"""
     user = create_test_user(email="admin@example.com")
@@ -493,6 +505,20 @@ def test_update_project_allows_project_admin(
     assert response.json()["end_date"] == "2026-05-31"
     assert response.json()["version"] == project.version + 1
     assert response.json()["updated_by"] == user.id
+    audit_log = db.query(AuditLog).filter_by(event_type="project.updated").one()
+    assert audit_log.actor_user_id == user.id
+    assert audit_log.project_id == project.id
+    assert audit_log.resource_type == "project"
+    assert audit_log.resource_id == project.id
+    assert audit_log.extra_metadata["updated_fields"] == [
+        "description",
+        "end_date",
+        "name",
+        "project_code",
+        "start_date",
+        "status",
+        "version",
+    ]
 
 
 def test_update_project_rejects_stale_version_with_current_project(
@@ -583,6 +609,15 @@ def test_delete_project_allows_project_admin(
     db.refresh(project)
     assert project.deleted_at is not None
     assert project.updated_by == user.id
+    audit_log = db.query(AuditLog).filter_by(event_type="project.deleted").one()
+    assert audit_log.actor_user_id == user.id
+    assert audit_log.project_id == project.id
+    assert audit_log.resource_type == "project"
+    assert audit_log.resource_id == project.id
+    assert audit_log.extra_metadata == {
+        "name": "Delete",
+        "project_code": project.project_code,
+    }
 
 
 def test_add_project_member_allows_project_admin(
@@ -590,6 +625,7 @@ def test_add_project_member_allows_project_admin(
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
     assign_project_role: Callable[..., ProjectMember],
+    db: Session,
 ) -> None:
     """project_adminがメンバーを追加できることを確認する。"""
     admin_user = create_test_user(email="project-admin@example.com")
@@ -606,6 +642,13 @@ def test_add_project_member_allows_project_admin(
     assert response.status_code == 201
     assert response.json()["user_id"] == target_user.id
     assert response.json()["role"] == {"key": "member", "name": "メンバー"}
+    audit_log = db.query(AuditLog).filter_by(event_type="project_member.added").one()
+    assert audit_log.actor_user_id == admin_user.id
+    assert audit_log.target_user_id == target_user.id
+    assert audit_log.project_id == project.id
+    assert audit_log.resource_type == "project_member"
+    assert audit_log.resource_id == response.json()["id"]
+    assert audit_log.extra_metadata == {"role_key": "member"}
 
 
 def test_add_project_member_revokes_target_sessions(
@@ -633,6 +676,8 @@ def test_add_project_member_revokes_target_sessions(
     assert user_session is not None
     assert user_session.revoked_at is not None
     assert user_session.revoked_reason == "permission_changed"
+    event_types = {audit.event_type for audit in db.query(AuditLog).all()}
+    assert event_types == {"auth.session.revoked", "project_member.added"}
 
 
 def test_add_project_member_rejects_viewer(
@@ -758,6 +803,24 @@ def test_update_project_member_revokes_target_sessions(
     assert user_session is not None
     assert user_session.revoked_at is not None
     assert user_session.revoked_reason == "permission_changed"
+    audit_log = (
+        db.query(AuditLog)
+        .filter_by(event_type="project_member.role_changed")
+        .one()
+    )
+    assert audit_log.actor_user_id == admin_user.id
+    assert audit_log.target_user_id == target_user.id
+    assert audit_log.project_id == project.id
+    assert audit_log.resource_type == "project_member"
+    assert audit_log.resource_id == member.id
+    assert audit_log.extra_metadata == {
+        "before_role_key": "viewer",
+        "after_role_key": "member",
+    }
+    session_audit_log = (
+        db.query(AuditLog).filter_by(event_type="auth.session.revoked").one()
+    )
+    assert session_audit_log.project_id == project.id
 
 
 def test_update_project_member_rejects_stale_version_with_current_member(
@@ -871,6 +934,15 @@ def test_remove_project_member_allows_project_admin(
     assert response.status_code == 204
     db.expire_all()
     assert db.get(ProjectMember, member_id) is None
+    audit_log = (
+        db.query(AuditLog).filter_by(event_type="project_member.removed").one()
+    )
+    assert audit_log.actor_user_id == admin_user.id
+    assert audit_log.target_user_id == target_user.id
+    assert audit_log.project_id == project.id
+    assert audit_log.resource_type == "project_member"
+    assert audit_log.resource_id == member_id
+    assert audit_log.extra_metadata == {"role_key": "viewer"}
 
 
 def test_remove_project_member_revokes_target_sessions(

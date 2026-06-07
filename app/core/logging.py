@@ -13,6 +13,14 @@ request_id_context: ContextVar[str] = ContextVar(
     "request_id",
     default="-",
 )
+client_ip_context: ContextVar[str | None] = ContextVar(
+    "client_ip",
+    default=None,
+)
+user_agent_context: ContextVar[str | None] = ContextVar(
+    "user_agent",
+    default=None,
+)
 
 
 def set_request_id(request_id: str) -> Token[str]:
@@ -34,6 +42,40 @@ def reset_request_id(token: Token[str]) -> None:
         token: request id設定時に返されたトークン。
     """
     request_id_context.reset(token)
+
+
+def set_request_metadata(
+    *,
+    client_ip: str | None,
+    user_agent: str | None,
+) -> tuple[Token[str | None], Token[str | None]]:
+    """現在のコンテキストにリクエストメタデータを設定する。
+
+    Args:
+        client_ip: 接続元IPアドレス。
+        user_agent: User-Agent文字列。
+
+    Returns:
+        client_ipとuser_agentをリセットするためのトークン。
+    """
+    return (
+        client_ip_context.set(client_ip),
+        user_agent_context.set(user_agent),
+    )
+
+
+def reset_request_metadata(
+    client_ip_token: Token[str | None],
+    user_agent_token: Token[str | None],
+) -> None:
+    """現在のコンテキストのリクエストメタデータをリセットする。
+
+    Args:
+        client_ip_token: client_ip設定時に返されたトークン。
+        user_agent_token: user_agent設定時に返されたトークン。
+    """
+    client_ip_context.reset(client_ip_token)
+    user_agent_context.reset(user_agent_token)
 
 
 class RequestIdFilter(logging.Filter):

@@ -16,6 +16,7 @@ from app.schemas.user import (
     UserLoginResponse,
     UserProfileUpdate,
 )
+from app.services.audit_log import AuditEventType, AuditLogService
 from app.services.session import SessionService
 from app.services.storage import StorageService
 from app.services.user import UserService
@@ -24,6 +25,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 user_service = UserService()
 session_service = SessionService()
 storage_service = StorageService()
+audit_log_service = AuditLogService()
 
 SESSION_REVOKE_REASON_LOGOUT = "logout"
 
@@ -51,6 +53,15 @@ def login_user(
     user = user_service.authenticate_user(db, user_in.email, user_in.password)
     user_service.update_last_login_at(db, user)
     user_session, access_token = session_service.create_session_token(db, user)
+    audit_log_service.record(
+        db,
+        event_type=AuditEventType.AUTH_LOGIN_SUCCESS,
+        actor_user_id=user.id,
+        target_user_id=user.id,
+        resource_type="session",
+        resource_id=None,
+        metadata={"session_id": str(user_session.id), "email": user.email},
+    )
     set_auth_cookie(
         response,
         access_token,
@@ -85,10 +96,23 @@ def logout_user(
         db: DBセッション。
     """
     if access_token is not None:
-        session_service.revoke_token_session(
+        user_session = session_service.revoke_token_session(
             db,
             access_token,
             SESSION_REVOKE_REASON_LOGOUT,
+        )
+        audit_log_service.record(
+            db,
+            event_type=AuditEventType.AUTH_LOGOUT,
+            actor_user_id=user_session.user_id if user_session is not None else None,
+            target_user_id=user_session.user_id if user_session is not None else None,
+            resource_type="session",
+            resource_id=None,
+            metadata={
+                "session_id": str(user_session.id)
+                if user_session is not None
+                else None,
+            },
         )
 
     delete_auth_cookie(response)

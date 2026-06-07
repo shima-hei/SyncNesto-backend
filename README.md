@@ -87,6 +87,10 @@ SESSION_ABSOLUTE_TIMEOUT_MINUTES=480
 LOGIN_MAX_FAILED_ATTEMPTS=5
 LOGIN_LOCK_MINUTES=15
 
+# 監査ログ保持設定。
+AUDIT_LOG_RETENTION_DAYS=1095
+AUDIT_LOG_CLEANUP_MIN_DAYS=30
+
 # 認証Cookie設定。
 AUTH_COOKIE_NAME=access_token
 AUTH_COOKIE_SECURE=false
@@ -142,6 +146,8 @@ SECRET_KEY=test-secret-key-at-least-32-bytes
 - `SESSION_ABSOLUTE_TIMEOUT_MINUTES`: 操作が続いていても必ず期限切れにする最大セッション時間
 - `LOGIN_MAX_FAILED_ATTEMPTS`: ログイン失敗で一時ロックするまでの連続失敗回数
 - `LOGIN_LOCK_MINUTES`: ログイン失敗閾値到達後の一時ロック分数
+- `AUDIT_LOG_RETENTION_DAYS`: 監査ログ削除コマンドのデフォルト保持日数
+- `AUDIT_LOG_CLEANUP_MIN_DAYS`: 誤削除防止のため、削除対象に指定できる最小経過日数
 - `AUTH_COOKIE_NAME`: 認証Cookie名
 - `AUTH_COOKIE_SECURE`: `true` の場合 Secure Cookie として発行
 - `AUTH_COOKIE_SAMESITE`: Cookie の SameSite 属性
@@ -499,6 +505,40 @@ HTTPレスポンスへの変換は `app/core/exception_handlers.py` に集約し
 
 業務ログは必要な場所に絞って追加します。パスワード、ハッシュ値、トークンなどの秘匿情報はログに出しません。
 
+## 監査ログ
+
+重要操作は `audit_logs` テーブルへ監査ログとして保存します。通常のアプリケーションログとは別に、誰が、いつ、何を対象に、どの操作をしたかを追跡するための証跡です。
+
+現時点の主な記録対象:
+
+- ログイン成功、ログイン失敗、ログアウト
+- 権限変更によるセッション失効
+- ユーザー作成、更新、削除、システムロール変更
+- プロジェクト作成、更新、削除
+- プロジェクトメンバー追加、ロール変更、削除
+
+監査ログには `request_id`, IPアドレス, User-Agent, 操作ユーザーID, 対象ユーザーID, プロジェクトID, リソース種別, リソースID, metadata を保存します。metadataには補足情報を入れますが、password、token、secret、cookie などの秘匿情報は保存しません。
+
+古い監査ログは手動コマンドで削除できます。デフォルトはdry-runで、削除対象件数だけ確認します。
+
+```bash
+uv run python -m scripts.cleanup_audit_logs
+```
+
+実際に削除する場合は `--execute` を付けます。
+
+```bash
+uv run python -m scripts.cleanup_audit_logs --older-than-days 1095 --execute
+```
+
+一度に削除する件数を制限する場合:
+
+```bash
+uv run python -m scripts.cleanup_audit_logs --older-than-days 1095 --limit 1000 --execute
+```
+
+誤削除を防ぐため、`AUDIT_LOG_CLEANUP_MIN_DAYS` 未満の経過日数は指定できません。cronなどの自動実行はまだ設定していません。
+
 ## テスト
 
 テストは専用のPostgreSQLコンテナで実行します。通常の `docker compose up` ではテストDBは起動しません。
@@ -556,5 +596,4 @@ def get_password_hash(password: str) -> str:
   - 12文字以上
   - emailやユーザー名と同一のpassword禁止
   - 推測されやすいpassword禁止
-- 監査ログを実装する
 - ファイルアップロード時の画像再エンコードや追加検証を検討する

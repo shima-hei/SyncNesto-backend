@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.csrf import generate_csrf_token
 from app.core.security import create_access_token, decode_access_token, verify_password
+from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.repositories.login_attempt import LoginAttemptRepository
 from app.repositories.session import UserSessionRepository
@@ -151,6 +152,39 @@ def test_login_user_creates_session_and_returns_sid_token(
     assert user_session.revoked_reason is None
 
 
+def test_login_user_records_success_audit_log(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """ログイン成功時に監査ログを記録することを確認する。"""
+    password = "password123"
+    user = create_test_user(
+        email="audit-login@example.com",
+        name="Audit Login User",
+        password=password,
+    )
+
+    response = client.post(
+        "/auth/login",
+        headers={"X-Request-ID": "audit-login-request"},
+        json={
+            "email": "audit-login@example.com",
+            "password": password,
+        },
+    )
+
+    audit_log = db.query(AuditLog).filter_by(event_type="auth.login.success").one()
+    assert response.status_code == 200
+    assert audit_log.actor_user_id == user.id
+    assert audit_log.target_user_id == user.id
+    assert audit_log.resource_type == "session"
+    assert audit_log.request_id == "audit-login-request"
+    assert audit_log.user_agent is not None
+    assert audit_log.extra_metadata["email"] == user.email
+    assert "password" not in audit_log.extra_metadata
+
+
 def test_login_user_sets_csrf_cookie(
     client: TestClient,
     create_test_user: Callable[..., User],
@@ -225,6 +259,29 @@ def test_login_user_rejects_unknown_email(client: TestClient) -> None:
     assert response.json() == {
         "message": "Invalid email or password",
         "code": "INVALID_CREDENTIALS",
+    }
+
+
+def test_login_user_records_failure_audit_log(
+    client: TestClient,
+    db: Session,
+) -> None:
+    """ログイン失敗時に監査ログを記録することを確認する。"""
+    response = client.post(
+        "/auth/login",
+        json={
+            "email": "audit-failure@example.com",
+            "password": "password123",
+        },
+    )
+
+    audit_log = db.query(AuditLog).filter_by(event_type="auth.login.failure").one()
+    assert response.status_code == 401
+    assert audit_log.actor_user_id is None
+    assert audit_log.target_user_id is None
+    assert audit_log.extra_metadata == {
+        "email": "audit-failure@example.com",
+        "reason": "unknown_email",
     }
 
 
@@ -1159,6 +1216,25 @@ def test_logout_deletes_auth_cookie(
     user_session = UserSessionRepository().get_by_id(db, session_id)
     assert user_session is not None
     assert user_session.revoked_reason == "logout"
+
+
+def test_logout_records_audit_log(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """ログアウト時に監査ログを記録することを確認する。"""
+    user = create_test_user(email="logout-audit@example.com")
+    session_id = authorize_as(client, user)
+
+    response = client.post("/auth/logout")
+
+    audit_log = db.query(AuditLog).filter_by(event_type="auth.logout").one()
+    assert response.status_code == 204
+    assert audit_log.actor_user_id == user.id
+    assert audit_log.target_user_id == user.id
+    assert audit_log.resource_type == "session"
+    assert audit_log.extra_metadata["session_id"] == str(session_id)
 
 
 def test_logout_rejects_missing_csrf_header(

@@ -117,6 +117,8 @@ class Settings:
     )
     login_max_failed_attempts: int = get_int_env("LOGIN_MAX_FAILED_ATTEMPTS", 5)
     login_lock_minutes: int = get_int_env("LOGIN_LOCK_MINUTES", 15)
+    audit_log_retention_days: int = get_int_env("AUDIT_LOG_RETENTION_DAYS", 1095)
+    audit_log_cleanup_min_days: int = get_int_env("AUDIT_LOG_CLEANUP_MIN_DAYS", 30)
     auth_cookie_name: str = os.getenv("AUTH_COOKIE_NAME", "access_token")
     auth_cookie_secure: bool = get_bool_env("AUTH_COOKIE_SECURE")
     auth_cookie_samesite: CookieSameSite = get_cookie_samesite_env(

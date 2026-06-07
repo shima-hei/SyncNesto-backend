@@ -22,6 +22,7 @@ from app.schemas.project import (
     ProjectRead,
     ProjectUpdate,
 )
+from app.services.audit_log import AuditEventType, AuditLogService
 from app.services.authorization import AuthorizationService
 from app.services.conflict import (
     raise_duplicate_after_rollback,
@@ -37,15 +38,18 @@ class ProjectService:
         self,
         repository: ProjectRepository | None = None,
         authorization_service: AuthorizationService | None = None,
+        audit_log_service: AuditLogService | None = None,
     ) -> None:
         """ProjectServiceを初期化する。
 
         Args:
             repository: プロジェクトRepository。
             authorization_service: 認可サービス。
+            audit_log_service: 監査ログサービス。
         """
         self.repository = repository or ProjectRepository()
         self.authorization_service = authorization_service or AuthorizationService()
+        self.audit_log_service = audit_log_service or AuditLogService()
 
     def create_project(
         self,
@@ -67,7 +71,17 @@ class ProjectService:
             raise DuplicateResourceError(error_messages.PROJECT_CODE_ALREADY_EXISTS)
 
         try:
-            return self.repository.create(db, project_in, actor_id=actor_id)
+            project = self.repository.create(db, project_in, actor_id=actor_id)
+            self.audit_log_service.record(
+                db,
+                event_type=AuditEventType.PROJECT_CREATED,
+                actor_user_id=actor_id,
+                project_id=project.id,
+                resource_type="project",
+                resource_id=project.id,
+                metadata={"project_code": project.project_code, "name": project.name},
+            )
+            return project
         except IntegrityError as exc:
             raise_duplicate_after_rollback(
                 db,
@@ -195,12 +209,22 @@ class ProjectService:
             raise DuplicateResourceError(error_messages.PROJECT_CODE_ALREADY_EXISTS)
 
         try:
-            return self.repository.update(
+            project = self.repository.update(
                 db,
                 project=project,
                 project_in=project_in,
                 actor_id=actor_id,
             )
+            self.audit_log_service.record(
+                db,
+                event_type=AuditEventType.PROJECT_UPDATED,
+                actor_user_id=actor_id,
+                project_id=project.id,
+                resource_type="project",
+                resource_id=project.id,
+                metadata={"updated_fields": sorted(project_in.model_fields_set)},
+            )
+            return project
         except IntegrityError as exc:
             raise_duplicate_after_rollback(
                 db,
@@ -223,6 +247,15 @@ class ProjectService:
         """
         project = self.get_project(db, project_id)
         self.repository.soft_delete(db, project, actor_id=actor_id)
+        self.audit_log_service.record(
+            db,
+            event_type=AuditEventType.PROJECT_DELETED,
+            actor_user_id=actor_id,
+            project_id=project.id,
+            resource_type="project",
+            resource_id=project.id,
+            metadata={"project_code": project.project_code, "name": project.name},
+        )
 
     def get_current_project_role(
         self,
@@ -272,6 +305,7 @@ class ProjectMemberService:
         rbac_repository: RbacRepository | None = None,
         user_repository: UserRepository | None = None,
         session_service: SessionService | None = None,
+        audit_log_service: AuditLogService | None = None,
     ) -> None:
         """ProjectMemberServiceを初期化する。
 
@@ -281,12 +315,14 @@ class ProjectMemberService:
             rbac_repository: RBAC Repository。
             user_repository: ユーザーRepository。
             session_service: 認証セッションサービス。
+            audit_log_service: 監査ログサービス。
         """
         self.repository = repository or ProjectMemberRepository()
         self.project_repository = project_repository or ProjectRepository()
         self.rbac_repository = rbac_repository or RbacRepository()
         self.user_repository = user_repository or UserRepository()
         self.session_service = session_service or SessionService()
+        self.audit_log_service = audit_log_service or AuditLogService()
 
     def list_members(self, db: Session, project_id: int) -> list[ProjectMember]:
         """プロジェクトメンバー一覧を取得する。
@@ -374,6 +410,7 @@ class ProjectMemberService:
         *,
         project_id: int,
         member_in: ProjectMemberCreate,
+        actor_id: int | None = None,
     ) -> ProjectMember:
         """プロジェクトメンバーを追加する。
 
@@ -381,6 +418,7 @@ class ProjectMemberService:
             db: DBセッション。
             project_id: プロジェクトID。
             member_in: メンバー追加リクエストの入力値。
+            actor_id: 操作ユーザーID。
 
         Returns:
             追加されたプロジェクトメンバー。
@@ -406,7 +444,22 @@ class ProjectMemberService:
                 user_id=member_in.user_id,
                 role_id=role.id,
             )
-            self.session_service.revoke_user_sessions(db, user_id=member.user_id)
+            self.audit_log_service.record(
+                db,
+                event_type=AuditEventType.PROJECT_MEMBER_ADDED,
+                actor_user_id=actor_id,
+                target_user_id=member.user_id,
+                project_id=project_id,
+                resource_type="project_member",
+                resource_id=member.id,
+                metadata={"role_key": role.key},
+            )
+            self.session_service.revoke_user_sessions(
+                db,
+                user_id=member.user_id,
+                actor_user_id=actor_id,
+                project_id=project_id,
+            )
             return member
         except IntegrityError as exc:
             raise_duplicate_after_rollback(
@@ -422,6 +475,7 @@ class ProjectMemberService:
         project_id: int,
         user_id: int,
         member_in: ProjectMemberUpdate,
+        actor_id: int | None = None,
     ) -> ProjectMember:
         """プロジェクトメンバーのロールを更新する。
 
@@ -430,6 +484,7 @@ class ProjectMemberService:
             project_id: プロジェクトID。
             user_id: 更新対象ユーザーID。
             member_in: メンバー更新リクエストの入力値。
+            actor_id: 操作ユーザーID。
 
         Returns:
             更新されたプロジェクトメンバー。
@@ -444,22 +499,66 @@ class ProjectMemberService:
             current=self._build_member_current(db, member),
         )
 
+        before_role = self.get_member_role(db, member)
         role = self._get_project_role_by_key(db, member_in.role_key)
         updated_member = self.repository.update_role(db, member=member, role_id=role.id)
-        self.session_service.revoke_user_sessions(db, user_id=updated_member.user_id)
+        self.audit_log_service.record(
+            db,
+            event_type=AuditEventType.PROJECT_MEMBER_ROLE_CHANGED,
+            actor_user_id=actor_id,
+            target_user_id=updated_member.user_id,
+            project_id=project_id,
+            resource_type="project_member",
+            resource_id=updated_member.id,
+            metadata={
+                "before_role_key": before_role.key,
+                "after_role_key": role.key,
+            },
+        )
+        self.session_service.revoke_user_sessions(
+            db,
+            user_id=updated_member.user_id,
+            actor_user_id=actor_id,
+            project_id=project_id,
+        )
         return updated_member
 
-    def remove_member(self, db: Session, *, project_id: int, user_id: int) -> None:
+    def remove_member(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        user_id: int,
+        actor_id: int | None = None,
+    ) -> None:
         """プロジェクトメンバーを物理削除する。
 
         Args:
             db: DBセッション。
             project_id: プロジェクトID。
             user_id: 削除対象ユーザーID。
+            actor_id: 操作ユーザーID。
         """
         member = self._get_member(db, project_id=project_id, user_id=user_id)
+        role = self.get_member_role(db, member)
+        member_id = member.id
         self.repository.delete(db, member)
-        self.session_service.revoke_user_sessions(db, user_id=user_id)
+        self.audit_log_service.record(
+            db,
+            event_type=AuditEventType.PROJECT_MEMBER_REMOVED,
+            actor_user_id=actor_id,
+            target_user_id=user_id,
+            project_id=project_id,
+            resource_type="project_member",
+            resource_id=member_id,
+            metadata={"role_key": role.key},
+        )
+        self.session_service.revoke_user_sessions(
+            db,
+            user_id=user_id,
+            actor_user_id=actor_id,
+            project_id=project_id,
+        )
 
     def _ensure_project_exists(self, db: Session, project_id: int) -> None:
         """プロジェクトが存在することを確認する。"""

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import verify_password
+from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.repositories.session import UserSessionRepository
 from tests.fakes.storage import FakeStorageService
@@ -158,6 +159,36 @@ def test_create_user_assigns_system_roles(
     assert response.json()["system_roles"] == [
         {"key": "system_admin", "name": "システム管理者"},
     ]
+
+
+def test_create_user_records_audit_log(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """ユーザー作成時に監査ログを記録することを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    authorize_as(client, admin_user)
+
+    response = client.post(
+        "/users",
+        json={
+            "email": "audit-create@example.com",
+            "name": "Audit Create User",
+            "password": "password123",
+        },
+    )
+
+    audit_log = db.query(AuditLog).filter_by(event_type="user.created").one()
+    assert response.status_code == 201
+    assert audit_log.actor_user_id == admin_user.id
+    assert audit_log.target_user_id == response.json()["id"]
+    assert audit_log.resource_type == "user"
+    assert audit_log.resource_id == response.json()["id"]
+    assert audit_log.extra_metadata == {"email": "audit-create@example.com"}
 
 
 def test_create_user_rejects_invalid_system_role_key(
@@ -552,6 +583,33 @@ def test_update_user_updates_user_for_system_admin(
     }
 
 
+def test_update_user_records_audit_log(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """ユーザー更新時に監査ログを記録することを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    target_user = create_test_user(email="audit-update@example.com", name="Before")
+    authorize_as(client, admin_user)
+
+    response = client.patch(
+        f"/users/{target_user.id}",
+        json={"name": "After", "version": target_user.version},
+    )
+
+    audit_log = db.query(AuditLog).filter_by(event_type="user.updated").one()
+    assert response.status_code == 200
+    assert audit_log.actor_user_id == admin_user.id
+    assert audit_log.target_user_id == target_user.id
+    assert audit_log.resource_type == "user"
+    assert audit_log.resource_id == target_user.id
+    assert audit_log.extra_metadata == {"updated_fields": ["name", "version"]}
+
+
 def test_update_user_replaces_system_roles(
     client: TestClient,
     create_test_user: Callable[..., User],
@@ -605,6 +663,8 @@ def test_update_user_replaces_system_roles_revokes_target_sessions(
     assert user_session is not None
     assert user_session.revoked_at is not None
     assert user_session.revoked_reason == "permission_changed"
+    event_types = {audit.event_type for audit in db.query(AuditLog).all()}
+    assert event_types == {"auth.session.revoked", "user.system_roles.changed"}
 
 
 def test_update_user_clears_system_roles(
@@ -788,6 +848,12 @@ def test_delete_user_soft_deletes_user_for_system_admin(
     assert response.status_code == 204
     db.refresh(target_user)
     assert target_user.deleted_at is not None
+    audit_log = db.query(AuditLog).filter_by(event_type="user.deleted").one()
+    assert audit_log.actor_user_id == admin_user.id
+    assert audit_log.target_user_id == target_user.id
+    assert audit_log.resource_type == "user"
+    assert audit_log.resource_id == target_user.id
+    assert audit_log.extra_metadata == {"email": "delete@example.com"}
 
 
 def test_delete_user_requires_user_delete_permission(

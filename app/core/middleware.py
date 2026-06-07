@@ -12,7 +12,12 @@ from app.core.csrf import (
     is_valid_csrf_request,
     should_check_csrf,
 )
-from app.core.logging import reset_request_id, set_request_id
+from app.core.logging import (
+    reset_request_id,
+    reset_request_metadata,
+    set_request_id,
+    set_request_metadata,
+)
 
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
@@ -33,12 +38,17 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
             X-Request-IDヘッダーを付与したHTTPレスポンス。
         """
         request_id = request.headers.get("X-Request-ID", str(uuid4()))
-        token = set_request_id(request_id)
+        request_id_token = set_request_id(request_id)
+        client_ip_token, user_agent_token = set_request_metadata(
+            client_ip=request.client.host if request.client is not None else None,
+            user_agent=request.headers.get("User-Agent"),
+        )
 
         try:
             response = await call_next(request)
         finally:
-            reset_request_id(token)
+            reset_request_id(request_id_token)
+            reset_request_metadata(client_ip_token, user_agent_token)
 
         response.headers["X-Request-ID"] = request_id
         return response
