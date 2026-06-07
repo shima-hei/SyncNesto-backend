@@ -1,3 +1,5 @@
+import logging
+from time import perf_counter
 from uuid import uuid4
 
 from fastapi import FastAPI
@@ -13,11 +15,48 @@ from app.core.csrf import (
     should_check_csrf,
 )
 from app.core.logging import (
+    client_ip_context,
+    request_id_context,
     reset_request_id,
     reset_request_metadata,
     set_request_id,
     set_request_metadata,
+    user_agent_context,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def build_request_log_extra(
+    request: Request,
+    *,
+    duration_ms: float,
+    status_code: int | None = None,
+    exception_type: str | None = None,
+) -> dict[str, object]:
+    """リクエストログ用の構造化フィールドを組み立てる。
+
+    Args:
+        request: 受信したHTTPリクエスト。
+        duration_ms: 処理時間ミリ秒。
+        status_code: HTTPステータスコード。
+        exception_type: 例外クラス名。
+
+    Returns:
+        logger extraに渡す構造化フィールド。
+    """
+    is_slow = duration_ms >= settings.slow_request_threshold_ms
+    return {
+        "method": request.method,
+        "path": request.url.path,
+        "status_code": status_code,
+        "duration_ms": round(duration_ms, 2),
+        "client_ip": client_ip_context.get(),
+        "user_agent": user_agent_context.get(),
+        "request_id": request_id_context.get(),
+        "is_slow": is_slow,
+        "exception_type": exception_type,
+    }
 
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
@@ -77,14 +116,60 @@ class CsrfMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """リクエスト単位の通常ログを出力するMiddleware。"""
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: RequestResponseEndpoint,
+    ) -> Response:
+        """HTTPリクエストの完了または失敗をログ出力する。
+
+        Args:
+            request: 受信したHTTPリクエスト。
+            call_next: 次のMiddlewareまたはエンドポイントを呼び出す関数。
+
+        Returns:
+            HTTPレスポンス。
+        """
+        started_at = perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            duration_ms = (perf_counter() - started_at) * 1000
+            logger.exception(
+                "Request failed",
+                extra=build_request_log_extra(
+                    request,
+                    duration_ms=duration_ms,
+                    exception_type=exc.__class__.__name__,
+                ),
+            )
+            raise
+
+        duration_ms = (perf_counter() - started_at) * 1000
+        extra = build_request_log_extra(
+            request,
+            duration_ms=duration_ms,
+            status_code=response.status_code,
+        )
+        if extra["is_slow"]:
+            logger.warning("Slow request completed", extra=extra)
+        else:
+            logger.info("Request completed", extra=extra)
+        return response
+
+
 def register_middleware(app: FastAPI) -> None:
     """アプリケーション共通のMiddlewareを登録する。
 
     Args:
         app: Middlewareを登録するFastAPIアプリケーション。
     """
-    app.add_middleware(RequestIdMiddleware)
     app.add_middleware(CsrfMiddleware)
+    app.add_middleware(RequestLoggingMiddleware)
+    app.add_middleware(RequestIdMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

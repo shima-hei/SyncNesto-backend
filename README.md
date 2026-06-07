@@ -71,6 +71,7 @@ APP_ENV=development
 # ログ設定。
 LOG_LEVEL=INFO
 LOG_FORMAT=text
+SLOW_REQUEST_THRESHOLD_MS=1000
 SQL_ECHO=false
 
 # JWT署名設定。
@@ -137,6 +138,7 @@ SECRET_KEY=test-secret-key-at-least-32-bytes
 - `LOG_LEVEL`: `DEBUG`, `INFO`, `WARNING`, `ERROR` など
 - `LOG_FORMAT`: `text` または `json`
 - `LOG_FILE`: 指定した場合はファイルにもログ出力
+- `SLOW_REQUEST_THRESHOLD_MS`: このミリ秒以上かかったAPIを遅いリクエストとして `WARNING` ログにする
 - `SQL_ECHO`: `true` の場合 SQLAlchemy のSQLログを出力
 - `SECRET_KEY`: JWT署名に使用する秘密鍵
 - `ALGORITHM`: JWT署名アルゴリズム
@@ -498,12 +500,33 @@ HTTPレスポンスへの変換は `app/core/exception_handlers.py` に集約し
 - `LOG_LEVEL` による出力レベル制御
 - `LOG_FORMAT=text|json`
 - `LOG_FILE` による任意のファイル出力
+- `SLOW_REQUEST_THRESHOLD_MS` による遅いリクエストの `WARNING` 化
 - `X-Request-ID` の受け取り・自動生成
 - ログへの `request_id` 付与
 - レスポンスヘッダーへの `X-Request-ID` 付与
+- APIリクエスト単位の通常ログ
+  - method
+  - path
+  - status_code
+  - duration_ms
+  - client_ip
+  - user_agent
+  - request_id
 - `SQL_ECHO` によるSQLAlchemyログ制御
 
-業務ログは必要な場所に絞って追加します。パスワード、ハッシュ値、トークンなどの秘匿情報はログに出しません。
+通常ログは運用・障害調査のために標準出力または任意のログファイルへ出力します。監査ログとは異なり、証跡としてDB保存するものではありません。
+
+`LOG_FORMAT=json` の場合、リクエストログの `method`, `path`, `status_code`, `duration_ms`, `client_ip`, `user_agent`, `is_slow` はJSONの個別フィールドとして出力します。ログ集約基盤で検索・集計する場合はJSON形式を推奨します。
+
+ログレベル方針:
+
+- `DEBUG`: 開発時の詳細情報
+- `INFO`: API完了、主要処理の成功
+- `WARNING`: ログイン失敗、重複登録など注意すべき事象
+- `ERROR`: 外部サービス失敗、想定外例外、処理失敗
+- `CRITICAL`: アプリ継続が困難な障害
+
+業務ログは必要な場所に絞って追加します。パスワード、ハッシュ値、トークン、Cookie、Authorizationヘッダー、CSRF token、リクエストbody全体などの秘匿情報はログに出しません。リクエストログではquery stringも出力せず、pathのみを記録します。
 
 ## 監査ログ
 
@@ -592,8 +615,16 @@ def get_password_hash(password: str) -> str:
 
 ## 今後の主なTODO
 
+- セキュリティヘッダーを追加する
+  - `X-Content-Type-Options`
+  - `X-Frame-Options`
+  - `Content-Security-Policy`
+  - `Referrer-Policy`
+  - 本番HTTPS前提での `Strict-Transport-Security`
+- 本番CORS設定を明示的なフロントエンドURLに固定する
 - パスワードポリシーを実装する
   - 12文字以上
   - emailやユーザー名と同一のpassword禁止
   - 推測されやすいpassword禁止
 - ファイルアップロード時の画像再エンコードや追加検証を検討する
+- 依存ライブラリの脆弱性チェックをCIへ追加する

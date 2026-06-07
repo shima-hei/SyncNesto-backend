@@ -9,6 +9,17 @@ from typing import Any
 
 from app.core.config import settings
 
+LOG_EXTRA_FIELDS = (
+    "method",
+    "path",
+    "status_code",
+    "duration_ms",
+    "client_ip",
+    "user_agent",
+    "is_slow",
+    "exception_type",
+)
+
 request_id_context: ContextVar[str] = ContextVar(
     "request_id",
     default="-",
@@ -116,6 +127,10 @@ class JsonFormatter(logging.Formatter):
 
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
+
+        for field in LOG_EXTRA_FIELDS:
+            if hasattr(record, field):
+                payload[field] = getattr(record, field)
 
         return json.dumps(payload, ensure_ascii=False)
 
