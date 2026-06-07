@@ -17,6 +17,7 @@ from app.repositories.session import UserSessionRepository
 
 SESSION_REVOKE_REASON_EXPIRED = "expired"
 SESSION_REVOKE_REASON_ABSOLUTE_EXPIRED = "absolute_expired"
+SESSION_REVOKE_REASON_PERMISSION_CHANGED = "permission_changed"
 
 
 class SessionService:
@@ -196,6 +197,29 @@ class SessionService:
         user_session = self.repository.get_by_id(db, session_id)
         if user_session is not None:
             self.repository.revoke(db, user_session, reason)
+
+    def revoke_user_sessions(
+        self,
+        db: Session,
+        *,
+        user_id: int,
+        reason: str = SESSION_REVOKE_REASON_PERMISSION_CHANGED,
+    ) -> int:
+        """ユーザーの有効セッションをすべて失効する。
+
+        Args:
+            db: DBセッション。
+            user_id: セッションを失効する対象ユーザーID。
+            reason: 失効理由。
+
+        Returns:
+            失効したセッション件数。
+        """
+        return self.repository.revoke_all_by_user_id(
+            db,
+            user_id=user_id,
+            reason=reason,
+        )
 
     def _get_payload_datetime(
         self,

@@ -55,32 +55,59 @@ All rights reserved.
 
 開発用の設定は `.env` に置きます。
 
-以下はローカル開発用のサンプルです。公開リポジトリには実際の `.env` をコミットしません。本番環境では `SECRET_KEY`, `INITIAL_ADMIN_PASSWORD`, DBパスワード, AWS認証情報を必ず安全な値に差し替えてください。
+以下はローカル開発用のサンプルです。公開リポジトリには実際の `.env` をコミットしません。共有用のテンプレートは `.env.example` を更新してください。本番環境では `SECRET_KEY`, `INITIAL_ADMIN_PASSWORD`, DBパスワード, AWS認証情報を必ず安全な値に差し替えてください。
 
 ```env
+# ローカル開発用DB設定。
 DB_USER=admin
 DB_PASSWORD=admin
 DB_NAME=syncnesto
 DATABASE_URL=postgresql://admin:admin@localhost:5432/syncnesto
+
+# アプリケーション実行設定。
 APP_NAME=Syncnesto API
 APP_ENV=development
+
+# ログ設定。
 LOG_LEVEL=INFO
 LOG_FORMAT=text
 SQL_ECHO=false
+
+# JWT署名設定。
 SECRET_KEY=change-me-at-least-32-bytes
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# サーバー側セッション設定。
 SESSION_IDLE_TIMEOUT_MINUTES=30
 SESSION_REFRESH_THRESHOLD_MINUTES=10
 SESSION_ABSOLUTE_TIMEOUT_MINUTES=480
+
+# ログイン試行制限設定。
+LOGIN_MAX_FAILED_ATTEMPTS=5
+LOGIN_LOCK_MINUTES=15
+
+# 認証Cookie設定。
 AUTH_COOKIE_NAME=access_token
 AUTH_COOKIE_SECURE=false
 AUTH_COOKIE_SAMESITE=lax
+
+# CSRF対策設定。
+CSRF_COOKIE_NAME=csrf_token
+CSRF_HEADER_NAME=X-CSRF-Token
+CSRF_COOKIE_SECURE=false
+CSRF_COOKIE_SAMESITE=lax
+
+# 開発互換用の切り替え設定。
 ALLOW_BEARER_TOKEN_RESPONSE=true
 ALLOW_AUTHORIZATION_HEADER=true
+
+# 初期システム管理者seed設定。
 INITIAL_ADMIN_EMAIL=admin@example.com
 INITIAL_ADMIN_PASSWORD=change-me
 INITIAL_ADMIN_NAME=Initial Admin
+
+# ユーザーアイコン用S3 / LocalStack設定。
 AWS_REGION=ap-northeast-1
 AWS_S3_BUCKET_NAME=syncnesto-local-app-bucket
 AWS_S3_ENDPOINT_URL=http://localhost:4566
@@ -107,9 +134,21 @@ SECRET_KEY=test-secret-key-at-least-32-bytes
 - `LOG_FORMAT`: `text` または `json`
 - `LOG_FILE`: 指定した場合はファイルにもログ出力
 - `SQL_ECHO`: `true` の場合 SQLAlchemy のSQLログを出力
+- `SECRET_KEY`: JWT署名に使用する秘密鍵
+- `ALGORITHM`: JWT署名アルゴリズム
+- `ACCESS_TOKEN_EXPIRE_MINUTES`: セッションIDを使わないJWTの有効期限。通常ログインではDBセッションの期限を使用
+- `SESSION_IDLE_TIMEOUT_MINUTES`: 一定時間操作がない場合にセッション期限切れにする分数
+- `SESSION_REFRESH_THRESHOLD_MINUTES`: 残り時間がこの分数以下の場合にsliding expirationで延長
+- `SESSION_ABSOLUTE_TIMEOUT_MINUTES`: 操作が続いていても必ず期限切れにする最大セッション時間
+- `LOGIN_MAX_FAILED_ATTEMPTS`: ログイン失敗で一時ロックするまでの連続失敗回数
+- `LOGIN_LOCK_MINUTES`: ログイン失敗閾値到達後の一時ロック分数
 - `AUTH_COOKIE_NAME`: 認証Cookie名
 - `AUTH_COOKIE_SECURE`: `true` の場合 Secure Cookie として発行
 - `AUTH_COOKIE_SAMESITE`: Cookie の SameSite 属性
+- `CSRF_COOKIE_NAME`: CSRF tokenを保存するCookie名
+- `CSRF_HEADER_NAME`: 更新系APIで送信するCSRF tokenヘッダー名
+- `CSRF_COOKIE_SECURE`: `true` の場合 CSRF CookieをSecure Cookieとして発行
+- `CSRF_COOKIE_SAMESITE`: CSRF Cookie の SameSite 属性
 - `ALLOW_BEARER_TOKEN_RESPONSE`: `true` の場合ログインレスポンスbodyにもaccess tokenを返す
 - `ALLOW_AUTHORIZATION_HEADER`: `true` の場合Authorizationヘッダー認証を許可する
 - `INITIAL_ADMIN_EMAIL`: 初期管理者seedで作成する管理者email
@@ -117,9 +156,11 @@ SECRET_KEY=test-secret-key-at-least-32-bytes
 - `INITIAL_ADMIN_NAME`: 初期管理者seedで使用する管理者名
 - `AWS_REGION`: S3クライアントで使用するAWSリージョン
 - `AWS_S3_BUCKET_NAME`: ユーザーアイコンを保存するS3バケット名
-- `AWS_S3_ENDPOINT_URL`: LocalStackなどのS3互換エンドポイントURL
+- `AWS_ENDPOINT_URL` / `AWS_S3_ENDPOINT_URL`: LocalStackなどのS3互換エンドポイントURL。本番AWSでは未設定
 - `AWS_S3_PRESIGNED_URL_EXPIRES_SECONDS`: 署名付きURLの有効期限秒数
 - `DEFAULT_AVATAR_KEY`: ユーザー作成時に設定するデフォルトアイコンのS3 key
+- `AWS_ACCESS_KEY_ID`: S3アクセスキー。LocalStackでは `test`
+- `AWS_SECRET_ACCESS_KEY`: S3シークレットキー。LocalStackでは `test`
 
 ## セットアップ
 
@@ -225,6 +266,8 @@ GET /
 ログイン成功時はHttpOnly Cookieにもaccess tokenをセットします。開発環境ではSwagger UIや手動検証をしやすくするため、レスポンスbodyにも `access_token` を返します。本番では `ALLOW_BEARER_TOKEN_RESPONSE=false` にして、bodyには成功メッセージだけを返す運用を想定しています。
 
 認証CookieはDBセッションの `sid` と紐づきます。期限が近い状態で認証済みAPIを呼び出すと、sliding expirationによりDBセッションとCookieを更新します。`TOKEN_EXPIRED` または `INVALID_TOKEN` の401レスポンスでは、BFFがブラウザへ中継できるように削除用の `Set-Cookie` を返します。
+
+システムロールやプロジェクトメンバーロールなど、ユーザーの権限が変わる操作では対象ユーザーの既存セッションを `permission_changed` として失効します。対象ユーザーは次回API呼び出し時に再ログインが必要になります。
 
 ### Users
 
@@ -401,11 +444,15 @@ GET /auth/me
 APP_ENV=production
 AUTH_COOKIE_SECURE=true
 AUTH_COOKIE_SAMESITE=lax
+CSRF_COOKIE_SECURE=true
+CSRF_COOKIE_SAMESITE=lax
 ALLOW_BEARER_TOKEN_RESPONSE=false
 ALLOW_AUTHORIZATION_HEADER=false
 SESSION_IDLE_TIMEOUT_MINUTES=30
 SESSION_REFRESH_THRESHOLD_MINUTES=10
 SESSION_ABSOLUTE_TIMEOUT_MINUTES=480
+LOGIN_MAX_FAILED_ATTEMPTS=5
+LOGIN_LOCK_MINUTES=15
 ```
 
 ## 認可
@@ -505,6 +552,9 @@ def get_password_hash(password: str) -> str:
 
 ## 今後の主なTODO
 
-- project APIを追加し、project member roleによる認可を実装する
-- resourceごとの操作権限を各APIに適用する
-- JWT decode失敗時の例外種別を細分化する
+- パスワードポリシーを実装する
+  - 12文字以上
+  - emailやユーザー名と同一のpassword禁止
+  - 推測されやすいpassword禁止
+- 監査ログを実装する
+- ファイルアップロード時の画像再エンコードや追加検証を検討する

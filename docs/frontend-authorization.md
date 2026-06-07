@@ -118,6 +118,21 @@ Set-Cookie: access_token=; Max-Age=0; HttpOnly; Path=/; SameSite=Lax
 Set-Cookie: csrf_token=; Max-Age=0; Path=/; SameSite=Lax
 ```
 
+権限変更時も対象ユーザーの既存セッションを失効します。バックエンドでは `sessions.revoked_reason` に `permission_changed` を保存します。
+
+対象操作:
+
+```text
+PATCH  /users/{user_id}
+  system_role_keys を変更した場合
+
+POST   /projects/{project_id}/members
+PATCH  /projects/{project_id}/members/{user_id}
+DELETE /projects/{project_id}/members/{user_id}
+```
+
+権限変更されたユーザーは、次回API呼び出し時に `401 INVALID_TOKEN` になります。BFFは削除用 `Set-Cookie` をブラウザへ中継し、ログイン画面へ誘導してください。
+
 フロントエンドは Next.js BFF でバックエンドの `Set-Cookie` をブラウザへ中継し、Cookie破棄後にログイン画面へ誘導してください。Cookieが存在しない `401 AUTHENTICATION_REQUIRED` では、削除用Cookieは必須ではありません。
 
 Server Component / Server Guard からバックエンドへアクセスする場合は、ブラウザから受け取った Cookie をそのまま転送します。

@@ -27,6 +27,7 @@ from app.services.conflict import (
     raise_duplicate_after_rollback,
     raise_if_version_conflict,
 )
+from app.services.session import SessionService
 
 
 class ProjectService:
@@ -270,6 +271,7 @@ class ProjectMemberService:
         project_repository: ProjectRepository | None = None,
         rbac_repository: RbacRepository | None = None,
         user_repository: UserRepository | None = None,
+        session_service: SessionService | None = None,
     ) -> None:
         """ProjectMemberServiceを初期化する。
 
@@ -278,11 +280,13 @@ class ProjectMemberService:
             project_repository: プロジェクトRepository。
             rbac_repository: RBAC Repository。
             user_repository: ユーザーRepository。
+            session_service: 認証セッションサービス。
         """
         self.repository = repository or ProjectMemberRepository()
         self.project_repository = project_repository or ProjectRepository()
         self.rbac_repository = rbac_repository or RbacRepository()
         self.user_repository = user_repository or UserRepository()
+        self.session_service = session_service or SessionService()
 
     def list_members(self, db: Session, project_id: int) -> list[ProjectMember]:
         """プロジェクトメンバー一覧を取得する。
@@ -396,12 +400,14 @@ class ProjectMemberService:
             raise DuplicateResourceError(error_messages.PROJECT_MEMBER_ALREADY_EXISTS)
 
         try:
-            return self.repository.create(
+            member = self.repository.create(
                 db,
                 project_id=project_id,
                 user_id=member_in.user_id,
                 role_id=role.id,
             )
+            self.session_service.revoke_user_sessions(db, user_id=member.user_id)
+            return member
         except IntegrityError as exc:
             raise_duplicate_after_rollback(
                 db,
@@ -439,7 +445,9 @@ class ProjectMemberService:
         )
 
         role = self._get_project_role_by_key(db, member_in.role_key)
-        return self.repository.update_role(db, member=member, role_id=role.id)
+        updated_member = self.repository.update_role(db, member=member, role_id=role.id)
+        self.session_service.revoke_user_sessions(db, user_id=updated_member.user_id)
+        return updated_member
 
     def remove_member(self, db: Session, *, project_id: int, user_id: int) -> None:
         """プロジェクトメンバーを物理削除する。
@@ -451,6 +459,7 @@ class ProjectMemberService:
         """
         member = self._get_member(db, project_id=project_id, user_id=user_id)
         self.repository.delete(db, member)
+        self.session_service.revoke_user_sessions(db, user_id=user_id)
 
     def _ensure_project_exists(self, db: Session, project_id: int) -> None:
         """プロジェクトが存在することを確認する。"""

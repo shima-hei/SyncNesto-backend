@@ -116,3 +116,38 @@ class UserSessionRepository:
             db.refresh(user_session)
 
         return user_session
+
+    def revoke_all_by_user_id(
+        self,
+        db: Session,
+        *,
+        user_id: int,
+        reason: str,
+    ) -> int:
+        """ユーザーに紐づく有効セッションをすべて失効する。
+
+        Args:
+            db: DBセッション。
+            user_id: セッションを失効する対象ユーザーID。
+            reason: 失効理由。
+
+        Returns:
+            失効したセッション件数。
+        """
+        now = datetime.now(UTC)
+        sessions = (
+            db.query(UserSession)
+            .filter(
+                UserSession.user_id == user_id,
+                UserSession.revoked_at.is_(None),
+            )
+            .all()
+        )
+        for user_session in sessions:
+            user_session.revoked_at = now
+            user_session.revoked_reason = reason
+
+        if sessions:
+            db.commit()
+
+        return len(sessions)

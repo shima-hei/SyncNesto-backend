@@ -9,8 +9,9 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import verify_password
 from app.models.user import User
+from app.repositories.session import UserSessionRepository
 from tests.fakes.storage import FakeStorageService
-from tests.helpers.auth import authorize_as
+from tests.helpers.auth import authorize_as, create_session_token
 
 
 @pytest.fixture(autouse=True)
@@ -577,6 +578,35 @@ def test_update_user_replaces_system_roles(
     ]
 
 
+def test_update_user_replaces_system_roles_revokes_target_sessions(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """システムロール変更時に対象ユーザーのセッションを失効する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    target_user = create_test_user(email="target@example.com")
+    _, session_id = create_session_token(target_user)
+    authorize_as(client, admin_user)
+
+    response = client.patch(
+        f"/users/{target_user.id}",
+        json={
+            "version": target_user.version,
+            "system_role_keys": ["system_admin"],
+        },
+    )
+
+    user_session = UserSessionRepository().get_by_id(db, session_id)
+    assert response.status_code == 200
+    assert user_session is not None
+    assert user_session.revoked_at is not None
+    assert user_session.revoked_reason == "permission_changed"
+
+
 def test_update_user_clears_system_roles(
     client: TestClient,
     create_test_user: Callable[..., User],
@@ -602,6 +632,35 @@ def test_update_user_clears_system_roles(
 
     assert response.status_code == 200
     assert response.json()["system_roles"] == []
+
+
+def test_update_user_name_only_does_not_revoke_target_sessions(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """システムロール変更なしのユーザー更新ではセッションを失効しない。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    target_user = create_test_user(email="target@example.com")
+    _, session_id = create_session_token(target_user)
+    authorize_as(client, admin_user)
+
+    response = client.patch(
+        f"/users/{target_user.id}",
+        json={
+            "version": target_user.version,
+            "name": "Updated Name",
+        },
+    )
+
+    user_session = UserSessionRepository().get_by_id(db, session_id)
+    assert response.status_code == 200
+    assert user_session is not None
+    assert user_session.revoked_at is None
+    assert user_session.revoked_reason is None
 
 
 def test_update_user_rejects_invalid_system_role_key(

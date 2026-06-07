@@ -13,7 +13,7 @@ from app.models.user import User
 from app.repositories.rbac import RbacRepository
 from app.repositories.session import UserSessionRepository
 from tests.fakes.storage import FakeStorageService
-from tests.helpers.auth import authorize_as
+from tests.helpers.auth import authorize_as, create_session_token
 
 
 def get_project_role_id(db: Session, role_key: str) -> int:
@@ -608,6 +608,33 @@ def test_add_project_member_allows_project_admin(
     assert response.json()["role"] == {"key": "member", "name": "メンバー"}
 
 
+def test_add_project_member_revokes_target_sessions(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    db: Session,
+) -> None:
+    """メンバー追加時に対象ユーザーのセッションを失効する。"""
+    admin_user = create_test_user(email="project-admin@example.com")
+    target_user = create_test_user(email="target@example.com")
+    project = create_test_project(name="Project")
+    assign_project_role(user=admin_user, project=project, role_key="project_admin")
+    _, session_id = create_session_token(target_user)
+    authorize_as(client, admin_user)
+
+    response = client.post(
+        f"/projects/{project.id}/members",
+        json={"user_id": target_user.id, "role_key": "member"},
+    )
+
+    user_session = UserSessionRepository().get_by_id(db, session_id)
+    assert response.status_code == 201
+    assert user_session is not None
+    assert user_session.revoked_at is not None
+    assert user_session.revoked_reason == "permission_changed"
+
+
 def test_add_project_member_rejects_viewer(
     client: TestClient,
     create_test_user: Callable[..., User],
@@ -703,6 +730,34 @@ def test_update_project_member_allows_project_admin(
     assert response.json()["id"] == member.id
     assert response.json()["role"] == {"key": "member", "name": "メンバー"}
     assert response.json()["version"] == member.version + 1
+
+
+def test_update_project_member_revokes_target_sessions(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    db: Session,
+) -> None:
+    """メンバーロール変更時に対象ユーザーのセッションを失効する。"""
+    admin_user = create_test_user(email="admin@example.com")
+    target_user = create_test_user(email="target@example.com")
+    project = create_test_project(name="Project")
+    assign_project_role(user=admin_user, project=project, role_key="project_admin")
+    member = assign_project_role(user=target_user, project=project, role_key="viewer")
+    _, session_id = create_session_token(target_user)
+    authorize_as(client, admin_user)
+
+    response = client.patch(
+        f"/projects/{project.id}/members/{target_user.id}",
+        json={"role_key": "member", "version": member.version},
+    )
+
+    user_session = UserSessionRepository().get_by_id(db, session_id)
+    assert response.status_code == 200
+    assert user_session is not None
+    assert user_session.revoked_at is not None
+    assert user_session.revoked_reason == "permission_changed"
 
 
 def test_update_project_member_rejects_stale_version_with_current_member(
@@ -816,6 +871,31 @@ def test_remove_project_member_allows_project_admin(
     assert response.status_code == 204
     db.expire_all()
     assert db.get(ProjectMember, member_id) is None
+
+
+def test_remove_project_member_revokes_target_sessions(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    db: Session,
+) -> None:
+    """メンバー削除時に対象ユーザーのセッションを失効する。"""
+    admin_user = create_test_user(email="admin@example.com")
+    target_user = create_test_user(email="target@example.com")
+    project = create_test_project(name="Project")
+    assign_project_role(user=admin_user, project=project, role_key="project_admin")
+    assign_project_role(user=target_user, project=project, role_key="viewer")
+    _, session_id = create_session_token(target_user)
+    authorize_as(client, admin_user)
+
+    response = client.delete(f"/projects/{project.id}/members/{target_user.id}")
+
+    user_session = UserSessionRepository().get_by_id(db, session_id)
+    assert response.status_code == 204
+    assert user_session is not None
+    assert user_session.revoked_at is not None
+    assert user_session.revoked_reason == "permission_changed"
 
 
 def test_remove_project_member_allows_readding_same_user(

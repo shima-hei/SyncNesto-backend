@@ -26,6 +26,7 @@ from app.repositories.user import UserRepository
 from app.schemas.user import UserCreate, UserProfileUpdate, UserRead, UserUpdate
 from app.services.conflict import raise_if_version_conflict
 from app.services.login_attempt import LoginAttemptService
+from app.services.session import SessionService
 from app.services.storage import StorageService
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,7 @@ class UserService:
         repository: UserRepository | None = None,
         rbac_repository: RbacRepository | None = None,
         login_attempt_service: LoginAttemptService | None = None,
+        session_service: SessionService | None = None,
     ) -> None:
         """UserServiceを初期化する。
 
@@ -51,10 +53,12 @@ class UserService:
             repository: ユーザーRepository。
             rbac_repository: RBAC Repository。
             login_attempt_service: ログイン試行回数サービス。
+            session_service: 認証セッションサービス。
         """
         self.repository = repository or UserRepository()
         self.rbac_repository = rbac_repository or RbacRepository()
         self.login_attempt_service = login_attempt_service or LoginAttemptService()
+        self.session_service = session_service or SessionService()
 
     def _resolve_system_roles(self, db: Session, role_keys: list[str]) -> list[Role]:
         """システムロールkey一覧からロール一覧を取得する。
@@ -262,7 +266,8 @@ class UserService:
             hashed_password=hashed_password,
             actor_id=actor_id,
         )
-        if "system_role_keys" in user_in.model_fields_set:
+        should_revoke_sessions = "system_role_keys" in user_in.model_fields_set
+        if should_revoke_sessions:
             roles = self._resolve_system_roles(db, user_in.system_role_keys or [])
             self.rbac_repository.replace_system_roles_for_user(
                 db,
@@ -272,6 +277,9 @@ class UserService:
 
         db.commit()
         db.refresh(user)
+        if should_revoke_sessions:
+            self.session_service.revoke_user_sessions(db, user_id=user.id)
+
         return user
 
     def update_profile(
