@@ -36,6 +36,12 @@ REQUIREMENT_DOCUMENT_NOT_FOUND = "Requirement document not found"
 REQUIREMENT_SECTION_NOT_FOUND = "Requirement section not found"
 REQUIREMENT_CODE_ALREADY_EXISTS = "Requirement code already exists"
 REQUIREMENT_NOT_FOUND = "Requirement not found"
+REQUIREMENT_OPEN_ISSUE_CODE_ALREADY_EXISTS = (
+    "Requirement open issue code already exists"
+)
+REQUIREMENT_OPEN_ISSUE_NOT_FOUND = "Requirement open issue not found"
+REQUIREMENT_COMMENT_TARGET_NOT_FOUND = "Requirement comment target not found"
+REQUIREMENT_TARGET_COMMENT_NOT_FOUND = "Requirement target comment not found"
 REQUIREMENT_DETAIL_NOT_FOUND = "Requirement detail not found"
 REQUIREMENT_LINK_NOT_FOUND = "Requirement link not found"
 REQUIREMENT_COMMENT_NOT_FOUND = "Requirement comment not found"

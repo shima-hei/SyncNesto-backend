@@ -16,7 +16,12 @@ from sqlalchemy.orm import Session
 
 if TYPE_CHECKING:
     from app.models.project import Project, ProjectMember
-    from app.models.requirement import RequirementDocument, RequirementSection
+    from app.models.requirement import (
+        RequirementDocument,
+        RequirementOpenIssue,
+        RequirementSection,
+        RequirementTargetComment,
+    )
     from app.models.user import User
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -342,3 +347,83 @@ def create_test_requirement_section(
         return section
 
     return _create_test_requirement_section
+
+
+@pytest.fixture
+def create_test_requirement_open_issue(
+    db: Session,
+) -> Callable[..., "RequirementOpenIssue"]:
+    """テスト用未決事項をDBへ直接作成するfixture。
+
+    Args:
+        db: テスト用DBセッション。
+
+    Returns:
+        任意のdocument/issue_code/titleで未決事項を作成する関数。
+    """
+    from app.models.requirement import RequirementDocument, RequirementOpenIssue
+
+    def _create_test_requirement_open_issue(
+        *,
+        document: RequirementDocument,
+        issue_code: str | None = None,
+        title: str = "Open Issue",
+        status: str = "open",
+    ) -> RequirementOpenIssue:
+        issue = RequirementOpenIssue(
+            document_id=document.id,
+            issue_code=issue_code or f"ISSUE-{uuid4().hex[:8].upper()}",
+            title=title,
+            status=status,
+        )
+        db.add(issue)
+        db.commit()
+        db.refresh(issue)
+        return issue
+
+    return _create_test_requirement_open_issue
+
+
+@pytest.fixture
+def create_test_requirement_target_comment(
+    db: Session,
+) -> Callable[..., "RequirementTargetComment"]:
+    """テスト用要件定義対象コメントをDBへ直接作成するfixture。
+
+    Args:
+        db: テスト用DBセッション。
+
+    Returns:
+        任意の対象にコメントを作成する関数。
+    """
+    from app.models.requirement import (
+        RequirementDocument,
+        RequirementTargetComment,
+    )
+    from app.models.user import User
+
+    def _create_test_requirement_target_comment(
+        *,
+        document: RequirementDocument,
+        author: User,
+        target_type: str = "document",
+        target_id: int | None = None,
+        body: str = "Comment",
+        parent_comment_id: int | None = None,
+        is_resolved: bool = False,
+    ) -> RequirementTargetComment:
+        comment = RequirementTargetComment(
+            document_id=document.id,
+            target_type=target_type,
+            target_id=target_id or document.id,
+            parent_comment_id=parent_comment_id,
+            body=body,
+            author_id=author.id,
+            is_resolved=is_resolved,
+        )
+        db.add(comment)
+        db.commit()
+        db.refresh(comment)
+        return comment
+
+    return _create_test_requirement_target_comment

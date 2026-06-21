@@ -1,6 +1,6 @@
 """要件定義schemaを定義するモジュール。"""
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -191,6 +191,154 @@ class RequirementListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class RequirementOpenIssueBase(BaseModel):
+    """未決事項schemaの共通フィールドを定義する基底schema。"""
+
+    related_requirement_id: int | None = None
+    issue_code: str
+    title: str
+    description: str | None = None
+    impact_scope: str | None = None
+    assignee_id: int | None = None
+    due_date: date | None = None
+    status: str = "open"
+    resolution: str | None = None
+
+
+class RequirementOpenIssueCreate(RequirementOpenIssueBase):
+    """未決事項作成リクエストで受け取るschema。"""
+
+    document_id: int
+
+
+class RequirementOpenIssueUpdate(BaseModel):
+    """未決事項更新リクエストで受け取るschema。"""
+
+    version: int
+    related_requirement_id: int | None = None
+    issue_code: str | None = None
+    title: str | None = None
+    description: str | None = None
+    impact_scope: str | None = None
+    assignee_id: int | None = None
+    due_date: date | None = None
+    status: str | None = None
+    resolution: str | None = None
+    reason: str | None = None
+
+
+class RequirementOpenIssuePromoteCreate(BaseModel):
+    """未決事項を要件へ昇格するリクエストで受け取るschema。"""
+
+    version: int
+    requirement_code: str
+    requirement_type: str = "functional"
+    section_id: int | None = None
+    category: str | None = None
+    title: str | None = None
+    description: str | None = None
+    rationale: str | None = None
+    acceptance_criteria: str | None = None
+    priority: str = "must"
+    status: str = "draft"
+    source: str | None = None
+    owner_id: int | None = None
+    resolution: str | None = None
+    reason: str | None = None
+
+
+class RequirementOpenIssueRead(RequirementOpenIssueBase):
+    """未決事項読み取り時に返すschema。"""
+
+    id: int
+    document_id: int
+    version: int
+    created_by: int | None = None
+    updated_by: int | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RequirementOpenIssueListResponse(BaseModel):
+    """未決事項一覧レスポンスschema。"""
+
+    items: list[RequirementOpenIssueRead]
+    total: int
+    page: int
+    page_size: int
+
+
+class RequirementChangeLogRead(BaseModel):
+    """要件定義変更履歴読み取り時に返すschema。"""
+
+    id: int
+    document_id: int | None = None
+    target_type: str
+    target_id: int
+    action: str
+    field_name: str | None = None
+    old_value: dict | None = None
+    new_value: dict | None = None
+    reason: str | None = None
+    changed_by: int | None = None
+    changed_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RequirementChangeLogListResponse(BaseModel):
+    """要件定義変更履歴一覧レスポンスschema。"""
+
+    items: list[RequirementChangeLogRead]
+    total: int
+    page: int
+    page_size: int
+
+
+class RequirementTargetCommentCreate(BaseModel):
+    """要件定義対象コメント作成リクエストで受け取るschema。"""
+
+    target_type: str
+    target_id: int
+    parent_comment_id: int | None = None
+    body: str
+
+
+class RequirementTargetCommentUpdate(BaseModel):
+    """要件定義対象コメント更新リクエストで受け取るschema。"""
+
+    version: int
+    body: str
+    reason: str | None = None
+
+
+class RequirementTargetCommentStateUpdate(BaseModel):
+    """要件定義対象コメント状態更新リクエストで受け取るschema。"""
+
+    version: int
+    reason: str | None = None
+
+
+class RequirementTargetCommentRead(BaseModel):
+    """要件定義対象コメント読み取り時に返すschema。"""
+
+    id: int
+    document_id: int
+    target_type: str
+    target_id: int
+    parent_comment_id: int | None = None
+    body: str
+    author_id: int
+    is_resolved: bool
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class RequirementRevisionRead(BaseModel):

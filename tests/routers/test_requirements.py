@@ -9,13 +9,16 @@ from sqlalchemy.orm import Session
 from app.models.project import Project, ProjectMember
 from app.models.requirement import (
     Requirement,
+    RequirementChangeLog,
     RequirementComment,
     RequirementDetail,
     RequirementDocument,
     RequirementLink,
+    RequirementOpenIssue,
     RequirementReview,
     RequirementRevision,
     RequirementSection,
+    RequirementTargetComment,
 )
 from app.models.user import User
 from tests.fakes.storage import FakeStorageService
@@ -442,6 +445,537 @@ def test_delete_requirement_section_soft_deletes(
     assert response.status_code == 204
     db.refresh(section)
     assert section.deleted_at is not None
+
+
+def test_create_open_issue_allows_member_and_records_change_log(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """memberが未決事項を作成でき、変更履歴が記録されることを確認する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/open-issues",
+        json={
+            "document_id": document.id,
+            "issue_code": "ISSUE-001",
+            "title": "ログイン要件の範囲が未確定",
+            "description": "SSOを含めるか確認する。",
+            "impact_scope": "認証機能",
+            "assignee_id": user.id,
+            "due_date": "2026-06-30",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["document_id"] == document.id
+    assert response.json()["issue_code"] == "ISSUE-001"
+    assert response.json()["status"] == "open"
+    assert response.json()["created_by"] == user.id
+
+    change_log = db.query(RequirementChangeLog).one()
+    assert change_log.document_id == document.id
+    assert change_log.target_type == "open_issue"
+    assert change_log.action == "created"
+    assert change_log.changed_by == user.id
+    assert change_log.new_value["issue_code"] == "ISSUE-001"
+
+
+def test_create_open_issue_rejects_duplicate_issue_code(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_open_issue: Callable[..., RequirementOpenIssue],
+) -> None:
+    """重複issue_codeでの未決事項作成を409で拒否する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    create_test_requirement_open_issue(document=document, issue_code="ISSUE-DUP")
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/open-issues",
+        json={
+            "document_id": document.id,
+            "issue_code": "ISSUE-DUP",
+            "title": "Duplicate",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "message": "Requirement open issue code already exists",
+        "code": "DUPLICATE_RESOURCE",
+    }
+
+
+def test_list_open_issues_filters_by_document_status_and_assignee(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """未決事項一覧がdocument/status/assigneeで絞り込みできることを確認する。"""
+    user = create_test_user(email="viewer@example.com")
+    assignee = create_test_user(email="assignee@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    other_document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="viewer")
+    db.add_all(
+        [
+            RequirementOpenIssue(
+                document_id=document.id,
+                issue_code="ISSUE-A",
+                title="A",
+                status="open",
+                assignee_id=assignee.id,
+            ),
+            RequirementOpenIssue(
+                document_id=document.id,
+                issue_code="ISSUE-B",
+                title="B",
+                status="closed",
+                assignee_id=assignee.id,
+            ),
+            RequirementOpenIssue(
+                document_id=other_document.id,
+                issue_code="ISSUE-C",
+                title="C",
+                status="open",
+                assignee_id=assignee.id,
+            ),
+        ]
+    )
+    db.commit()
+    authorize_as(client, user)
+
+    response = client.get(
+        f"/projects/{project.id}/open-issues"
+        f"?document_id={document.id}&status=open&assignee_id={assignee.id}"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["issue_code"] == "ISSUE-A"
+
+
+def test_update_open_issue_rejects_stale_version(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_open_issue: Callable[..., RequirementOpenIssue],
+    db: Session,
+) -> None:
+    """古いversionでの未決事項更新を409で拒否し、最新情報を返す。"""
+    user = create_test_user(email="manager@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    issue = create_test_requirement_open_issue(document=document, title="Current")
+    issue.title = "Latest"
+    issue.version = 2
+    db.commit()
+    db.refresh(issue)
+    assign_project_role(user=user, project=project, role_key="manager")
+    authorize_as(client, user)
+
+    response = client.patch(
+        f"/projects/{project.id}/open-issues/{issue.id}",
+        json={"title": "Stale", "version": 1},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "VERSION_CONFLICT"
+    assert response.json()["current"]["id"] == issue.id
+    assert response.json()["current"]["title"] == "Latest"
+    assert response.json()["current"]["version"] == 2
+
+
+def test_promote_open_issue_to_requirement(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_section: Callable[..., RequirementSection],
+    create_test_requirement_open_issue: Callable[..., RequirementOpenIssue],
+    db: Session,
+) -> None:
+    """未決事項を要件へ昇格できることを確認する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    section = create_test_requirement_section(document=document)
+    issue = create_test_requirement_open_issue(
+        document=document,
+        issue_code="ISSUE-001",
+        title="SSO対応範囲",
+    )
+    issue.description = "SSOを初期リリースに含めるか未決。"
+    issue.assignee_id = user.id
+    db.commit()
+    db.refresh(issue)
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/open-issues/{issue.id}/promote-to-requirement",
+        json={
+            "version": issue.version,
+            "requirement_code": "REQ-PROMOTED",
+            "requirement_type": "functional",
+            "section_id": section.id,
+            "priority": "must",
+            "resolution": "初期リリースに含める。",
+            "reason": "方針決定",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["document_id"] == document.id
+    assert response.json()["section_id"] == section.id
+    assert response.json()["requirement_code"] == "REQ-PROMOTED"
+    assert response.json()["title"] == "SSO対応範囲"
+    assert response.json()["owner_id"] == user.id
+
+    db.refresh(issue)
+    assert issue.status == "resolved"
+    assert issue.related_requirement_id == response.json()["id"]
+    assert issue.resolution == "初期リリースに含める。"
+
+    promoted_log = (
+        db.query(RequirementChangeLog)
+        .filter(RequirementChangeLog.action == "promoted_to_requirement")
+        .one()
+    )
+    assert promoted_log.target_type == "open_issue"
+    assert promoted_log.target_id == issue.id
+    assert promoted_log.new_value["requirement_code"] == "REQ-PROMOTED"
+
+
+def test_list_requirement_change_logs_allows_viewer(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """viewerが要件定義変更履歴を取得できることを確認する。"""
+    user = create_test_user(email="viewer@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    other_project = create_test_project(name="Other")
+    other_document = create_test_requirement_document(project=other_project)
+    assign_project_role(user=user, project=project, role_key="viewer")
+    db.add_all(
+        [
+            RequirementChangeLog(
+                document_id=document.id,
+                target_type="open_issue",
+                target_id=1,
+                action="created",
+                changed_by=user.id,
+            ),
+            RequirementChangeLog(
+                document_id=other_document.id,
+                target_type="open_issue",
+                target_id=2,
+                action="created",
+                changed_by=user.id,
+            ),
+        ]
+    )
+    db.commit()
+    authorize_as(client, user)
+
+    response = client.get(
+        f"/projects/{project.id}/change-logs?target_type=open_issue"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["document_id"] == document.id
+    assert response.json()["items"][0]["target_type"] == "open_issue"
+
+
+def test_create_target_comment_for_section_records_change_log(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_section: Callable[..., RequirementSection],
+    db: Session,
+) -> None:
+    """セクションへコメントでき、変更履歴が記録されることを確認する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    section = create_test_requirement_section(document=document)
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/comments",
+        json={
+            "target_type": "section",
+            "target_id": section.id,
+            "body": "この章の説明を補足してください。",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["document_id"] == document.id
+    assert response.json()["target_type"] == "section"
+    assert response.json()["target_id"] == section.id
+    assert response.json()["body"] == "この章の説明を補足してください。"
+    assert response.json()["author_id"] == user.id
+    assert response.json()["is_resolved"] is False
+    assert response.json()["version"] == 1
+
+    change_log = (
+        db.query(RequirementChangeLog)
+        .filter(RequirementChangeLog.action == "comment.created")
+        .one()
+    )
+    assert change_log.document_id == document.id
+    assert change_log.target_type == "comment"
+    assert change_log.target_id == response.json()["id"]
+    assert change_log.new_value["body"] == "この章の説明を補足してください。"
+
+
+def test_create_target_comment_rejects_viewer(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+) -> None:
+    """viewerの汎用コメント作成を拒否する。"""
+    user = create_test_user(email="viewer@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="viewer")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/comments",
+        json={
+            "target_type": "document",
+            "target_id": document.id,
+            "body": "コメント",
+        },
+    )
+
+    assert response.status_code == 403
+
+
+def test_create_target_comment_rejects_target_from_other_project(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+) -> None:
+    """別プロジェクトの対象へのコメント作成を404で拒否する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(project_code="A", name="Project A")
+    other_project = create_test_project(project_code="B", name="Project B")
+    other_document = create_test_requirement_document(project=other_project)
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/comments",
+        json={
+            "target_type": "document",
+            "target_id": other_document.id,
+            "body": "コメント",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "message": "Requirement comment target not found",
+        "code": "NOT_FOUND",
+    }
+
+
+def test_list_target_comments_allows_viewer(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_target_comment: Callable[..., RequirementTargetComment],
+) -> None:
+    """viewerが対象コメント一覧を取得できることを確認する。"""
+    viewer = create_test_user(email="viewer@example.com")
+    author = create_test_user(email="author@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=viewer, project=project, role_key="viewer")
+    create_test_requirement_target_comment(
+        document=document,
+        author=author,
+        target_type="document",
+        target_id=document.id,
+        body="First",
+    )
+    create_test_requirement_target_comment(
+        document=document,
+        author=author,
+        target_type="document",
+        target_id=document.id,
+        body="Second",
+    )
+    authorize_as(client, viewer)
+
+    response = client.get(
+        f"/projects/{project.id}/comments"
+        f"?target_type=document&target_id={document.id}"
+    )
+
+    assert response.status_code == 200
+    assert [item["body"] for item in response.json()] == ["First", "Second"]
+
+
+def test_update_target_comment_rejects_stale_version(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_target_comment: Callable[..., RequirementTargetComment],
+    db: Session,
+) -> None:
+    """古いversionでのコメント更新を409で拒否する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    comment = create_test_requirement_target_comment(
+        document=document,
+        author=user,
+        target_type="document",
+        target_id=document.id,
+        body="Current",
+    )
+    comment.body = "Latest"
+    comment.version = 2
+    db.commit()
+    db.refresh(comment)
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.patch(
+        f"/projects/{project.id}/comments/{comment.id}",
+        json={"body": "Stale", "version": 1},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "VERSION_CONFLICT"
+    assert response.json()["current"]["id"] == comment.id
+    assert response.json()["current"]["body"] == "Latest"
+    assert response.json()["current"]["version"] == 2
+
+
+def test_resolve_and_reopen_target_comment(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_target_comment: Callable[..., RequirementTargetComment],
+    db: Session,
+) -> None:
+    """コメントの解決と再オープンができることを確認する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    comment = create_test_requirement_target_comment(
+        document=document,
+        author=user,
+        target_type="document",
+        target_id=document.id,
+    )
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    resolve_response = client.post(
+        f"/projects/{project.id}/comments/{comment.id}/resolve",
+        json={"version": comment.version, "reason": "対応済み"},
+    )
+    reopen_response = client.post(
+        f"/projects/{project.id}/comments/{comment.id}/reopen",
+        json={"version": resolve_response.json()["version"], "reason": "再確認"},
+    )
+
+    assert resolve_response.status_code == 200
+    assert resolve_response.json()["is_resolved"] is True
+    assert reopen_response.status_code == 200
+    assert reopen_response.json()["is_resolved"] is False
+    assert reopen_response.json()["version"] == 3
+
+    actions = [
+        row[0]
+        for row in db.query(RequirementChangeLog.action)
+        .order_by(RequirementChangeLog.id)
+        .all()
+    ]
+    assert actions == ["comment.resolved", "comment.reopened"]
+
+
+def test_delete_target_comment_soft_deletes(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_target_comment: Callable[..., RequirementTargetComment],
+    db: Session,
+) -> None:
+    """コメント削除が論理削除で行われることを確認する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    comment = create_test_requirement_target_comment(
+        document=document,
+        author=user,
+        target_type="document",
+        target_id=document.id,
+    )
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.delete(f"/projects/{project.id}/comments/{comment.id}")
+
+    assert response.status_code == 204
+    db.refresh(comment)
+    assert comment.deleted_at is not None
+
+    change_log = (
+        db.query(RequirementChangeLog)
+        .filter(RequirementChangeLog.action == "comment.deleted")
+        .one()
+    )
+    assert change_log.target_id == comment.id
 
 
 def test_create_requirement_allows_member(

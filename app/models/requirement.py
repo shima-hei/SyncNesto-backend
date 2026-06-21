@@ -1,8 +1,10 @@
 """要件定義に関するSQLAlchemyモデルを定義するモジュール。"""
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
+    Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Integer,
@@ -337,6 +339,264 @@ class Requirement(Base):
         ForeignKey("users.id"),
         nullable=True,
         comment=db_comment("更新者ID", "この要件を最後に更新したユーザーID"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        comment=db_comment("作成日時", "レコードが作成された日時"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        comment=db_comment("更新日時", "レコードが最後に更新された日時"),
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment=db_comment("削除日時", "論理削除された日時"),
+    )
+
+
+class RequirementOpenIssue(Base):
+    """要件定義の未決事項を管理するモデル。"""
+
+    __tablename__ = "requirement_open_issues"
+    __table_args__ = (
+        UniqueConstraint(
+            "document_id",
+            "issue_code",
+            name="uq_requirement_open_issues_document_issue_code",
+        ),
+        {
+            "comment": db_comment(
+                "要件定義未決事項",
+                "要件定義書内の未決事項を管理するテーブル",
+            ),
+        },
+    )
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        index=True,
+        comment=db_comment("未決事項ID", "未決事項を一意に識別するID"),
+    )
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("requirement_documents.id"),
+        index=True,
+        comment=db_comment("要件定義書ID", "所属する要件定義書ID"),
+    )
+    related_requirement_id: Mapped[int | None] = mapped_column(
+        ForeignKey("requirements.id"),
+        nullable=True,
+        comment=db_comment("関連要件ID", "関連または昇格先の要件ID"),
+    )
+    issue_code: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        comment=db_comment("未決事項コード", "要件定義書内で一意な未決事項コード"),
+    )
+    title: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        comment=db_comment("タイトル", "未決事項のタイトル"),
+    )
+    description: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment=db_comment("説明", "未決事項の本文または説明"),
+    )
+    impact_scope: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment=db_comment("影響範囲", "未決事項が影響する範囲"),
+    )
+    assignee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        comment=db_comment("担当者ID", "未決事項の担当ユーザーID"),
+    )
+    due_date: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+        comment=db_comment("期限日", "未決事項の対応期限日"),
+    )
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="open",
+        comment=db_comment("ステータス", "未決事項の状態"),
+    )
+    resolution: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment=db_comment("解決内容", "未決事項の解決内容"),
+    )
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        comment=db_comment("バージョン", "楽観的排他制御に使用するバージョン番号"),
+    )
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        comment=db_comment("作成者ID", "この未決事項を作成したユーザーID"),
+    )
+    updated_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        comment=db_comment("更新者ID", "この未決事項を最後に更新したユーザーID"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        comment=db_comment("作成日時", "レコードが作成された日時"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        comment=db_comment("更新日時", "レコードが最後に更新された日時"),
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment=db_comment("削除日時", "論理削除された日時"),
+    )
+
+
+class RequirementChangeLog(Base):
+    """要件定義の横断変更履歴を管理するモデル。"""
+
+    __tablename__ = "requirement_change_logs"
+    __table_args__ = {
+        "comment": db_comment(
+            "要件定義変更履歴",
+            "要件定義に関する横断的な変更履歴を管理するテーブル",
+        ),
+    }
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        index=True,
+        comment=db_comment("要件定義変更履歴ID", "変更履歴を一意に識別するID"),
+    )
+    document_id: Mapped[int | None] = mapped_column(
+        ForeignKey("requirement_documents.id"),
+        nullable=True,
+        index=True,
+        comment=db_comment("要件定義書ID", "関連する要件定義書ID"),
+    )
+    target_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+        comment=db_comment("対象種別", "変更対象の種別"),
+    )
+    target_id: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        index=True,
+        comment=db_comment("対象ID", "変更対象のID"),
+    )
+    action: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+        comment=db_comment("操作", "created/updated/deletedなどの操作種別"),
+    )
+    field_name: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        comment=db_comment("項目名", "変更された項目名"),
+    )
+    old_value: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment=db_comment("変更前値", "変更前の値JSON"),
+    )
+    new_value: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment=db_comment("変更後値", "変更後の値JSON"),
+    )
+    reason: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment=db_comment("変更理由", "変更した理由"),
+    )
+    changed_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        comment=db_comment("変更者ID", "変更したユーザーID"),
+    )
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        comment=db_comment("変更日時", "変更が記録された日時"),
+    )
+
+
+class RequirementTargetComment(Base):
+    """要件定義内の任意対象へのコメントを管理するモデル。"""
+
+    __tablename__ = "requirement_target_comments"
+    __table_args__ = {
+        "comment": db_comment(
+            "要件定義対象コメント",
+            "要件定義内の文書・セクション・要件・未決事項へのコメントを管理するテーブル",
+        ),
+    }
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        index=True,
+        comment=db_comment("コメントID", "コメントを一意に識別するID"),
+    )
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("requirement_documents.id"),
+        index=True,
+        comment=db_comment("要件定義書ID", "コメント対象が属する要件定義書ID"),
+    )
+    target_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+        comment=db_comment("対象種別", "コメント対象の種別"),
+    )
+    target_id: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        index=True,
+        comment=db_comment("対象ID", "コメント対象のID"),
+    )
+    parent_comment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("requirement_target_comments.id"),
+        nullable=True,
+        comment=db_comment("親コメントID", "返信先のコメントID"),
+    )
+    body: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment=db_comment("本文", "コメント本文"),
+    )
+    author_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=False,
+        comment=db_comment("投稿者ID", "コメントを投稿したユーザーID"),
+    )
+    is_resolved: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment=db_comment("解決済みフラグ", "コメントが解決済みかを示すフラグ"),
+    )
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        comment=db_comment("バージョン", "楽観的排他制御に使用するバージョン番号"),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

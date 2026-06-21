@@ -7,13 +7,16 @@ from sqlalchemy.orm import Session
 
 from app.models.requirement import (
     Requirement,
+    RequirementChangeLog,
     RequirementComment,
     RequirementDetail,
     RequirementDocument,
     RequirementLink,
+    RequirementOpenIssue,
     RequirementReview,
     RequirementRevision,
     RequirementSection,
+    RequirementTargetComment,
 )
 from app.schemas.requirement import (
     RequirementCommentCreate,
@@ -23,10 +26,14 @@ from app.schemas.requirement import (
     RequirementDocumentCreate,
     RequirementDocumentUpdate,
     RequirementLinkCreate,
+    RequirementOpenIssueCreate,
+    RequirementOpenIssueUpdate,
     RequirementReviewCreate,
     RequirementReviewUpdate,
     RequirementSectionCreate,
     RequirementSectionUpdate,
+    RequirementTargetCommentCreate,
+    RequirementTargetCommentUpdate,
     RequirementUpdate,
 )
 
@@ -302,6 +309,343 @@ class RequirementSectionRepository:
         db.commit()
         db.refresh(section)
         return section
+
+
+class RequirementOpenIssueRepository:
+    """RequirementOpenIssueテーブルへのデータアクセス処理を提供する。"""
+
+    def create(
+        self,
+        db: Session,
+        *,
+        issue_in: RequirementOpenIssueCreate,
+        actor_id: int | None = None,
+    ) -> RequirementOpenIssue:
+        """未決事項を作成する。"""
+        issue = RequirementOpenIssue(
+            document_id=issue_in.document_id,
+            related_requirement_id=issue_in.related_requirement_id,
+            issue_code=issue_in.issue_code,
+            title=issue_in.title,
+            description=issue_in.description,
+            impact_scope=issue_in.impact_scope,
+            assignee_id=issue_in.assignee_id,
+            due_date=issue_in.due_date,
+            status=issue_in.status,
+            resolution=issue_in.resolution,
+            created_by=actor_id,
+            updated_by=actor_id,
+        )
+        db.add(issue)
+        db.commit()
+        db.refresh(issue)
+        return issue
+
+    def get_by_id(self, db: Session, issue_id: int) -> RequirementOpenIssue | None:
+        """idに一致する未決事項を取得する。"""
+        return (
+            db.query(RequirementOpenIssue)
+            .filter(
+                RequirementOpenIssue.id == issue_id,
+                RequirementOpenIssue.deleted_at.is_(None),
+            )
+            .first()
+        )
+
+    def get_by_document_issue_code(
+        self,
+        db: Session,
+        *,
+        document_id: int,
+        issue_code: str,
+    ) -> RequirementOpenIssue | None:
+        """document_id/issue_codeに一致する未決事項を取得する。"""
+        return (
+            db.query(RequirementOpenIssue)
+            .filter(
+                RequirementOpenIssue.document_id == document_id,
+                RequirementOpenIssue.issue_code == issue_code,
+                RequirementOpenIssue.deleted_at.is_(None),
+            )
+            .first()
+        )
+
+    def list_paginated(
+        self,
+        db: Session,
+        *,
+        document_ids: list[int],
+        page: int,
+        page_size: int,
+        q: str | None = None,
+        status: str | None = None,
+        assignee_id: int | None = None,
+    ) -> tuple[list[RequirementOpenIssue], int]:
+        """指定要件定義書群の未決事項一覧をページング付きで取得する。"""
+        query = db.query(RequirementOpenIssue).filter(
+            RequirementOpenIssue.document_id.in_(document_ids),
+            RequirementOpenIssue.deleted_at.is_(None),
+        )
+        if q:
+            like_pattern = f"%{q}%"
+            query = query.filter(
+                or_(
+                    RequirementOpenIssue.issue_code.ilike(like_pattern),
+                    RequirementOpenIssue.title.ilike(like_pattern),
+                    RequirementOpenIssue.description.ilike(like_pattern),
+                )
+            )
+        if status is not None:
+            query = query.filter(RequirementOpenIssue.status == status)
+        if assignee_id is not None:
+            query = query.filter(RequirementOpenIssue.assignee_id == assignee_id)
+
+        total = query.count()
+        issues = (
+            query.order_by(RequirementOpenIssue.id)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        return issues, total
+
+    def update(
+        self,
+        db: Session,
+        *,
+        issue: RequirementOpenIssue,
+        issue_in: RequirementOpenIssueUpdate,
+        actor_id: int | None = None,
+    ) -> RequirementOpenIssue:
+        """未決事項を更新する。"""
+        for field in (
+            "related_requirement_id",
+            "issue_code",
+            "title",
+            "description",
+            "impact_scope",
+            "assignee_id",
+            "due_date",
+            "status",
+            "resolution",
+        ):
+            if field in issue_in.model_fields_set:
+                setattr(issue, field, getattr(issue_in, field))
+        if actor_id is not None:
+            issue.updated_by = actor_id
+        issue.version += 1
+
+        db.commit()
+        db.refresh(issue)
+        return issue
+
+    def mark_promoted(
+        self,
+        db: Session,
+        *,
+        issue: RequirementOpenIssue,
+        requirement_id: int,
+        resolution: str | None,
+        actor_id: int | None = None,
+    ) -> RequirementOpenIssue:
+        """未決事項を要件へ昇格済みにする。"""
+        issue.related_requirement_id = requirement_id
+        issue.status = "resolved"
+        if resolution is not None:
+            issue.resolution = resolution
+        if actor_id is not None:
+            issue.updated_by = actor_id
+        issue.version += 1
+
+        db.commit()
+        db.refresh(issue)
+        return issue
+
+    def soft_delete(
+        self,
+        db: Session,
+        *,
+        issue: RequirementOpenIssue,
+        actor_id: int | None = None,
+    ) -> RequirementOpenIssue:
+        """未決事項を論理削除する。"""
+        issue.deleted_at = datetime.now(UTC)
+        if actor_id is not None:
+            issue.updated_by = actor_id
+        db.commit()
+        db.refresh(issue)
+        return issue
+
+
+class RequirementChangeLogRepository:
+    """RequirementChangeLogテーブルへのデータアクセス処理を提供する。"""
+
+    def create(
+        self,
+        db: Session,
+        *,
+        target_type: str,
+        target_id: int,
+        action: str,
+        document_id: int | None = None,
+        field_name: str | None = None,
+        old_value: dict | None = None,
+        new_value: dict | None = None,
+        reason: str | None = None,
+        changed_by: int | None = None,
+    ) -> RequirementChangeLog:
+        """要件定義変更履歴を作成する。"""
+        change_log = RequirementChangeLog(
+            document_id=document_id,
+            target_type=target_type,
+            target_id=target_id,
+            action=action,
+            field_name=field_name,
+            old_value=old_value,
+            new_value=new_value,
+            reason=reason,
+            changed_by=changed_by,
+        )
+        db.add(change_log)
+        db.commit()
+        db.refresh(change_log)
+        return change_log
+
+    def list_paginated(
+        self,
+        db: Session,
+        *,
+        page: int,
+        page_size: int,
+        document_ids: list[int] | None = None,
+        document_id: int | None = None,
+        target_type: str | None = None,
+        target_id: int | None = None,
+        action: str | None = None,
+    ) -> tuple[list[RequirementChangeLog], int]:
+        """要件定義変更履歴一覧をページング付きで取得する。"""
+        query = db.query(RequirementChangeLog)
+        if document_ids is not None:
+            query = query.filter(RequirementChangeLog.document_id.in_(document_ids))
+        if document_id is not None:
+            query = query.filter(RequirementChangeLog.document_id == document_id)
+        if target_type is not None:
+            query = query.filter(RequirementChangeLog.target_type == target_type)
+        if target_id is not None:
+            query = query.filter(RequirementChangeLog.target_id == target_id)
+        if action is not None:
+            query = query.filter(RequirementChangeLog.action == action)
+
+        total = query.count()
+        change_logs = (
+            query.order_by(RequirementChangeLog.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        return change_logs, total
+
+
+class RequirementTargetCommentRepository:
+    """RequirementTargetCommentテーブルへのデータアクセス処理を提供する。"""
+
+    def create(
+        self,
+        db: Session,
+        *,
+        document_id: int,
+        comment_in: RequirementTargetCommentCreate,
+        author_id: int,
+    ) -> RequirementTargetComment:
+        """要件定義対象コメントを作成する。"""
+        comment = RequirementTargetComment(
+            document_id=document_id,
+            target_type=comment_in.target_type,
+            target_id=comment_in.target_id,
+            parent_comment_id=comment_in.parent_comment_id,
+            body=comment_in.body,
+            author_id=author_id,
+        )
+        db.add(comment)
+        db.commit()
+        db.refresh(comment)
+        return comment
+
+    def get_by_id(
+        self,
+        db: Session,
+        comment_id: int,
+    ) -> RequirementTargetComment | None:
+        """idに一致する要件定義対象コメントを取得する。"""
+        return (
+            db.query(RequirementTargetComment)
+            .filter(
+                RequirementTargetComment.id == comment_id,
+                RequirementTargetComment.deleted_at.is_(None),
+            )
+            .first()
+        )
+
+    def list_by_target(
+        self,
+        db: Session,
+        *,
+        document_id: int,
+        target_type: str,
+        target_id: int,
+    ) -> list[RequirementTargetComment]:
+        """対象に紐づくコメント一覧を取得する。"""
+        return (
+            db.query(RequirementTargetComment)
+            .filter(
+                RequirementTargetComment.document_id == document_id,
+                RequirementTargetComment.target_type == target_type,
+                RequirementTargetComment.target_id == target_id,
+                RequirementTargetComment.deleted_at.is_(None),
+            )
+            .order_by(RequirementTargetComment.id)
+            .all()
+        )
+
+    def update(
+        self,
+        db: Session,
+        *,
+        comment: RequirementTargetComment,
+        comment_in: RequirementTargetCommentUpdate,
+    ) -> RequirementTargetComment:
+        """要件定義対象コメントを更新する。"""
+        comment.body = comment_in.body
+        comment.version += 1
+        db.commit()
+        db.refresh(comment)
+        return comment
+
+    def set_resolved(
+        self,
+        db: Session,
+        *,
+        comment: RequirementTargetComment,
+        is_resolved: bool,
+    ) -> RequirementTargetComment:
+        """要件定義対象コメントの解決状態を更新する。"""
+        comment.is_resolved = is_resolved
+        comment.version += 1
+        db.commit()
+        db.refresh(comment)
+        return comment
+
+    def soft_delete(
+        self,
+        db: Session,
+        *,
+        comment: RequirementTargetComment,
+    ) -> RequirementTargetComment:
+        """要件定義対象コメントを論理削除する。"""
+        comment.deleted_at = datetime.now(UTC)
+        db.commit()
+        db.refresh(comment)
+        return comment
 
 
 class RequirementRepository:
