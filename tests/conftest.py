@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 if TYPE_CHECKING:
     from app.models.project import Project, ProjectMember
-    from app.models.requirement import RequirementDocument
+    from app.models.requirement import RequirementDocument, RequirementSection
     from app.models.user import User
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -303,3 +303,42 @@ def create_test_requirement_document(
         return document
 
     return _create_test_requirement_document
+
+
+@pytest.fixture
+def create_test_requirement_section(
+    db: Session,
+) -> Callable[..., "RequirementSection"]:
+    """テスト用要件定義セクションをDBへ直接作成するfixture。
+
+    Args:
+        db: テスト用DBセッション。
+
+    Returns:
+        任意のdocument/title/section_typeでセクションを作成する関数。
+    """
+    from app.models.requirement import RequirementDocument, RequirementSection
+
+    def _create_test_requirement_section(
+        *,
+        document: RequirementDocument,
+        title: str = "Requirement Section",
+        section_type: str = "business",
+        content: str | None = None,
+        sort_order: int = 0,
+        status: str = "draft",
+    ) -> RequirementSection:
+        section = RequirementSection(
+            document_id=document.id,
+            title=title,
+            section_type=section_type,
+            content=content,
+            sort_order=sort_order,
+            status=status,
+        )
+        db.add(section)
+        db.commit()
+        db.refresh(section)
+        return section
+
+    return _create_test_requirement_section

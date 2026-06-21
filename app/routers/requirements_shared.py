@@ -8,12 +8,14 @@ from app.presenters.requirement import collect_requirement_document_user_ids
 from app.services.requirement import (
     RequirementChildService,
     RequirementDocumentService,
+    RequirementSectionService,
     RequirementService,
 )
 from app.services.storage import StorageService
 from app.services.user import UserService
 
 document_service = RequirementDocumentService()
+section_service = RequirementSectionService()
 requirement_service = RequirementService()
 requirement_child_service = RequirementChildService()
 storage_service = StorageService()

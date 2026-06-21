@@ -15,6 +15,7 @@ from app.models.requirement import (
     RequirementLink,
     RequirementReview,
     RequirementRevision,
+    RequirementSection,
 )
 from app.models.user import User
 from tests.fakes.storage import FakeStorageService
@@ -276,14 +277,14 @@ def test_update_requirement_document_rejects_stale_version(
     assert response.json()["current"]["version"] == 2
 
 
-def test_create_requirement_allows_member(
+def test_create_requirement_section_allows_member(
     client: TestClient,
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
     assign_project_role: Callable[..., ProjectMember],
     create_test_requirement_document: Callable[..., RequirementDocument],
 ) -> None:
-    """memberが要件を作成できることを確認する。"""
+    """memberが要件定義セクションを作成できることを確認する。"""
     user = create_test_user(email="member@example.com")
     project = create_test_project(name="Project")
     document = create_test_requirement_document(project=project)
@@ -291,9 +292,179 @@ def test_create_requirement_allows_member(
     authorize_as(client, user)
 
     response = client.post(
+        f"/projects/{project.id}/requirement-documents/{document.id}/sections",
+        json={
+            "title": "業務要件",
+            "section_type": "business",
+            "content": "業務要件を記載する。",
+            "sort_order": 10,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["document_id"] == document.id
+    assert response.json()["title"] == "業務要件"
+    assert response.json()["section_type"] == "business"
+    assert response.json()["content"] == "業務要件を記載する。"
+    assert response.json()["sort_order"] == 10
+    assert response.json()["version"] == 1
+    assert response.json()["created_by"] == user.id
+
+
+def test_list_requirement_sections_orders_by_sort_order(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_section: Callable[..., RequirementSection],
+) -> None:
+    """要件定義セクション一覧が表示順で返ることを確認する。"""
+    user = create_test_user(email="viewer@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="viewer")
+    create_test_requirement_section(document=document, title="B", sort_order=20)
+    create_test_requirement_section(document=document, title="A", sort_order=10)
+    authorize_as(client, user)
+
+    response = client.get(
+        f"/projects/{project.id}/requirement-documents/{document.id}/sections"
+    )
+
+    assert response.status_code == 200
+    assert [item["title"] for item in response.json()] == ["A", "B"]
+
+
+def test_update_requirement_section_rejects_stale_version(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_section: Callable[..., RequirementSection],
+    db: Session,
+) -> None:
+    """古いversionでのセクション更新を409で拒否し、最新情報を返す。"""
+    user = create_test_user(email="manager@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    section = create_test_requirement_section(document=document, title="Current")
+    section.title = "Latest"
+    section.version = 2
+    db.commit()
+    db.refresh(section)
+    assign_project_role(user=user, project=project, role_key="manager")
+    authorize_as(client, user)
+
+    response = client.patch(
+        f"/projects/{project.id}/requirement-sections/{section.id}",
+        json={"title": "Stale", "version": 1},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "VERSION_CONFLICT"
+    assert response.json()["current"]["id"] == section.id
+    assert response.json()["current"]["title"] == "Latest"
+    assert response.json()["current"]["version"] == 2
+
+
+def test_update_requirement_section_sort_order(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_section: Callable[..., RequirementSection],
+) -> None:
+    """セクション表示順をまとめて更新できることを確認する。"""
+    user = create_test_user(email="manager@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    section_a = create_test_requirement_section(
+        document=document,
+        title="A",
+        sort_order=10,
+    )
+    section_b = create_test_requirement_section(
+        document=document,
+        title="B",
+        sort_order=20,
+    )
+    assign_project_role(user=user, project=project, role_key="manager")
+    authorize_as(client, user)
+
+    response = client.patch(
+        f"/projects/{project.id}/requirement-documents/{document.id}"
+        "/sections/sort-order",
+        json={
+            "items": [
+                {
+                    "section_id": section_a.id,
+                    "sort_order": 20,
+                    "version": section_a.version,
+                },
+                {
+                    "section_id": section_b.id,
+                    "sort_order": 10,
+                    "version": section_b.version,
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert [item["title"] for item in response.json()] == ["B", "A"]
+    assert [item["version"] for item in response.json()] == [2, 2]
+
+
+def test_delete_requirement_section_soft_deletes(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_section: Callable[..., RequirementSection],
+    db: Session,
+) -> None:
+    """要件定義セクション削除が論理削除で行われることを確認する。"""
+    user = create_test_user(email="manager@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    section = create_test_requirement_section(document=document)
+    assign_project_role(user=user, project=project, role_key="manager")
+    authorize_as(client, user)
+
+    response = client.delete(
+        f"/projects/{project.id}/requirement-sections/{section.id}"
+    )
+
+    assert response.status_code == 204
+    db.refresh(section)
+    assert section.deleted_at is not None
+
+
+def test_create_requirement_allows_member(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_section: Callable[..., RequirementSection],
+) -> None:
+    """memberが要件を作成できることを確認する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    section = create_test_requirement_section(document=document)
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.post(
         f"/projects/{project.id}/requirements",
         json={
             "document_id": document.id,
+            "section_id": section.id,
             "requirement_code": "REQ-001",
             "requirement_type": "functional",
             "title": "Login",
@@ -303,6 +474,7 @@ def test_create_requirement_allows_member(
 
     assert response.status_code == 201
     assert response.json()["document_id"] == document.id
+    assert response.json()["section_id"] == section.id
     assert response.json()["requirement_code"] == "REQ-001"
     assert response.json()["requirement_type"] == "functional"
     assert response.json()["title"] == "Login"
@@ -338,6 +510,41 @@ def test_create_requirement_rejects_document_from_other_project(
     assert response.status_code == 404
     assert response.json() == {
         "message": "Requirement document not found",
+        "code": "NOT_FOUND",
+    }
+
+
+def test_create_requirement_rejects_section_from_other_document(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_section: Callable[..., RequirementSection],
+) -> None:
+    """別要件定義書のsection_idを使った要件作成を拒否する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    other_document = create_test_requirement_document(project=project)
+    other_section = create_test_requirement_section(document=other_document)
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/requirements",
+        json={
+            "document_id": document.id,
+            "section_id": other_section.id,
+            "requirement_code": "REQ-001",
+            "requirement_type": "functional",
+            "title": "Login",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "message": "Requirement section not found",
         "code": "NOT_FOUND",
     }
 
@@ -396,11 +603,21 @@ def test_list_requirements_filters_by_document_and_status(
     project = create_test_project(name="Project")
     document = create_test_requirement_document(project=project)
     other_document = create_test_requirement_document(project=project)
+    section = RequirementSection(
+        document_id=document.id,
+        title="Section",
+        section_type="business",
+        sort_order=10,
+        status="draft",
+    )
+    db.add(section)
+    db.flush()
     assign_project_role(user=user, project=project, role_key="viewer")
     db.add_all(
         [
             Requirement(
                 document_id=document.id,
+                section_id=section.id,
                 requirement_code="REQ-A",
                 requirement_type="functional",
                 title="A",
@@ -427,7 +644,7 @@ def test_list_requirements_filters_by_document_and_status(
 
     response = client.get(
         f"/projects/{project.id}/requirements"
-        f"?document_id={document.id}&status=approved"
+        f"?document_id={document.id}&section_id={section.id}&status=approved"
     )
 
     assert response.status_code == 200

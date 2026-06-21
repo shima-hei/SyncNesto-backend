@@ -2,9 +2,15 @@
 
 from fastapi import APIRouter
 
-from app.routers import requirement_children, requirement_documents, requirement_items
+from app.routers import (
+    requirement_children,
+    requirement_documents,
+    requirement_items,
+    requirement_sections,
+)
 
 router = APIRouter()
 router.include_router(requirement_documents.router)
+router.include_router(requirement_sections.router)
 router.include_router(requirement_items.router)
 router.include_router(requirement_children.router)

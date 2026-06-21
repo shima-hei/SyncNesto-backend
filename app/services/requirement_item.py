@@ -5,11 +5,17 @@ from sqlalchemy.orm import Session
 
 from app.core import error_messages
 from app.core.exceptions import DuplicateResourceError, NotFoundError
-from app.models.requirement import Requirement, RequirementDocument, RequirementRevision
+from app.models.requirement import (
+    Requirement,
+    RequirementDocument,
+    RequirementRevision,
+    RequirementSection,
+)
 from app.repositories.requirement import (
     RequirementDocumentRepository,
     RequirementRepository,
     RequirementRevisionRepository,
+    RequirementSectionRepository,
 )
 from app.schemas.requirement import (
     RequirementCreate,
@@ -29,6 +35,7 @@ class RequirementService:
         self,
         repository: RequirementRepository | None = None,
         document_repository: RequirementDocumentRepository | None = None,
+        section_repository: RequirementSectionRepository | None = None,
         revision_repository: RequirementRevisionRepository | None = None,
     ) -> None:
         """RequirementServiceを初期化する。
@@ -36,12 +43,14 @@ class RequirementService:
         Args:
             repository: 要件Repository。
             document_repository: 要件定義書Repository。
+            section_repository: 要件定義セクションRepository。
             revision_repository: 要件改訂履歴Repository。
         """
         self.repository = repository or RequirementRepository()
         self.document_repository = (
             document_repository or RequirementDocumentRepository()
         )
+        self.section_repository = section_repository or RequirementSectionRepository()
         self.revision_repository = (
             revision_repository or RequirementRevisionRepository()
         )
@@ -74,6 +83,12 @@ class RequirementService:
             project_id=project_id,
             document_id=requirement_in.document_id,
         )
+        if requirement_in.section_id is not None:
+            self._get_section_in_document(
+                db,
+                document_id=requirement_in.document_id,
+                section_id=requirement_in.section_id,
+            )
         if (
             self.repository.get_by_document_requirement_code(
                 db,
@@ -110,6 +125,7 @@ class RequirementService:
         q: str | None = None,
         status: str | None = None,
         requirement_type: str | None = None,
+        section_id: int | None = None,
     ) -> tuple[list[Requirement], int]:
         """プロジェクト内の要件一覧をページング付きで取得する。
 
@@ -122,6 +138,7 @@ class RequirementService:
             q: 検索キーワード。
             status: 絞り込み対象のステータス。
             requirement_type: 絞り込み対象の要件種別。
+            section_id: 絞り込み対象の要件定義セクションID。
 
         Returns:
             要件一覧と総件数。
@@ -130,7 +147,7 @@ class RequirementService:
             NotFoundError: 指定された要件定義書がプロジェクトに属さない場合。
         """
         if document_id is not None:
-            self._get_document_in_project(
+            document = self._get_document_in_project(
                 db,
                 project_id=project_id,
                 document_id=document_id,
@@ -141,6 +158,14 @@ class RequirementService:
 
         if not document_ids:
             return [], 0
+        if section_id is not None:
+            section = self._get_section_in_project(
+                db,
+                project_id=project_id,
+                section_id=section_id,
+            )
+            if document_id is not None and section.document_id != document.id:
+                raise NotFoundError(error_messages.REQUIREMENT_SECTION_NOT_FOUND)
 
         return self.repository.list_paginated(
             db,
@@ -150,6 +175,7 @@ class RequirementService:
             q=q,
             status=status,
             requirement_type=requirement_type,
+            section_id=section_id,
         )
 
     def get_requirement(
@@ -232,6 +258,15 @@ class RequirementService:
         ):
             raise DuplicateResourceError(
                 error_messages.REQUIREMENT_CODE_ALREADY_EXISTS
+            )
+        if (
+            "section_id" in requirement_in.model_fields_set
+            and requirement_in.section_id is not None
+        ):
+            self._get_section_in_document(
+                db,
+                document_id=requirement.document_id,
+                section_id=requirement_in.section_id,
             )
 
         before_value = self._build_revision_snapshot(requirement)
@@ -341,6 +376,61 @@ class RequirementService:
             raise NotFoundError(error_messages.REQUIREMENT_DOCUMENT_NOT_FOUND)
         return document
 
+    def _get_section_in_document(
+        self,
+        db: Session,
+        *,
+        document_id: int,
+        section_id: int,
+    ) -> RequirementSection:
+        """要件定義書内のセクションを取得する。
+
+        Args:
+            db: DBセッション。
+            document_id: 所属確認対象の要件定義書ID。
+            section_id: 取得対象の要件定義セクションID。
+
+        Returns:
+            取得した要件定義セクション。
+
+        Raises:
+            NotFoundError: セクションが存在しない、または要件定義書に属さない場合。
+        """
+        section = self.section_repository.get_by_id(db, section_id)
+        if section is None or section.document_id != document_id:
+            raise NotFoundError(error_messages.REQUIREMENT_SECTION_NOT_FOUND)
+        return section
+
+    def _get_section_in_project(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        section_id: int,
+    ) -> RequirementSection:
+        """プロジェクト内のセクションを取得する。
+
+        Args:
+            db: DBセッション。
+            project_id: 所属確認対象のプロジェクトID。
+            section_id: 取得対象の要件定義セクションID。
+
+        Returns:
+            取得した要件定義セクション。
+
+        Raises:
+            NotFoundError: セクションが存在しない、またはプロジェクトに属さない場合。
+        """
+        section = self.section_repository.get_by_id(db, section_id)
+        if section is None:
+            raise NotFoundError(error_messages.REQUIREMENT_SECTION_NOT_FOUND)
+        self._get_document_in_project(
+            db,
+            project_id=project_id,
+            document_id=section.document_id,
+        )
+        return section
+
     def _build_revision_snapshot(self, requirement: Requirement) -> dict[str, object]:
         """改訂履歴に保存する要件スナップショットを作成する。
 
@@ -353,6 +443,7 @@ class RequirementService:
         return {
             "id": requirement.id,
             "document_id": requirement.document_id,
+            "section_id": requirement.section_id,
             "requirement_code": requirement.requirement_code,
             "requirement_type": requirement.requirement_type,
             "category": requirement.category,

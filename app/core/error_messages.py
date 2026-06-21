@@ -33,6 +33,7 @@ REQUIREMENT_DOCUMENT_CODE_ALREADY_EXISTS = (
     "Requirement document code already exists"
 )
 REQUIREMENT_DOCUMENT_NOT_FOUND = "Requirement document not found"
+REQUIREMENT_SECTION_NOT_FOUND = "Requirement section not found"
 REQUIREMENT_CODE_ALREADY_EXISTS = "Requirement code already exists"
 REQUIREMENT_NOT_FOUND = "Requirement not found"
 REQUIREMENT_DETAIL_NOT_FOUND = "Requirement detail not found"

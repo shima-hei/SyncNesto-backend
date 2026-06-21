@@ -63,6 +63,7 @@ def list_requirements(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     document_id: int | None = Query(default=None),
+    section_id: int | None = Query(default=None),
     q: str | None = Query(default=None),
     status: str | None = Query(default=None),
     requirement_type: str | None = Query(default=None),
@@ -76,6 +77,7 @@ def list_requirements(
         page: 取得ページ番号。
         page_size: 1ページあたりの取得件数。
         document_id: 絞り込み対象の要件定義書ID。
+        section_id: 絞り込み対象の要件定義セクションID。
         q: 検索キーワード。
         status: 絞り込み対象のステータス。
         requirement_type: 絞り込み対象の要件種別。
@@ -91,6 +93,7 @@ def list_requirements(
         page=page,
         page_size=page_size,
         document_id=document_id,
+        section_id=section_id,
         q=q,
         status=status,
         requirement_type=requirement_type,

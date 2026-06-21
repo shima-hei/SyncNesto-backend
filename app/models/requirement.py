@@ -133,6 +133,94 @@ class RequirementDocument(Base):
     )
 
 
+class RequirementSection(Base):
+    """要件定義書内の章・節を管理するモデル。"""
+
+    __tablename__ = "requirement_sections"
+    __table_args__ = {
+        "comment": db_comment(
+            "要件定義セクション",
+            "要件定義書内の章・節を管理するテーブル",
+        ),
+    }
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        index=True,
+        comment=db_comment(
+            "要件定義セクションID",
+            "要件定義セクションを一意に識別するID",
+        ),
+    )
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("requirement_documents.id"),
+        index=True,
+        comment=db_comment("要件定義書ID", "所属する要件定義書ID"),
+    )
+    title: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        comment=db_comment("タイトル", "セクションのタイトル"),
+    )
+    section_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        comment=db_comment(
+            "セクション種別",
+            "overview/scope/businessなどのセクション種別",
+        ),
+    )
+    content: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment=db_comment("本文", "セクションの本文"),
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment=db_comment("表示順", "要件定義書内での表示順"),
+    )
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="draft",
+        comment=db_comment("ステータス", "セクションの状態"),
+    )
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        comment=db_comment("バージョン", "楽観的排他制御に使用するバージョン番号"),
+    )
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        comment=db_comment("作成者ID", "このセクションを作成したユーザーID"),
+    )
+    updated_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        comment=db_comment("更新者ID", "このセクションを最後に更新したユーザーID"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        comment=db_comment("作成日時", "レコードが作成された日時"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        comment=db_comment("更新日時", "レコードが最後に更新された日時"),
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment=db_comment("削除日時", "論理削除された日時"),
+    )
+
+
 class Requirement(Base):
     """要件を管理するモデル。"""
 
@@ -160,6 +248,12 @@ class Requirement(Base):
         ForeignKey("requirement_documents.id"),
         index=True,
         comment=db_comment("要件定義書ID", "所属する要件定義書ID"),
+    )
+    section_id: Mapped[int | None] = mapped_column(
+        ForeignKey("requirement_sections.id"),
+        index=True,
+        nullable=True,
+        comment=db_comment("要件定義セクションID", "所属するセクションID"),
     )
     requirement_code: Mapped[str] = mapped_column(
         String(100),

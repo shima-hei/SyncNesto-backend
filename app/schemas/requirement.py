@@ -70,9 +70,63 @@ class RequirementDocumentListResponse(BaseModel):
     page_size: int
 
 
+class RequirementSectionBase(BaseModel):
+    """要件定義セクションschemaの共通フィールドを定義する基底schema。"""
+
+    title: str
+    section_type: str
+    content: str | None = None
+    sort_order: int = 0
+    status: str = "draft"
+
+
+class RequirementSectionCreate(RequirementSectionBase):
+    """要件定義セクション作成リクエストで受け取るschema。"""
+
+
+class RequirementSectionUpdate(BaseModel):
+    """要件定義セクション更新リクエストで受け取るschema。"""
+
+    version: int
+    title: str | None = None
+    section_type: str | None = None
+    content: str | None = None
+    sort_order: int | None = None
+    status: str | None = None
+
+
+class RequirementSectionSortItem(BaseModel):
+    """要件定義セクションの並び順更新項目schema。"""
+
+    section_id: int
+    sort_order: int
+    version: int
+
+
+class RequirementSectionSortUpdate(BaseModel):
+    """要件定義セクションの並び順更新リクエストschema。"""
+
+    items: list[RequirementSectionSortItem]
+
+
+class RequirementSectionRead(RequirementSectionBase):
+    """要件定義セクション読み取り時に返すschema。"""
+
+    id: int
+    document_id: int
+    version: int
+    created_by: int | None = None
+    updated_by: int | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class RequirementBase(BaseModel):
     """要件schemaの共通フィールドを定義する基底schema。"""
 
+    section_id: int | None = None
     requirement_code: str
     requirement_type: str
     category: str | None = None
@@ -98,6 +152,7 @@ class RequirementUpdate(BaseModel):
     """要件更新リクエストで受け取るschema。"""
 
     version: int
+    section_id: int | None = None
     requirement_code: str | None = None
     requirement_type: str | None = None
     category: str | None = None

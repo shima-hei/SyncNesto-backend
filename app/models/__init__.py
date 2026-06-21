@@ -12,6 +12,7 @@ from app.models.requirement import (
     RequirementLink,
     RequirementReview,
     RequirementRevision,
+    RequirementSection,
 )
 from app.models.session import UserSession
 from app.models.user import User
@@ -29,6 +30,7 @@ __all__ = [
     "RequirementLink",
     "RequirementReview",
     "RequirementRevision",
+    "RequirementSection",
     "Role",
     "RolePermission",
     "User",

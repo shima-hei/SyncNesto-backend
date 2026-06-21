@@ -1,0 +1,260 @@
+"""要件定義セクションサービスを定義するモジュール。"""
+
+from sqlalchemy.orm import Session
+
+from app.core import error_messages
+from app.core.exceptions import NotFoundError
+from app.models.requirement import RequirementDocument, RequirementSection
+from app.repositories.requirement import (
+    RequirementDocumentRepository,
+    RequirementSectionRepository,
+)
+from app.schemas.requirement import (
+    RequirementSectionCreate,
+    RequirementSectionRead,
+    RequirementSectionSortUpdate,
+    RequirementSectionUpdate,
+)
+from app.services.conflict import raise_if_version_conflict
+
+
+class RequirementSectionService:
+    """要件定義セクションに関するビジネスロジックを提供する。"""
+
+    def __init__(
+        self,
+        repository: RequirementSectionRepository | None = None,
+        document_repository: RequirementDocumentRepository | None = None,
+    ) -> None:
+        """RequirementSectionServiceを初期化する。
+
+        Args:
+            repository: 要件定義セクションRepository。
+            document_repository: 要件定義書Repository。
+        """
+        self.repository = repository or RequirementSectionRepository()
+        self.document_repository = (
+            document_repository or RequirementDocumentRepository()
+        )
+
+    def create_section(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        document_id: int,
+        section_in: RequirementSectionCreate,
+        actor_id: int | None = None,
+    ) -> RequirementSection:
+        """要件定義セクションを作成する。
+
+        Args:
+            db: DBセッション。
+            project_id: 作成対象のプロジェクトID。
+            document_id: 作成対象の要件定義書ID。
+            section_in: セクション作成入力値。
+            actor_id: 操作ユーザーID。
+
+        Returns:
+            作成された要件定義セクション。
+
+        Raises:
+            NotFoundError: 要件定義書が存在しない、またはプロジェクトに属さない場合。
+        """
+        self._get_document_in_project(
+            db,
+            project_id=project_id,
+            document_id=document_id,
+        )
+        return self.repository.create(
+            db,
+            document_id=document_id,
+            section_in=section_in,
+            actor_id=actor_id,
+        )
+
+    def list_sections(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        document_id: int,
+    ) -> list[RequirementSection]:
+        """要件定義書内のセクション一覧を取得する。
+
+        Args:
+            db: DBセッション。
+            project_id: 取得対象のプロジェクトID。
+            document_id: 取得対象の要件定義書ID。
+
+        Returns:
+            要件定義セクション一覧。
+
+        Raises:
+            NotFoundError: 要件定義書が存在しない、またはプロジェクトに属さない場合。
+        """
+        self._get_document_in_project(
+            db,
+            project_id=project_id,
+            document_id=document_id,
+        )
+        return self.repository.list_by_document(db, document_id)
+
+    def get_section(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        section_id: int,
+    ) -> RequirementSection:
+        """要件定義セクションを取得する。
+
+        Args:
+            db: DBセッション。
+            project_id: 取得対象のプロジェクトID。
+            section_id: 取得対象の要件定義セクションID。
+
+        Returns:
+            取得した要件定義セクション。
+
+        Raises:
+            NotFoundError: セクションが存在しない、またはプロジェクトに属さない場合。
+        """
+        section = self.repository.get_by_id(db, section_id)
+        if section is None:
+            raise NotFoundError(error_messages.REQUIREMENT_SECTION_NOT_FOUND)
+
+        self._get_document_in_project(
+            db,
+            project_id=project_id,
+            document_id=section.document_id,
+        )
+        return section
+
+    def update_section(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        section_id: int,
+        section_in: RequirementSectionUpdate,
+        actor_id: int | None = None,
+    ) -> RequirementSection:
+        """要件定義セクションを更新する。
+
+        Args:
+            db: DBセッション。
+            project_id: 更新対象のプロジェクトID。
+            section_id: 更新対象の要件定義セクションID。
+            section_in: セクション更新入力値。
+            actor_id: 操作ユーザーID。
+
+        Returns:
+            更新された要件定義セクション。
+
+        Raises:
+            NotFoundError: セクションが存在しない、またはプロジェクトに属さない場合。
+        """
+        section = self.get_section(db, project_id=project_id, section_id=section_id)
+        raise_if_version_conflict(
+            current_version=section.version,
+            requested_version=section_in.version,
+            current=RequirementSectionRead.model_validate(section).model_dump(),
+        )
+        return self.repository.update(
+            db,
+            section=section,
+            section_in=section_in,
+            actor_id=actor_id,
+        )
+
+    def update_sort_order(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        document_id: int,
+        sort_in: RequirementSectionSortUpdate,
+        actor_id: int | None = None,
+    ) -> list[RequirementSection]:
+        """要件定義セクションの表示順を更新する。
+
+        Args:
+            db: DBセッション。
+            project_id: 更新対象のプロジェクトID。
+            document_id: 更新対象の要件定義書ID。
+            sort_in: 表示順更新入力値。
+            actor_id: 操作ユーザーID。
+
+        Returns:
+            更新後の要件定義セクション一覧。
+
+        Raises:
+            NotFoundError: 要件定義書またはセクションが存在しない場合。
+        """
+        self._get_document_in_project(
+            db,
+            project_id=project_id,
+            document_id=document_id,
+        )
+        sections_by_id = {
+            section.id: section
+            for section in self.repository.list_by_document(db, document_id)
+        }
+        sort_orders_by_id: dict[int, int] = {}
+        target_sections: list[RequirementSection] = []
+        for item in sort_in.items:
+            section = sections_by_id.get(item.section_id)
+            if section is None:
+                raise NotFoundError(error_messages.REQUIREMENT_SECTION_NOT_FOUND)
+            raise_if_version_conflict(
+                current_version=section.version,
+                requested_version=item.version,
+                current=RequirementSectionRead.model_validate(section).model_dump(),
+            )
+            sort_orders_by_id[section.id] = item.sort_order
+            target_sections.append(section)
+
+        if not target_sections:
+            return self.repository.list_by_document(db, document_id)
+        return self.repository.update_sort_orders(
+            db,
+            sections=target_sections,
+            sort_orders_by_id=sort_orders_by_id,
+            actor_id=actor_id,
+        )
+
+    def delete_section(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        section_id: int,
+        actor_id: int | None = None,
+    ) -> None:
+        """要件定義セクションを論理削除する。
+
+        Args:
+            db: DBセッション。
+            project_id: 削除対象のプロジェクトID。
+            section_id: 削除対象の要件定義セクションID。
+            actor_id: 操作ユーザーID。
+
+        Raises:
+            NotFoundError: セクションが存在しない、またはプロジェクトに属さない場合。
+        """
+        section = self.get_section(db, project_id=project_id, section_id=section_id)
+        self.repository.soft_delete(db, section=section, actor_id=actor_id)
+
+    def _get_document_in_project(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        document_id: int,
+    ) -> RequirementDocument:
+        """プロジェクト内の要件定義書を取得する。"""
+        document = self.document_repository.get_by_id(db, document_id)
+        if document is None or document.project_id != project_id:
+            raise NotFoundError(error_messages.REQUIREMENT_DOCUMENT_NOT_FOUND)
+        return document

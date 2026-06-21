@@ -13,6 +13,7 @@ from app.models.requirement import (
     RequirementLink,
     RequirementReview,
     RequirementRevision,
+    RequirementSection,
 )
 from app.schemas.requirement import (
     RequirementCommentCreate,
@@ -24,6 +25,8 @@ from app.schemas.requirement import (
     RequirementLinkCreate,
     RequirementReviewCreate,
     RequirementReviewUpdate,
+    RequirementSectionCreate,
+    RequirementSectionUpdate,
     RequirementUpdate,
 )
 
@@ -191,6 +194,116 @@ class RequirementDocumentRepository:
         return document
 
 
+class RequirementSectionRepository:
+    """RequirementSectionテーブルへのデータアクセス処理を提供する。"""
+
+    def create(
+        self,
+        db: Session,
+        *,
+        document_id: int,
+        section_in: RequirementSectionCreate,
+        actor_id: int | None = None,
+    ) -> RequirementSection:
+        """要件定義セクションを作成する。"""
+        section = RequirementSection(
+            document_id=document_id,
+            title=section_in.title,
+            section_type=section_in.section_type,
+            content=section_in.content,
+            sort_order=section_in.sort_order,
+            status=section_in.status,
+            created_by=actor_id,
+            updated_by=actor_id,
+        )
+        db.add(section)
+        db.commit()
+        db.refresh(section)
+        return section
+
+    def get_by_id(self, db: Session, section_id: int) -> RequirementSection | None:
+        """idに一致する要件定義セクションを取得する。"""
+        return (
+            db.query(RequirementSection)
+            .filter(
+                RequirementSection.id == section_id,
+                RequirementSection.deleted_at.is_(None),
+            )
+            .first()
+        )
+
+    def list_by_document(
+        self,
+        db: Session,
+        document_id: int,
+    ) -> list[RequirementSection]:
+        """指定要件定義書のセクション一覧を取得する。"""
+        return (
+            db.query(RequirementSection)
+            .filter(
+                RequirementSection.document_id == document_id,
+                RequirementSection.deleted_at.is_(None),
+            )
+            .order_by(RequirementSection.sort_order, RequirementSection.id)
+            .all()
+        )
+
+    def update(
+        self,
+        db: Session,
+        *,
+        section: RequirementSection,
+        section_in: RequirementSectionUpdate,
+        actor_id: int | None = None,
+    ) -> RequirementSection:
+        """要件定義セクションを更新する。"""
+        for field in ("title", "section_type", "content", "sort_order", "status"):
+            if field in section_in.model_fields_set:
+                setattr(section, field, getattr(section_in, field))
+        if actor_id is not None:
+            section.updated_by = actor_id
+        section.version += 1
+
+        db.commit()
+        db.refresh(section)
+        return section
+
+    def update_sort_orders(
+        self,
+        db: Session,
+        *,
+        sections: list[RequirementSection],
+        sort_orders_by_id: dict[int, int],
+        actor_id: int | None = None,
+    ) -> list[RequirementSection]:
+        """要件定義セクションの表示順をまとめて更新する。"""
+        for section in sections:
+            section.sort_order = sort_orders_by_id[section.id]
+            if actor_id is not None:
+                section.updated_by = actor_id
+            section.version += 1
+
+        db.commit()
+        for section in sections:
+            db.refresh(section)
+        return sorted(sections, key=lambda item: (item.sort_order, item.id))
+
+    def soft_delete(
+        self,
+        db: Session,
+        *,
+        section: RequirementSection,
+        actor_id: int | None = None,
+    ) -> RequirementSection:
+        """要件定義セクションを論理削除する。"""
+        section.deleted_at = datetime.now(UTC)
+        if actor_id is not None:
+            section.updated_by = actor_id
+        db.commit()
+        db.refresh(section)
+        return section
+
+
 class RequirementRepository:
     """Requirementテーブルへのデータアクセス処理を提供する。"""
 
@@ -204,6 +317,7 @@ class RequirementRepository:
         """要件を作成する。"""
         requirement = Requirement(
             document_id=requirement_in.document_id,
+            section_id=requirement_in.section_id,
             requirement_code=requirement_in.requirement_code,
             requirement_type=requirement_in.requirement_type,
             category=requirement_in.category,
@@ -261,6 +375,7 @@ class RequirementRepository:
         q: str | None = None,
         status: str | None = None,
         requirement_type: str | None = None,
+        section_id: int | None = None,
     ) -> tuple[list[Requirement], int]:
         """指定要件定義書群の要件一覧をページング付きで取得する。"""
         query = db.query(Requirement).filter(
@@ -280,6 +395,8 @@ class RequirementRepository:
             query = query.filter(Requirement.status == status)
         if requirement_type is not None:
             query = query.filter(Requirement.requirement_type == requirement_type)
+        if section_id is not None:
+            query = query.filter(Requirement.section_id == section_id)
 
         total = query.count()
         requirements = (
@@ -313,6 +430,7 @@ class RequirementRepository:
             "owner_id",
             "approved_by",
             "approved_at",
+            "section_id",
         ):
             if field in requirement_in.model_fields_set:
                 setattr(requirement, field, getattr(requirement_in, field))
