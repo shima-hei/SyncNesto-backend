@@ -13,6 +13,8 @@ from app.presenters.requirement import (
 from app.routers import requirements_shared as shared
 from app.schemas.requirement import (
     RequirementDocumentCreate,
+    RequirementDocumentExportCreate,
+    RequirementDocumentExportRead,
     RequirementDocumentListResponse,
     RequirementDocumentRead,
     RequirementDocumentUpdate,
@@ -195,5 +197,37 @@ def delete_requirement_document(
         db,
         project_id=project_id,
         document_id=document_id,
+        actor_id=current_user.id,
+    )
+
+
+@router.post(
+    "/requirement-documents/{document_id}/exports",
+    response_model=RequirementDocumentExportRead,
+)
+def export_requirement_document(
+    project_id: int,
+    document_id: int,
+    export_in: RequirementDocumentExportCreate,
+    current_user: User = Depends(require_project_permission("requirement:read")),
+    db: Session = Depends(get_db),
+) -> RequirementDocumentExportRead:
+    """要件定義書を出力する。
+
+    Args:
+        project_id: 出力対象のプロジェクトID。
+        document_id: 出力対象の要件定義書ID。
+        export_in: 出力リクエスト。
+        current_user: 認証済みユーザー。
+        db: DBセッション。
+
+    Returns:
+        要件定義書の出力結果。
+    """
+    return shared.export_service.export_document(
+        db,
+        project_id=project_id,
+        document_id=document_id,
+        export_in=export_in,
         actor_id=current_user.id,
     )

@@ -409,6 +409,22 @@ class RequirementOpenIssueRepository:
         )
         return issues, total
 
+    def list_by_document(
+        self,
+        db: Session,
+        document_id: int,
+    ) -> list[RequirementOpenIssue]:
+        """指定要件定義書の未決事項一覧を取得する。"""
+        return (
+            db.query(RequirementOpenIssue)
+            .filter(
+                RequirementOpenIssue.document_id == document_id,
+                RequirementOpenIssue.deleted_at.is_(None),
+            )
+            .order_by(RequirementOpenIssue.id)
+            .all()
+        )
+
     def update(
         self,
         db: Session,
@@ -545,6 +561,19 @@ class RequirementChangeLogRepository:
         )
         return change_logs, total
 
+    def list_by_document(
+        self,
+        db: Session,
+        document_id: int,
+    ) -> list[RequirementChangeLog]:
+        """指定要件定義書の変更履歴一覧を取得する。"""
+        return (
+            db.query(RequirementChangeLog)
+            .filter(RequirementChangeLog.document_id == document_id)
+            .order_by(RequirementChangeLog.id)
+            .all()
+        )
+
 
 class RequirementTargetCommentRepository:
     """RequirementTargetCommentテーブルへのデータアクセス処理を提供する。"""
@@ -601,6 +630,22 @@ class RequirementTargetCommentRepository:
                 RequirementTargetComment.document_id == document_id,
                 RequirementTargetComment.target_type == target_type,
                 RequirementTargetComment.target_id == target_id,
+                RequirementTargetComment.deleted_at.is_(None),
+            )
+            .order_by(RequirementTargetComment.id)
+            .all()
+        )
+
+    def list_by_document(
+        self,
+        db: Session,
+        document_id: int,
+    ) -> list[RequirementTargetComment]:
+        """指定要件定義書のコメント一覧を取得する。"""
+        return (
+            db.query(RequirementTargetComment)
+            .filter(
+                RequirementTargetComment.document_id == document_id,
                 RequirementTargetComment.deleted_at.is_(None),
             )
             .order_by(RequirementTargetComment.id)
@@ -817,6 +862,14 @@ class RequirementRepository:
             .order_by(Requirement.id)
             .all()
         )
+
+    def list_by_document(
+        self,
+        db: Session,
+        document_id: int,
+    ) -> list[Requirement]:
+        """指定要件定義書の要件一覧を取得する。"""
+        return self.list_by_document_ids(db, [document_id])
 
 
 class RequirementRevisionRepository:

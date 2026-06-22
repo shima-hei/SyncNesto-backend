@@ -249,6 +249,135 @@ def test_list_requirement_documents_allows_viewer(
     assert response.json()["items"][0]["document_code"] == "RD-A"
 
 
+def test_export_requirement_document_returns_markdown_and_records_change_log(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_section: Callable[..., RequirementSection],
+    create_test_requirement_target_comment: Callable[..., RequirementTargetComment],
+    db: Session,
+) -> None:
+    """要件定義書をMarkdown出力でき、変更履歴が記録されることを確認する。"""
+    user = create_test_user(email="viewer@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(
+        project=project,
+        title="Syncnesto 要件定義書",
+        document_code="RD-EXPORT",
+    )
+    first_section = create_test_requirement_section(
+        document=document,
+        title="業務要件",
+        content="業務要件の本文",
+        sort_order=10,
+    )
+    second_section = create_test_requirement_section(
+        document=document,
+        title="機能要件",
+        content="機能要件の本文",
+        sort_order=20,
+    )
+    db.add_all(
+        [
+            Requirement(
+                document_id=document.id,
+                section_id=first_section.id,
+                requirement_code="REQ-001",
+                requirement_type="business",
+                title="業務フローを管理できる",
+                description="業務フローを登録・参照できる。",
+            ),
+            Requirement(
+                document_id=document.id,
+                section_id=second_section.id,
+                requirement_code="REQ-002",
+                requirement_type="functional",
+                title="ログインできる",
+                description="登録済みユーザーがログインできる。",
+            ),
+            Requirement(
+                document_id=document.id,
+                requirement_code="REQ-999",
+                requirement_type="functional",
+                title="未分類要件",
+            ),
+            RequirementOpenIssue(
+                document_id=document.id,
+                issue_code="ISSUE-001",
+                title="SSO範囲が未確定",
+                status="open",
+            ),
+        ]
+    )
+    db.commit()
+    create_test_requirement_target_comment(
+        document=document,
+        author=user,
+        target_type="document",
+        target_id=document.id,
+        body="レビューコメント",
+    )
+    assign_project_role(user=user, project=project, role_key="viewer")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/requirement-documents/{document.id}/exports",
+        json={"format": "markdown", "include_comments": True},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["format"] == "markdown"
+    content = response.json()["content"]
+    assert "# Syncnesto 要件定義書" in content
+    assert "#### REQ-001 業務フローを管理できる" in content
+    assert "#### REQ-002 ログインできる" in content
+    assert "## 未分類要件" in content
+    assert "#### REQ-999 未分類要件" in content
+    assert "### ISSUE-001 SSO範囲が未確定" in content
+    assert "レビューコメント" in content
+    assert content.index("### 業務要件") < content.index("### 機能要件")
+
+    change_log = db.query(RequirementChangeLog).one()
+    assert change_log.document_id == document.id
+    assert change_log.target_type == "document"
+    assert change_log.target_id == document.id
+    assert change_log.action == "exported"
+    assert change_log.changed_by == user.id
+    assert change_log.new_value == {
+        "format": "markdown",
+        "include_comments": True,
+        "include_change_logs": False,
+    }
+
+
+def test_export_requirement_document_rejects_unsupported_format(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+) -> None:
+    """未対応の要件定義書出力形式を400で拒否する。"""
+    user = create_test_user(email="viewer@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="viewer")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/requirement-documents/{document.id}/exports",
+        json={"format": "pdf"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "message": "Unsupported requirement export format",
+        "code": "BAD_REQUEST",
+    }
+
+
 def test_update_requirement_document_rejects_stale_version(
     client: TestClient,
     create_test_user: Callable[..., User],

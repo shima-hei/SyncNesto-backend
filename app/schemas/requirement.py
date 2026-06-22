@@ -70,6 +70,21 @@ class RequirementDocumentListResponse(BaseModel):
     page_size: int
 
 
+class RequirementDocumentExportCreate(BaseModel):
+    """要件定義書出力リクエストで受け取るschema。"""
+
+    format: str = "markdown"
+    include_comments: bool = False
+    include_change_logs: bool = False
+
+
+class RequirementDocumentExportRead(BaseModel):
+    """要件定義書出力レスポンスschema。"""
+
+    format: str
+    content: str
+
+
 class RequirementSectionBase(BaseModel):
     """要件定義セクションschemaの共通フィールドを定義する基底schema。"""
 

@@ -9,6 +9,7 @@ from app.services.requirement import (
     RequirementChangeLogService,
     RequirementChildService,
     RequirementDocumentService,
+    RequirementExportService,
     RequirementOpenIssueService,
     RequirementSectionService,
     RequirementService,
@@ -18,6 +19,7 @@ from app.services.storage import StorageService
 from app.services.user import UserService
 
 document_service = RequirementDocumentService()
+export_service = RequirementExportService()
 section_service = RequirementSectionService()
 requirement_service = RequirementService()
 open_issue_service = RequirementOpenIssueService()

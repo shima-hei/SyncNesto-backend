@@ -3,6 +3,7 @@
 from app.services.requirement_change_log import RequirementChangeLogService
 from app.services.requirement_child import RequirementChildService, RequirementSummary
 from app.services.requirement_document import RequirementDocumentService
+from app.services.requirement_export import RequirementExportService
 from app.services.requirement_item import RequirementService
 from app.services.requirement_open_issue import RequirementOpenIssueService
 from app.services.requirement_section import RequirementSectionService
@@ -12,6 +13,7 @@ __all__ = [
     "RequirementChildService",
     "RequirementChangeLogService",
     "RequirementDocumentService",
+    "RequirementExportService",
     "RequirementOpenIssueService",
     "RequirementSectionService",
     "RequirementService",

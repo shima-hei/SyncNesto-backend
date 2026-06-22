@@ -22,6 +22,7 @@ class RequirementChangeLogAction:
     CREATED = "created"
     UPDATED = "updated"
     DELETED = "deleted"
+    EXPORTED = "exported"
     PROMOTED_TO_REQUIREMENT = "promoted_to_requirement"
 
 
@@ -29,6 +30,7 @@ class RequirementChangeLogTargetType:
     """要件定義変更履歴の対象種別定数。"""
 
     COMMENT = "comment"
+    DOCUMENT = "document"
     OPEN_ISSUE = "open_issue"
     REQUIREMENT_ITEM = "requirement_item"
     SECTION = "section"
