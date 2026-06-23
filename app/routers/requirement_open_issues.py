@@ -1,5 +1,7 @@
 """要件定義未決事項APIのルーティングを定義するモジュール。"""
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
@@ -62,6 +64,9 @@ def list_open_issues(
     q: str | None = Query(default=None),
     status: str | None = Query(default=None),
     assignee_id: int | None = Query(default=None),
+    due_date_from: date | None = Query(default=None),
+    due_date_to: date | None = Query(default=None),
+    related_requirement_id: int | None = Query(default=None),
     _: User = Depends(require_project_permission("requirement:read")),
     db: Session = Depends(get_db),
 ) -> RequirementOpenIssueListResponse:
@@ -75,6 +80,9 @@ def list_open_issues(
         q: 検索キーワード。
         status: 絞り込み対象のステータス。
         assignee_id: 絞り込み対象の担当者ID。
+        due_date_from: 期限の開始日。
+        due_date_to: 期限の終了日。
+        related_requirement_id: 絞り込み対象の関連要件ID。
         _: 認可済みユーザー。
         db: DBセッション。
 
@@ -90,6 +98,9 @@ def list_open_issues(
         q=q,
         status=status,
         assignee_id=assignee_id,
+        due_date_from=due_date_from,
+        due_date_to=due_date_to,
+        related_requirement_id=related_requirement_id,
     )
     return RequirementOpenIssueListResponse(
         items=[RequirementOpenIssueRead.model_validate(issue) for issue in issues],

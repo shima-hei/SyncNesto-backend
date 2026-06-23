@@ -314,6 +314,50 @@ class RequirementChangeLogListResponse(BaseModel):
     page_size: int
 
 
+class RequirementApprovalRequestCreate(BaseModel):
+    """要件定義承認申請リクエストで受け取るschema。"""
+
+    target_type: str
+    target_id: int
+    approver_id: int
+    comment: str | None = None
+
+
+class RequirementApprovalDecisionCreate(BaseModel):
+    """要件定義承認判断リクエストで受け取るschema。"""
+
+    comment: str | None = None
+
+
+class RequirementApprovalRead(BaseModel):
+    """要件定義承認読み取り時に返すschema。"""
+
+    id: int
+    document_id: int
+    target_type: str
+    target_id: int
+    status: str
+    approver_id: int
+    requested_by: int
+    requested_at: datetime
+    approved_at: datetime | None = None
+    rejected_at: datetime | None = None
+    comment: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RequirementApprovalListResponse(BaseModel):
+    """要件定義承認一覧レスポンスschema。"""
+
+    items: list[RequirementApprovalRead]
+    total: int
+    page: int
+    page_size: int
+
+
 class RequirementTargetCommentCreate(BaseModel):
     """要件定義対象コメント作成リクエストで受け取るschema。"""
 
@@ -413,6 +457,31 @@ class RequirementLinkRead(BaseModel):
     requirement_id: int
     linked_type: str
     linked_id: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RequirementRelationCreate(BaseModel):
+    """要件関連作成リクエストで受け取るschema。"""
+
+    target_type: str
+    target_id: str
+    relation_type: str
+    description: str | None = None
+
+
+class RequirementRelationRead(BaseModel):
+    """要件関連読み取り時に返すschema。"""
+
+    id: int
+    document_id: int
+    source_requirement_id: int
+    target_type: str
+    target_id: str
+    relation_type: str
+    description: str | None = None
+    created_by: int | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

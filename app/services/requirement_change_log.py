@@ -1,5 +1,7 @@
 """要件定義変更履歴サービスを定義するモジュール。"""
 
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
 from app.core import error_messages
@@ -24,15 +26,20 @@ class RequirementChangeLogAction:
     DELETED = "deleted"
     EXPORTED = "exported"
     PROMOTED_TO_REQUIREMENT = "promoted_to_requirement"
+    SORTED = "sorted"
 
 
 class RequirementChangeLogTargetType:
     """要件定義変更履歴の対象種別定数。"""
 
     COMMENT = "comment"
+    DETAIL = "detail"
     DOCUMENT = "document"
+    LINK = "link"
     OPEN_ISSUE = "open_issue"
+    RELATION = "relation"
     REQUIREMENT_ITEM = "requirement_item"
+    REVIEW = "review"
     SECTION = "section"
 
 
@@ -110,6 +117,9 @@ class RequirementChangeLogService:
         target_type: str | None = None,
         target_id: int | None = None,
         action: str | None = None,
+        changed_by: int | None = None,
+        changed_at_from: datetime | None = None,
+        changed_at_to: datetime | None = None,
     ) -> tuple[list[RequirementChangeLog], int]:
         """プロジェクト内の要件定義変更履歴一覧を取得する。
 
@@ -122,6 +132,9 @@ class RequirementChangeLogService:
             target_type: 絞り込み対象の変更対象種別。
             target_id: 絞り込み対象の変更対象ID。
             action: 絞り込み対象の操作種別。
+            changed_by: 絞り込み対象の変更ユーザーID。
+            changed_at_from: 変更日時の開始日時。
+            changed_at_to: 変更日時の終了日時。
 
         Returns:
             要件定義変更履歴一覧と総件数。
@@ -143,6 +156,9 @@ class RequirementChangeLogService:
                 target_type=target_type,
                 target_id=target_id,
                 action=action,
+                changed_by=changed_by,
+                changed_at_from=changed_at_from,
+                changed_at_to=changed_at_to,
             )
 
         document_ids = self.document_repository.list_ids_by_project(db, project_id)
@@ -157,6 +173,9 @@ class RequirementChangeLogService:
             target_type=target_type,
             target_id=target_id,
             action=action,
+            changed_by=changed_by,
+            changed_at_from=changed_at_from,
+            changed_at_to=changed_at_to,
         )
 
     def _get_document_in_project(

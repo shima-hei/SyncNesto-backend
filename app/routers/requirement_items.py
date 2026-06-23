@@ -67,6 +67,8 @@ def list_requirements(
     q: str | None = Query(default=None),
     status: str | None = Query(default=None),
     requirement_type: str | None = Query(default=None),
+    priority: str | None = Query(default=None),
+    owner_id: int | None = Query(default=None),
     _: User = Depends(require_project_permission("requirement:read")),
     db: Session = Depends(get_db),
 ) -> RequirementListResponse:
@@ -81,6 +83,8 @@ def list_requirements(
         q: 検索キーワード。
         status: 絞り込み対象のステータス。
         requirement_type: 絞り込み対象の要件種別。
+        priority: 絞り込み対象の優先度。
+        owner_id: 絞り込み対象のオーナーID。
         _: 認可済みユーザー。
         db: DBセッション。
 
@@ -97,6 +101,8 @@ def list_requirements(
         q=q,
         status=status,
         requirement_type=requirement_type,
+        priority=priority,
+        owner_id=owner_id,
     )
     return RequirementListResponse(
         items=[

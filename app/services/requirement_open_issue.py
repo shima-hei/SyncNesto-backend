@@ -1,5 +1,7 @@
 """要件定義未決事項サービスを定義するモジュール。"""
 
+from datetime import date
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -144,6 +146,9 @@ class RequirementOpenIssueService:
         q: str | None = None,
         status: str | None = None,
         assignee_id: int | None = None,
+        due_date_from: date | None = None,
+        due_date_to: date | None = None,
+        related_requirement_id: int | None = None,
     ) -> tuple[list[RequirementOpenIssue], int]:
         """プロジェクト内の未決事項一覧をページング付きで取得する。"""
         if document_id is not None:
@@ -167,6 +172,9 @@ class RequirementOpenIssueService:
             q=q,
             status=status,
             assignee_id=assignee_id,
+            due_date_from=due_date_from,
+            due_date_to=due_date_to,
+            related_requirement_id=related_requirement_id,
         )
 
     def get_open_issue(

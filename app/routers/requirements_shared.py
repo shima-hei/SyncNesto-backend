@@ -6,6 +6,7 @@ from app.models.requirement import RequirementDocument
 from app.models.user import User
 from app.presenters.requirement import collect_requirement_document_user_ids
 from app.services.requirement import (
+    RequirementApprovalService,
     RequirementChangeLogService,
     RequirementChildService,
     RequirementDocumentService,
@@ -18,6 +19,7 @@ from app.services.requirement import (
 from app.services.storage import StorageService
 from app.services.user import UserService
 
+approval_service = RequirementApprovalService()
 document_service = RequirementDocumentService()
 export_service = RequirementExportService()
 section_service = RequirementSectionService()

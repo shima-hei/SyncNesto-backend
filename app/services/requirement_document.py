@@ -17,6 +17,11 @@ from app.services.conflict import (
     raise_duplicate_after_rollback,
     raise_if_version_conflict,
 )
+from app.services.requirement_change_log import (
+    RequirementChangeLogAction,
+    RequirementChangeLogService,
+    RequirementChangeLogTargetType,
+)
 
 
 class RequirementDocumentService:
@@ -26,15 +31,18 @@ class RequirementDocumentService:
         self,
         repository: RequirementDocumentRepository | None = None,
         project_repository: ProjectRepository | None = None,
+        change_log_service: RequirementChangeLogService | None = None,
     ) -> None:
         """RequirementDocumentServiceを初期化する。
 
         Args:
             repository: 要件定義書Repository。
             project_repository: プロジェクトRepository。
+            change_log_service: 要件定義変更履歴Service。
         """
         self.repository = repository or RequirementDocumentRepository()
         self.project_repository = project_repository or ProjectRepository()
+        self.change_log_service = change_log_service or RequirementChangeLogService()
 
     def create_document(
         self,
@@ -73,12 +81,20 @@ class RequirementDocumentService:
             )
 
         try:
-            return self.repository.create(
+            document = self.repository.create(
                 db,
                 project_id=project_id,
                 document_in=document_in,
                 actor_id=actor_id,
             )
+            self._record_change_log(
+                db,
+                document=document,
+                action=RequirementChangeLogAction.CREATED,
+                new_value=self._build_document_snapshot(document),
+                changed_by=actor_id,
+            )
+            return document
         except IntegrityError as exc:
             raise_duplicate_after_rollback(
                 db,
@@ -194,13 +210,24 @@ class RequirementDocumentService:
                 error_messages.REQUIREMENT_DOCUMENT_CODE_ALREADY_EXISTS
             )
 
+        before_value = self._build_document_snapshot(document)
         try:
-            return self.repository.update(
+            updated_document = self.repository.update(
                 db,
                 document=document,
                 document_in=document_in,
                 actor_id=actor_id,
             )
+            self._record_change_log(
+                db,
+                document=updated_document,
+                action=RequirementChangeLogAction.UPDATED,
+                old_value=before_value,
+                new_value=self._build_document_snapshot(updated_document),
+                reason=getattr(document_in, "reason", None),
+                changed_by=actor_id,
+            )
+            return updated_document
         except IntegrityError as exc:
             raise_duplicate_after_rollback(
                 db,
@@ -228,7 +255,15 @@ class RequirementDocumentService:
             NotFoundError: 要件定義書が存在しない、またはプロジェクトに属さない場合。
         """
         document = self.get_document(db, project_id=project_id, document_id=document_id)
+        before_value = self._build_document_snapshot(document)
         self.repository.soft_delete(db, document=document, actor_id=actor_id)
+        self._record_change_log(
+            db,
+            document=document,
+            action=RequirementChangeLogAction.DELETED,
+            old_value=before_value,
+            changed_by=actor_id,
+        )
 
     def _ensure_project_exists(self, db: Session, project_id: int) -> None:
         """プロジェクトが存在することを確認する。
@@ -242,3 +277,45 @@ class RequirementDocumentService:
         """
         if self.project_repository.get_by_id(db, project_id) is None:
             raise NotFoundError(error_messages.PROJECT_NOT_FOUND)
+
+    def _record_change_log(
+        self,
+        db: Session,
+        *,
+        document: RequirementDocument,
+        action: str,
+        old_value: dict[str, object] | None = None,
+        new_value: dict[str, object] | None = None,
+        reason: str | None = None,
+        changed_by: int | None = None,
+    ) -> None:
+        """要件定義書の変更履歴を記録する。"""
+        self.change_log_service.record(
+            db,
+            document_id=document.id,
+            target_type=RequirementChangeLogTargetType.DOCUMENT,
+            target_id=document.id,
+            action=action,
+            old_value=old_value,
+            new_value=new_value,
+            reason=reason,
+            changed_by=changed_by,
+        )
+
+    def _build_document_snapshot(
+        self,
+        document: RequirementDocument,
+    ) -> dict[str, object]:
+        """変更履歴に保存する要件定義書スナップショットを作成する。"""
+        return {
+            "id": document.id,
+            "project_id": document.project_id,
+            "title": document.title,
+            "document_code": document.document_code,
+            "status": document.status,
+            "purpose": document.purpose,
+            "author_id": document.author_id,
+            "reviewer_id": document.reviewer_id,
+            "approver_id": document.approver_id,
+            "version": document.version,
+        }

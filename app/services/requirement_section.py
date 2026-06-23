@@ -16,6 +16,11 @@ from app.schemas.requirement import (
     RequirementSectionUpdate,
 )
 from app.services.conflict import raise_if_version_conflict
+from app.services.requirement_change_log import (
+    RequirementChangeLogAction,
+    RequirementChangeLogService,
+    RequirementChangeLogTargetType,
+)
 
 
 class RequirementSectionService:
@@ -25,17 +30,20 @@ class RequirementSectionService:
         self,
         repository: RequirementSectionRepository | None = None,
         document_repository: RequirementDocumentRepository | None = None,
+        change_log_service: RequirementChangeLogService | None = None,
     ) -> None:
         """RequirementSectionServiceを初期化する。
 
         Args:
             repository: 要件定義セクションRepository。
             document_repository: 要件定義書Repository。
+            change_log_service: 要件定義変更履歴Service。
         """
         self.repository = repository or RequirementSectionRepository()
         self.document_repository = (
             document_repository or RequirementDocumentRepository()
         )
+        self.change_log_service = change_log_service or RequirementChangeLogService()
 
     def create_section(
         self,
@@ -66,12 +74,20 @@ class RequirementSectionService:
             project_id=project_id,
             document_id=document_id,
         )
-        return self.repository.create(
+        section = self.repository.create(
             db,
             document_id=document_id,
             section_in=section_in,
             actor_id=actor_id,
         )
+        self._record_section_change_log(
+            db,
+            section=section,
+            action=RequirementChangeLogAction.CREATED,
+            new_value=self._build_section_snapshot(section),
+            changed_by=actor_id,
+        )
+        return section
 
     def list_sections(
         self,
@@ -161,12 +177,22 @@ class RequirementSectionService:
             requested_version=section_in.version,
             current=RequirementSectionRead.model_validate(section).model_dump(),
         )
-        return self.repository.update(
+        before_value = self._build_section_snapshot(section)
+        updated_section = self.repository.update(
             db,
             section=section,
             section_in=section_in,
             actor_id=actor_id,
         )
+        self._record_section_change_log(
+            db,
+            section=updated_section,
+            action=RequirementChangeLogAction.UPDATED,
+            old_value=before_value,
+            new_value=self._build_section_snapshot(updated_section),
+            changed_by=actor_id,
+        )
+        return updated_section
 
     def update_sort_order(
         self,
@@ -217,12 +243,27 @@ class RequirementSectionService:
 
         if not target_sections:
             return self.repository.list_by_document(db, document_id)
-        return self.repository.update_sort_orders(
+        updated_sections = self.repository.update_sort_orders(
             db,
             sections=target_sections,
             sort_orders_by_id=sort_orders_by_id,
             actor_id=actor_id,
         )
+        self.change_log_service.record(
+            db,
+            document_id=document_id,
+            target_type=RequirementChangeLogTargetType.DOCUMENT,
+            target_id=document_id,
+            action=RequirementChangeLogAction.SORTED,
+            new_value={
+                "sort_orders": [
+                    {"section_id": section.id, "sort_order": section.sort_order}
+                    for section in updated_sections
+                ]
+            },
+            changed_by=actor_id,
+        )
+        return updated_sections
 
     def delete_section(
         self,
@@ -244,7 +285,15 @@ class RequirementSectionService:
             NotFoundError: セクションが存在しない、またはプロジェクトに属さない場合。
         """
         section = self.get_section(db, project_id=project_id, section_id=section_id)
+        before_value = self._build_section_snapshot(section)
         self.repository.soft_delete(db, section=section, actor_id=actor_id)
+        self._record_section_change_log(
+            db,
+            section=section,
+            action=RequirementChangeLogAction.DELETED,
+            old_value=before_value,
+            changed_by=actor_id,
+        )
 
     def _get_document_in_project(
         self,
@@ -258,3 +307,41 @@ class RequirementSectionService:
         if document is None or document.project_id != project_id:
             raise NotFoundError(error_messages.REQUIREMENT_DOCUMENT_NOT_FOUND)
         return document
+
+    def _record_section_change_log(
+        self,
+        db: Session,
+        *,
+        section: RequirementSection,
+        action: str,
+        old_value: dict[str, object] | None = None,
+        new_value: dict[str, object] | None = None,
+        changed_by: int | None = None,
+    ) -> None:
+        """要件定義セクションの変更履歴を記録する。"""
+        self.change_log_service.record(
+            db,
+            document_id=section.document_id,
+            target_type=RequirementChangeLogTargetType.SECTION,
+            target_id=section.id,
+            action=action,
+            old_value=old_value,
+            new_value=new_value,
+            changed_by=changed_by,
+        )
+
+    def _build_section_snapshot(
+        self,
+        section: RequirementSection,
+    ) -> dict[str, object]:
+        """変更履歴に保存するセクションスナップショットを作成する。"""
+        return {
+            "id": section.id,
+            "document_id": section.document_id,
+            "title": section.title,
+            "section_type": section.section_type,
+            "content": section.content,
+            "sort_order": section.sort_order,
+            "status": section.status,
+            "version": section.version,
+        }

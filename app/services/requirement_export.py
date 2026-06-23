@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 from datetime import date, datetime
+from html import escape
 
 from sqlalchemy.orm import Session
 
@@ -101,7 +102,7 @@ class RequirementExportService:
             BadRequestError: 未対応の出力形式が指定された場合。
             NotFoundError: 要件定義書が存在しない、またはプロジェクトに属さない場合。
         """
-        if export_in.format != "markdown":
+        if export_in.format not in {"markdown", "html"}:
             raise BadRequestError(error_messages.UNSUPPORTED_REQUIREMENT_EXPORT_FORMAT)
 
         document = self._get_document_in_project(
@@ -109,11 +110,16 @@ class RequirementExportService:
             project_id=project_id,
             document_id=document_id,
         )
-        content = self._build_markdown(
+        markdown_content = self._build_markdown(
             db,
             document=document,
             include_comments=export_in.include_comments,
             include_change_logs=export_in.include_change_logs,
+        )
+        content = (
+            self._build_html(markdown_content)
+            if export_in.format == "html"
+            else markdown_content
         )
         self.change_log_service.record(
             db,
@@ -129,6 +135,68 @@ class RequirementExportService:
             changed_by=actor_id,
         )
         return RequirementDocumentExportRead(format=export_in.format, content=content)
+
+    def _build_html(self, markdown_content: str) -> str:
+        """Markdown本文を簡易HTMLへ変換する。"""
+        lines = [
+            "<!doctype html>",
+            '<html lang="ja">',
+            "<head>",
+            '<meta charset="utf-8">',
+            "<title>Requirement Document</title>",
+            "</head>",
+            "<body>",
+        ]
+        in_list = False
+        in_paragraph = False
+
+        for raw_line in markdown_content.splitlines():
+            line = raw_line.strip()
+            if not line:
+                if in_paragraph:
+                    lines.append("</p>")
+                    in_paragraph = False
+                if in_list:
+                    lines.append("</ul>")
+                    in_list = False
+                continue
+
+            if line.startswith("#"):
+                if in_paragraph:
+                    lines.append("</p>")
+                    in_paragraph = False
+                if in_list:
+                    lines.append("</ul>")
+                    in_list = False
+                level = min(len(line) - len(line.lstrip("#")), 6)
+                text = line[level:].strip()
+                lines.append(f"<h{level}>{escape(text)}</h{level}>")
+                continue
+
+            if line.startswith("- "):
+                if in_paragraph:
+                    lines.append("</p>")
+                    in_paragraph = False
+                if not in_list:
+                    lines.append("<ul>")
+                    in_list = True
+                lines.append(f"<li>{escape(line[2:])}</li>")
+                continue
+
+            if in_list:
+                lines.append("</ul>")
+                in_list = False
+            if not in_paragraph:
+                lines.append("<p>")
+                in_paragraph = True
+            lines.append(f"{escape(line)}<br>")
+
+        if in_paragraph:
+            lines.append("</p>")
+        if in_list:
+            lines.append("</ul>")
+        lines.extend(["</body>", "</html>"])
+        return "\n".join(lines) + "\n"
 
     def _get_document_in_project(
         self,

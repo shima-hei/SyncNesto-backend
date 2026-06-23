@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.routers import (
+    requirement_approvals,
     requirement_change_logs,
     requirement_children,
     requirement_documents,
@@ -13,6 +14,7 @@ from app.routers import (
 )
 
 router = APIRouter()
+router.include_router(requirement_approvals.router)
 router.include_router(requirement_documents.router)
 router.include_router(requirement_sections.router)
 router.include_router(requirement_items.router)

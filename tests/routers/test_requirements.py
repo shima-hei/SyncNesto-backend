@@ -1,7 +1,7 @@
 """要件定義APIのテスト。"""
 
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -9,12 +9,14 @@ from sqlalchemy.orm import Session
 from app.models.project import Project, ProjectMember
 from app.models.requirement import (
     Requirement,
+    RequirementApproval,
     RequirementChangeLog,
     RequirementComment,
     RequirementDetail,
     RequirementDocument,
     RequirementLink,
     RequirementOpenIssue,
+    RequirementRelation,
     RequirementReview,
     RequirementRevision,
     RequirementSection,
@@ -378,6 +380,36 @@ def test_export_requirement_document_rejects_unsupported_format(
     }
 
 
+def test_export_requirement_document_returns_html(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+) -> None:
+    """要件定義書をHTML出力できることを確認する。"""
+    user = create_test_user(email="viewer@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(
+        project=project,
+        title="HTML Export",
+        document_code="RD-HTML",
+    )
+    assign_project_role(user=user, project=project, role_key="viewer")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/requirement-documents/{document.id}/exports",
+        json={"format": "html"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["format"] == "html"
+    assert "<!doctype html>" in response.json()["content"]
+    assert "<h1>HTML Export</h1>" in response.json()["content"]
+    assert "<li>文書コード: RD-HTML</li>" in response.json()["content"]
+
+
 def test_update_requirement_document_rejects_stale_version(
     client: TestClient,
     create_test_user: Callable[..., User],
@@ -650,7 +682,7 @@ def test_create_open_issue_rejects_duplicate_issue_code(
     }
 
 
-def test_list_open_issues_filters_by_document_status_and_assignee(
+def test_list_open_issues_filters_by_document_status_assignee_and_dates(
     client: TestClient,
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
@@ -658,13 +690,27 @@ def test_list_open_issues_filters_by_document_status_and_assignee(
     create_test_requirement_document: Callable[..., RequirementDocument],
     db: Session,
 ) -> None:
-    """未決事項一覧がdocument/status/assigneeで絞り込みできることを確認する。"""
+    """未決事項一覧が複数条件で絞り込みできることを確認する。"""
     user = create_test_user(email="viewer@example.com")
     assignee = create_test_user(email="assignee@example.com")
     project = create_test_project(name="Project")
     document = create_test_requirement_document(project=project)
     other_document = create_test_requirement_document(project=project)
     assign_project_role(user=user, project=project, role_key="viewer")
+    related_requirement = Requirement(
+        document_id=document.id,
+        requirement_code="REQ-RELATED",
+        requirement_type="functional",
+        title="Related",
+    )
+    other_related_requirement = Requirement(
+        document_id=document.id,
+        requirement_code="REQ-OTHER-RELATED",
+        requirement_type="functional",
+        title="Other Related",
+    )
+    db.add_all([related_requirement, other_related_requirement])
+    db.flush()
     db.add_all(
         [
             RequirementOpenIssue(
@@ -673,6 +719,8 @@ def test_list_open_issues_filters_by_document_status_and_assignee(
                 title="A",
                 status="open",
                 assignee_id=assignee.id,
+                due_date=datetime(2026, 6, 20, tzinfo=UTC).date(),
+                related_requirement_id=related_requirement.id,
             ),
             RequirementOpenIssue(
                 document_id=document.id,
@@ -680,6 +728,8 @@ def test_list_open_issues_filters_by_document_status_and_assignee(
                 title="B",
                 status="closed",
                 assignee_id=assignee.id,
+                due_date=datetime(2026, 6, 25, tzinfo=UTC).date(),
+                related_requirement_id=related_requirement.id,
             ),
             RequirementOpenIssue(
                 document_id=other_document.id,
@@ -687,6 +737,17 @@ def test_list_open_issues_filters_by_document_status_and_assignee(
                 title="C",
                 status="open",
                 assignee_id=assignee.id,
+                due_date=datetime(2026, 6, 20, tzinfo=UTC).date(),
+                related_requirement_id=related_requirement.id,
+            ),
+            RequirementOpenIssue(
+                document_id=document.id,
+                issue_code="ISSUE-D",
+                title="D",
+                status="open",
+                assignee_id=assignee.id,
+                due_date=datetime(2026, 7, 1, tzinfo=UTC).date(),
+                related_requirement_id=other_related_requirement.id,
             ),
         ]
     )
@@ -696,6 +757,8 @@ def test_list_open_issues_filters_by_document_status_and_assignee(
     response = client.get(
         f"/projects/{project.id}/open-issues"
         f"?document_id={document.id}&status=open&assignee_id={assignee.id}"
+        "&due_date_from=2026-06-01&due_date_to=2026-06-30"
+        f"&related_requirement_id={related_requirement.id}"
     )
 
     assert response.status_code == 200
@@ -842,6 +905,182 @@ def test_list_requirement_change_logs_allows_viewer(
     assert response.json()["total"] == 1
     assert response.json()["items"][0]["document_id"] == document.id
     assert response.json()["items"][0]["target_type"] == "open_issue"
+
+
+def test_list_requirement_change_logs_filters_by_actor_and_changed_at(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """変更履歴一覧がchanged_by/changed_at範囲で絞り込みできることを確認する。"""
+    viewer = create_test_user(email="viewer@example.com")
+    actor = create_test_user(email="actor@example.com")
+    other_actor = create_test_user(email="other-actor@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=viewer, project=project, role_key="viewer")
+    base_time = datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
+    db.add_all(
+        [
+            RequirementChangeLog(
+                document_id=document.id,
+                target_type="requirement_item",
+                target_id=1,
+                action="updated",
+                changed_by=actor.id,
+                changed_at=base_time,
+            ),
+            RequirementChangeLog(
+                document_id=document.id,
+                target_type="requirement_item",
+                target_id=2,
+                action="updated",
+                changed_by=actor.id,
+                changed_at=base_time - timedelta(days=2),
+            ),
+            RequirementChangeLog(
+                document_id=document.id,
+                target_type="requirement_item",
+                target_id=3,
+                action="updated",
+                changed_by=other_actor.id,
+                changed_at=base_time,
+            ),
+        ]
+    )
+    db.commit()
+    authorize_as(client, viewer)
+
+    response = client.get(
+        f"/projects/{project.id}/change-logs"
+        f"?changed_by={actor.id}"
+        "&changed_at_from=2026-05-31T00:00:00Z"
+        "&changed_at_to=2026-06-02T00:00:00Z"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["target_id"] == 1
+
+
+def test_request_and_approve_requirement_approval_records_change_logs(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """承認申請と承認ができ、変更履歴が記録されることを確認する。"""
+    requester = create_test_user(email="requester@example.com")
+    approver = create_test_user(email="approver@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=requester, project=project, role_key="manager")
+    assign_project_role(user=approver, project=project, role_key="manager")
+    authorize_as(client, requester)
+
+    request_response = client.post(
+        f"/projects/{project.id}/approvals/request",
+        json={
+            "target_type": "document",
+            "target_id": document.id,
+            "approver_id": approver.id,
+            "comment": "承認をお願いします。",
+        },
+    )
+
+    assert request_response.status_code == 201
+    approval_id = request_response.json()["id"]
+    assert request_response.json()["document_id"] == document.id
+    assert request_response.json()["status"] == "requested"
+    assert request_response.json()["requested_by"] == requester.id
+    assert request_response.json()["approver_id"] == approver.id
+
+    authorize_as(client, approver)
+    approve_response = client.post(
+        f"/projects/{project.id}/approvals/{approval_id}/approve",
+        json={"comment": "承認します。"},
+    )
+
+    assert approve_response.status_code == 200
+    assert approve_response.json()["status"] == "approved"
+    assert approve_response.json()["approved_at"] is not None
+    assert approve_response.json()["comment"] == "承認します。"
+
+    actions = [
+        row[0]
+        for row in db.query(RequirementChangeLog.action)
+        .order_by(RequirementChangeLog.id)
+        .all()
+    ]
+    assert actions == ["approval.requested", "approval.approved"]
+
+
+def test_list_requirement_approvals_filters_and_rejects_decided_retry(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """承認一覧の絞り込みと判断済み承認の再判断拒否を確認する。"""
+    user = create_test_user(email="manager@example.com")
+    approver = create_test_user(email="approver@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    other_document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="manager")
+    db.add_all(
+        [
+            RequirementApproval(
+                document_id=document.id,
+                target_type="document",
+                target_id=document.id,
+                status="rejected",
+                approver_id=approver.id,
+                requested_by=user.id,
+            ),
+            RequirementApproval(
+                document_id=other_document.id,
+                target_type="document",
+                target_id=other_document.id,
+                status="requested",
+                approver_id=approver.id,
+                requested_by=user.id,
+            ),
+        ]
+    )
+    db.commit()
+    rejected_approval = (
+        db.query(RequirementApproval)
+        .filter(RequirementApproval.document_id == document.id)
+        .one()
+    )
+    authorize_as(client, user)
+
+    list_response = client.get(
+        f"/projects/{project.id}/approvals"
+        f"?target_type=document&target_id={document.id}&status=rejected"
+        f"&approver_id={approver.id}"
+    )
+    retry_response = client.post(
+        f"/projects/{project.id}/approvals/{rejected_approval.id}/approve",
+        json={"comment": "再承認"},
+    )
+
+    assert list_response.status_code == 200
+    assert list_response.json()["total"] == 1
+    assert list_response.json()["items"][0]["id"] == rejected_approval.id
+    assert retry_response.status_code == 400
+    assert retry_response.json() == {
+        "message": "Requirement approval already decided",
+        "code": "BAD_REQUEST",
+    }
 
 
 def test_create_target_comment_for_section_records_change_log(
@@ -1253,7 +1492,7 @@ def test_create_requirement_rejects_duplicate_requirement_code(
     }
 
 
-def test_list_requirements_filters_by_document_and_status(
+def test_list_requirements_filters_by_document_status_priority_and_owner(
     client: TestClient,
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
@@ -1261,8 +1500,9 @@ def test_list_requirements_filters_by_document_and_status(
     create_test_requirement_document: Callable[..., RequirementDocument],
     db: Session,
 ) -> None:
-    """要件一覧がdocument_id/statusで絞り込みできることを確認する。"""
+    """要件一覧が複数条件で絞り込みできることを確認する。"""
     user = create_test_user(email="viewer@example.com")
+    owner = create_test_user(email="owner@example.com")
     project = create_test_project(name="Project")
     document = create_test_requirement_document(project=project)
     other_document = create_test_requirement_document(project=project)
@@ -1285,6 +1525,8 @@ def test_list_requirements_filters_by_document_and_status(
                 requirement_type="functional",
                 title="A",
                 status="approved",
+                priority="must",
+                owner_id=owner.id,
             ),
             Requirement(
                 document_id=document.id,
@@ -1292,6 +1534,8 @@ def test_list_requirements_filters_by_document_and_status(
                 requirement_type="business",
                 title="B",
                 status="draft",
+                priority="must",
+                owner_id=owner.id,
             ),
             Requirement(
                 document_id=other_document.id,
@@ -1299,6 +1543,8 @@ def test_list_requirements_filters_by_document_and_status(
                 requirement_type="functional",
                 title="C",
                 status="approved",
+                priority="must",
+                owner_id=owner.id,
             ),
         ]
     )
@@ -1308,6 +1554,7 @@ def test_list_requirements_filters_by_document_and_status(
     response = client.get(
         f"/projects/{project.id}/requirements"
         f"?document_id={document.id}&section_id={section.id}&status=approved"
+        f"&priority=must&owner_id={owner.id}"
     )
 
     assert response.status_code == 200
@@ -1566,6 +1813,74 @@ def test_requirement_link_create_list_delete_allows_member(
     assert list_response.json()[0]["id"] == link_id
     assert delete_response.status_code == 204
     assert db.get(RequirementLink, link_id) is None
+
+
+def test_requirement_relation_create_list_delete_allows_member(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """memberが要件関連を作成、取得、削除できることを確認する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="member")
+    source_requirement = Requirement(
+        document_id=document.id,
+        requirement_code="REQ-SOURCE",
+        requirement_type="functional",
+        title="Source",
+    )
+    target_requirement = Requirement(
+        document_id=document.id,
+        requirement_code="REQ-TARGET",
+        requirement_type="functional",
+        title="Target",
+    )
+    db.add_all([source_requirement, target_requirement])
+    db.commit()
+    db.refresh(source_requirement)
+    db.refresh(target_requirement)
+    authorize_as(client, user)
+
+    create_response = client.post(
+        f"/projects/{project.id}/requirements/{source_requirement.id}/relations",
+        json={
+            "target_type": "requirement_item",
+            "target_id": str(target_requirement.id),
+            "relation_type": "depends_on",
+            "description": "対象要件に依存する。",
+        },
+    )
+    relation_id = create_response.json()["id"]
+    list_response = client.get(
+        f"/projects/{project.id}/requirements/{source_requirement.id}/relations"
+    )
+    delete_response = client.delete(
+        f"/projects/{project.id}/requirements/{source_requirement.id}"
+        f"/relations/{relation_id}"
+    )
+
+    assert create_response.status_code == 201
+    assert create_response.json()["document_id"] == document.id
+    assert create_response.json()["source_requirement_id"] == source_requirement.id
+    assert create_response.json()["target_id"] == str(target_requirement.id)
+    assert create_response.json()["relation_type"] == "depends_on"
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["id"] == relation_id
+    assert delete_response.status_code == 204
+    assert db.get(RequirementRelation, relation_id) is None
+
+    actions = [
+        row[0]
+        for row in db.query(RequirementChangeLog.action)
+        .order_by(RequirementChangeLog.id)
+        .all()
+    ]
+    assert actions == ["created", "deleted"]
 
 
 def test_requirement_comment_create_list_delete_allows_member(

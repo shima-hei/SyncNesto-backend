@@ -15,6 +15,8 @@ from app.schemas.requirement import (
     RequirementDetailUpdate,
     RequirementLinkCreate,
     RequirementLinkRead,
+    RequirementRelationCreate,
+    RequirementRelationRead,
     RequirementReviewCreate,
     RequirementReviewRead,
     RequirementReviewUpdate,
@@ -32,7 +34,7 @@ def create_requirement_detail(
     project_id: int,
     requirement_id: int,
     detail_in: RequirementDetailCreate,
-    _: User = Depends(require_project_permission("requirement:update")),
+    current_user: User = Depends(require_project_permission("requirement:update")),
     db: Session = Depends(get_db),
 ) -> RequirementDetailRead:
     """要件詳細を作成する。
@@ -41,7 +43,7 @@ def create_requirement_detail(
         project_id: 作成対象のプロジェクトID。
         requirement_id: 作成対象の要件ID。
         detail_in: 要件詳細の作成入力値。
-        _: 認可済みユーザー。
+        current_user: 認証済みユーザー。
         db: DBセッション。
 
     Returns:
@@ -52,6 +54,7 @@ def create_requirement_detail(
         project_id=project_id,
         requirement_id=requirement_id,
         detail_in=detail_in,
+        actor_id=current_user.id,
     )
     return RequirementDetailRead.model_validate(detail)
 
@@ -94,7 +97,7 @@ def update_requirement_detail(
     requirement_id: int,
     detail_id: int,
     detail_in: RequirementDetailUpdate,
-    _: User = Depends(require_project_permission("requirement:update")),
+    current_user: User = Depends(require_project_permission("requirement:update")),
     db: Session = Depends(get_db),
 ) -> RequirementDetailRead:
     """要件詳細を更新する。
@@ -104,7 +107,7 @@ def update_requirement_detail(
         requirement_id: 更新対象の要件ID。
         detail_id: 更新対象の要件詳細ID。
         detail_in: 要件詳細の更新入力値。
-        _: 認可済みユーザー。
+        current_user: 認証済みユーザー。
         db: DBセッション。
 
     Returns:
@@ -116,6 +119,7 @@ def update_requirement_detail(
         requirement_id=requirement_id,
         detail_id=detail_id,
         detail_in=detail_in,
+        actor_id=current_user.id,
     )
     return RequirementDetailRead.model_validate(detail)
 
@@ -128,7 +132,7 @@ def delete_requirement_detail(
     project_id: int,
     requirement_id: int,
     detail_id: int,
-    _: User = Depends(require_project_permission("requirement:update")),
+    current_user: User = Depends(require_project_permission("requirement:update")),
     db: Session = Depends(get_db),
 ) -> None:
     """要件詳細を物理削除する。
@@ -137,7 +141,7 @@ def delete_requirement_detail(
         project_id: 削除対象のプロジェクトID。
         requirement_id: 削除対象の要件ID。
         detail_id: 削除対象の要件詳細ID。
-        _: 認可済みユーザー。
+        current_user: 認証済みユーザー。
         db: DBセッション。
     """
     shared.requirement_child_service.delete_detail(
@@ -145,6 +149,7 @@ def delete_requirement_detail(
         project_id=project_id,
         requirement_id=requirement_id,
         detail_id=detail_id,
+        actor_id=current_user.id,
     )
 
 
@@ -157,7 +162,7 @@ def create_requirement_link(
     project_id: int,
     requirement_id: int,
     link_in: RequirementLinkCreate,
-    _: User = Depends(require_project_permission("requirement:link")),
+    current_user: User = Depends(require_project_permission("requirement:link")),
     db: Session = Depends(get_db),
 ) -> RequirementLinkRead:
     """要件リンクを作成する。
@@ -166,7 +171,7 @@ def create_requirement_link(
         project_id: 作成対象のプロジェクトID。
         requirement_id: 作成対象の要件ID。
         link_in: 要件リンクの作成入力値。
-        _: 認可済みユーザー。
+        current_user: 認証済みユーザー。
         db: DBセッション。
 
     Returns:
@@ -177,6 +182,7 @@ def create_requirement_link(
         project_id=project_id,
         requirement_id=requirement_id,
         link_in=link_in,
+        actor_id=current_user.id,
     )
     return RequirementLinkRead.model_validate(link)
 
@@ -218,7 +224,7 @@ def delete_requirement_link(
     project_id: int,
     requirement_id: int,
     link_id: int,
-    _: User = Depends(require_project_permission("requirement:link")),
+    current_user: User = Depends(require_project_permission("requirement:link")),
     db: Session = Depends(get_db),
 ) -> None:
     """要件リンクを物理削除する。
@@ -227,7 +233,7 @@ def delete_requirement_link(
         project_id: 削除対象のプロジェクトID。
         requirement_id: 削除対象の要件ID。
         link_id: 削除対象の要件リンクID。
-        _: 認可済みユーザー。
+        current_user: 認証済みユーザー。
         db: DBセッション。
     """
     shared.requirement_child_service.delete_link(
@@ -235,6 +241,101 @@ def delete_requirement_link(
         project_id=project_id,
         requirement_id=requirement_id,
         link_id=link_id,
+        actor_id=current_user.id,
+    )
+
+
+@router.post(
+    "/requirements/{requirement_id}/relations",
+    response_model=RequirementRelationRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_requirement_relation(
+    project_id: int,
+    requirement_id: int,
+    relation_in: RequirementRelationCreate,
+    current_user: User = Depends(require_project_permission("requirement:link")),
+    db: Session = Depends(get_db),
+) -> RequirementRelationRead:
+    """要件関連を作成する。
+
+    Args:
+        project_id: 作成対象のプロジェクトID。
+        requirement_id: 関連元の要件ID。
+        relation_in: 要件関連の作成入力値。
+        current_user: 認証済みユーザー。
+        db: DBセッション。
+
+    Returns:
+        作成された要件関連。
+    """
+    relation = shared.requirement_child_service.create_relation(
+        db,
+        project_id=project_id,
+        requirement_id=requirement_id,
+        relation_in=relation_in,
+        actor_id=current_user.id,
+    )
+    return RequirementRelationRead.model_validate(relation)
+
+
+@router.get(
+    "/requirements/{requirement_id}/relations",
+    response_model=list[RequirementRelationRead],
+)
+def list_requirement_relations(
+    project_id: int,
+    requirement_id: int,
+    _: User = Depends(require_project_permission("requirement:read")),
+    db: Session = Depends(get_db),
+) -> list[RequirementRelationRead]:
+    """要件関連一覧を取得する。
+
+    Args:
+        project_id: 取得対象のプロジェクトID。
+        requirement_id: 取得対象の要件ID。
+        _: 認可済みユーザー。
+        db: DBセッション。
+
+    Returns:
+        要件関連一覧。
+    """
+    relations = shared.requirement_child_service.list_relations(
+        db,
+        project_id=project_id,
+        requirement_id=requirement_id,
+    )
+    return [
+        RequirementRelationRead.model_validate(relation) for relation in relations
+    ]
+
+
+@router.delete(
+    "/requirements/{requirement_id}/relations/{relation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_requirement_relation(
+    project_id: int,
+    requirement_id: int,
+    relation_id: int,
+    current_user: User = Depends(require_project_permission("requirement:link")),
+    db: Session = Depends(get_db),
+) -> None:
+    """要件関連を物理削除する。
+
+    Args:
+        project_id: 削除対象のプロジェクトID。
+        requirement_id: 関連元の要件ID。
+        relation_id: 削除対象の要件関連ID。
+        current_user: 認証済みユーザー。
+        db: DBセッション。
+    """
+    shared.requirement_child_service.delete_relation(
+        db,
+        project_id=project_id,
+        requirement_id=requirement_id,
+        relation_id=relation_id,
+        actor_id=current_user.id,
     )
 
 
@@ -338,7 +439,7 @@ def create_requirement_review(
     project_id: int,
     requirement_id: int,
     review_in: RequirementReviewCreate,
-    _: User = Depends(require_project_permission("requirement:review")),
+    current_user: User = Depends(require_project_permission("requirement:review")),
     db: Session = Depends(get_db),
 ) -> RequirementReviewRead:
     """要件レビューを作成する。
@@ -347,7 +448,7 @@ def create_requirement_review(
         project_id: 作成対象のプロジェクトID。
         requirement_id: 作成対象の要件ID。
         review_in: 要件レビューの作成入力値。
-        _: 認可済みユーザー。
+        current_user: 認証済みユーザー。
         db: DBセッション。
 
     Returns:
@@ -358,6 +459,7 @@ def create_requirement_review(
         project_id=project_id,
         requirement_id=requirement_id,
         review_in=review_in,
+        actor_id=current_user.id,
     )
     return RequirementReviewRead.model_validate(review)
 
@@ -400,7 +502,7 @@ def update_requirement_review(
     requirement_id: int,
     review_id: int,
     review_in: RequirementReviewUpdate,
-    _: User = Depends(require_project_permission("requirement:review")),
+    current_user: User = Depends(require_project_permission("requirement:review")),
     db: Session = Depends(get_db),
 ) -> RequirementReviewRead:
     """要件レビューを更新する。
@@ -410,7 +512,7 @@ def update_requirement_review(
         requirement_id: 更新対象の要件ID。
         review_id: 更新対象の要件レビューID。
         review_in: 要件レビューの更新入力値。
-        _: 認可済みユーザー。
+        current_user: 認証済みユーザー。
         db: DBセッション。
 
     Returns:
@@ -422,6 +524,7 @@ def update_requirement_review(
         requirement_id=requirement_id,
         review_id=review_id,
         review_in=review_in,
+        actor_id=current_user.id,
     )
     return RequirementReviewRead.model_validate(review)
 
@@ -434,7 +537,7 @@ def delete_requirement_review(
     project_id: int,
     requirement_id: int,
     review_id: int,
-    _: User = Depends(require_project_permission("requirement:review")),
+    current_user: User = Depends(require_project_permission("requirement:review")),
     db: Session = Depends(get_db),
 ) -> None:
     """要件レビューを物理削除する。
@@ -443,7 +546,7 @@ def delete_requirement_review(
         project_id: 削除対象のプロジェクトID。
         requirement_id: 削除対象の要件ID。
         review_id: 削除対象の要件レビューID。
-        _: 認可済みユーザー。
+        current_user: 認証済みユーザー。
         db: DBセッション。
     """
     shared.requirement_child_service.delete_review(
@@ -451,4 +554,5 @@ def delete_requirement_review(
         project_id=project_id,
         requirement_id=requirement_id,
         review_id=review_id,
+        actor_id=current_user.id,
     )

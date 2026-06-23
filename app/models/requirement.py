@@ -538,6 +538,88 @@ class RequirementChangeLog(Base):
     )
 
 
+class RequirementApproval(Base):
+    """要件定義対象の承認状態を管理するモデル。"""
+
+    __tablename__ = "requirement_approvals"
+    __table_args__ = {
+        "comment": db_comment(
+            "要件定義承認",
+            "要件定義対象の承認申請と承認結果を管理するテーブル",
+        ),
+    }
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        index=True,
+        comment=db_comment("承認ID", "承認を一意に識別するID"),
+    )
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("requirement_documents.id"),
+        index=True,
+        comment=db_comment("要件定義書ID", "承認対象が属する要件定義書ID"),
+    )
+    target_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+        comment=db_comment("対象種別", "承認対象の種別"),
+    )
+    target_id: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        index=True,
+        comment=db_comment("対象ID", "承認対象のID"),
+    )
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="requested",
+        comment=db_comment("ステータス", "requested/approved/rejectedの状態"),
+    )
+    approver_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=False,
+        comment=db_comment("承認者ID", "承認判断を行うユーザーID"),
+    )
+    requested_by: Mapped[int] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=False,
+        comment=db_comment("申請者ID", "承認申請を行ったユーザーID"),
+    )
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        comment=db_comment("申請日時", "承認申請が行われた日時"),
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment=db_comment("承認日時", "承認された日時"),
+    )
+    rejected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment=db_comment("差し戻し日時", "差し戻しされた日時"),
+    )
+    comment: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment=db_comment("コメント", "承認申請または判断時のコメント"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        comment=db_comment("作成日時", "レコードが作成された日時"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        comment=db_comment("更新日時", "レコードが最後に更新された日時"),
+    )
+
+
 class RequirementTargetComment(Base):
     """要件定義内の任意対象へのコメントを管理するモデル。"""
 
@@ -613,6 +695,64 @@ class RequirementTargetComment(Base):
         DateTime(timezone=True),
         nullable=True,
         comment=db_comment("削除日時", "論理削除された日時"),
+    )
+
+
+class RequirementRelation(Base):
+    """要件と他リソースの意味付き関連を管理するモデル。"""
+
+    __tablename__ = "requirement_relations"
+    __table_args__ = {
+        "comment": db_comment(
+            "要件関連",
+            "要件と他リソースの意味付き関連を管理するテーブル",
+        ),
+    }
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        index=True,
+        comment=db_comment("要件関連ID", "要件関連を一意に識別するID"),
+    )
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("requirement_documents.id"),
+        index=True,
+        comment=db_comment("要件定義書ID", "関連元要件が属する要件定義書ID"),
+    )
+    source_requirement_id: Mapped[int] = mapped_column(
+        ForeignKey("requirements.id"),
+        index=True,
+        comment=db_comment("関連元要件ID", "関連元の要件ID"),
+    )
+    target_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        comment=db_comment("関連先種別", "関連先リソースの種別"),
+    )
+    target_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        comment=db_comment("関連先ID", "関連先リソースのIDまたは外部識別子"),
+    )
+    relation_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        comment=db_comment("関連種別", "depends_on/blocks/relates_toなどの関連種別"),
+    )
+    description: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment=db_comment("説明", "関連の補足説明"),
+    )
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        comment=db_comment("作成者ID", "この関連を作成したユーザーID"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        comment=db_comment("作成日時", "レコードが作成された日時"),
     )
 
 

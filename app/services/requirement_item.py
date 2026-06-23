@@ -26,6 +26,11 @@ from app.services.conflict import (
     raise_duplicate_after_rollback,
     raise_if_version_conflict,
 )
+from app.services.requirement_change_log import (
+    RequirementChangeLogAction,
+    RequirementChangeLogService,
+    RequirementChangeLogTargetType,
+)
 
 
 class RequirementService:
@@ -37,6 +42,7 @@ class RequirementService:
         document_repository: RequirementDocumentRepository | None = None,
         section_repository: RequirementSectionRepository | None = None,
         revision_repository: RequirementRevisionRepository | None = None,
+        change_log_service: RequirementChangeLogService | None = None,
     ) -> None:
         """RequirementServiceを初期化する。
 
@@ -45,6 +51,7 @@ class RequirementService:
             document_repository: 要件定義書Repository。
             section_repository: 要件定義セクションRepository。
             revision_repository: 要件改訂履歴Repository。
+            change_log_service: 要件定義変更履歴Service。
         """
         self.repository = repository or RequirementRepository()
         self.document_repository = (
@@ -54,6 +61,7 @@ class RequirementService:
         self.revision_repository = (
             revision_repository or RequirementRevisionRepository()
         )
+        self.change_log_service = change_log_service or RequirementChangeLogService()
 
     def create_requirement(
         self,
@@ -102,11 +110,19 @@ class RequirementService:
             )
 
         try:
-            return self.repository.create(
+            requirement = self.repository.create(
                 db,
                 requirement_in=requirement_in,
                 actor_id=actor_id,
             )
+            self._record_requirement_change_log(
+                db,
+                requirement=requirement,
+                action=RequirementChangeLogAction.CREATED,
+                new_value=self._build_revision_snapshot(requirement),
+                changed_by=actor_id,
+            )
+            return requirement
         except IntegrityError as exc:
             raise_duplicate_after_rollback(
                 db,
@@ -126,6 +142,8 @@ class RequirementService:
         status: str | None = None,
         requirement_type: str | None = None,
         section_id: int | None = None,
+        priority: str | None = None,
+        owner_id: int | None = None,
     ) -> tuple[list[Requirement], int]:
         """プロジェクト内の要件一覧をページング付きで取得する。
 
@@ -139,6 +157,8 @@ class RequirementService:
             status: 絞り込み対象のステータス。
             requirement_type: 絞り込み対象の要件種別。
             section_id: 絞り込み対象の要件定義セクションID。
+            priority: 絞り込み対象の優先度。
+            owner_id: 絞り込み対象のオーナーID。
 
         Returns:
             要件一覧と総件数。
@@ -176,6 +196,8 @@ class RequirementService:
             status=status,
             requirement_type=requirement_type,
             section_id=section_id,
+            priority=priority,
+            owner_id=owner_id,
         )
 
     def get_requirement(
@@ -288,6 +310,15 @@ class RequirementService:
                 after_value=after_value,
                 reason=requirement_in.reason,
             )
+            self._record_requirement_change_log(
+                db,
+                requirement=updated_requirement,
+                action=RequirementChangeLogAction.UPDATED,
+                old_value=before_value,
+                new_value=after_value,
+                reason=requirement_in.reason,
+                changed_by=actor_id,
+            )
             db.commit()
             db.refresh(updated_requirement)
             return updated_requirement
@@ -322,7 +353,15 @@ class RequirementService:
             project_id=project_id,
             requirement_id=requirement_id,
         )
+        before_value = self._build_revision_snapshot(requirement)
         self.repository.soft_delete(db, requirement=requirement, actor_id=actor_id)
+        self._record_requirement_change_log(
+            db,
+            requirement=requirement,
+            action=RequirementChangeLogAction.DELETED,
+            old_value=before_value,
+            changed_by=actor_id,
+        )
 
     def list_revisions(
         self,
@@ -458,3 +497,27 @@ class RequirementService:
             "approved_by": requirement.approved_by,
             "version": requirement.version,
         }
+
+    def _record_requirement_change_log(
+        self,
+        db: Session,
+        *,
+        requirement: Requirement,
+        action: str,
+        old_value: dict[str, object] | None = None,
+        new_value: dict[str, object] | None = None,
+        reason: str | None = None,
+        changed_by: int | None = None,
+    ) -> None:
+        """要件の変更履歴を記録する。"""
+        self.change_log_service.record(
+            db,
+            document_id=requirement.document_id,
+            target_type=RequirementChangeLogTargetType.REQUIREMENT_ITEM,
+            target_id=requirement.id,
+            action=action,
+            old_value=old_value,
+            new_value=new_value,
+            reason=reason,
+            changed_by=changed_by,
+        )

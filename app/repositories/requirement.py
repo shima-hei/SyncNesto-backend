@@ -1,24 +1,27 @@
 """要件定義Repositoryを定義するモジュール。"""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.requirement import (
     Requirement,
+    RequirementApproval,
     RequirementChangeLog,
     RequirementComment,
     RequirementDetail,
     RequirementDocument,
     RequirementLink,
     RequirementOpenIssue,
+    RequirementRelation,
     RequirementReview,
     RequirementRevision,
     RequirementSection,
     RequirementTargetComment,
 )
 from app.schemas.requirement import (
+    RequirementApprovalRequestCreate,
     RequirementCommentCreate,
     RequirementCreate,
     RequirementDetailCreate,
@@ -28,6 +31,7 @@ from app.schemas.requirement import (
     RequirementLinkCreate,
     RequirementOpenIssueCreate,
     RequirementOpenIssueUpdate,
+    RequirementRelationCreate,
     RequirementReviewCreate,
     RequirementReviewUpdate,
     RequirementSectionCreate,
@@ -380,6 +384,9 @@ class RequirementOpenIssueRepository:
         q: str | None = None,
         status: str | None = None,
         assignee_id: int | None = None,
+        due_date_from: date | None = None,
+        due_date_to: date | None = None,
+        related_requirement_id: int | None = None,
     ) -> tuple[list[RequirementOpenIssue], int]:
         """指定要件定義書群の未決事項一覧をページング付きで取得する。"""
         query = db.query(RequirementOpenIssue).filter(
@@ -399,6 +406,14 @@ class RequirementOpenIssueRepository:
             query = query.filter(RequirementOpenIssue.status == status)
         if assignee_id is not None:
             query = query.filter(RequirementOpenIssue.assignee_id == assignee_id)
+        if due_date_from is not None:
+            query = query.filter(RequirementOpenIssue.due_date >= due_date_from)
+        if due_date_to is not None:
+            query = query.filter(RequirementOpenIssue.due_date <= due_date_to)
+        if related_requirement_id is not None:
+            query = query.filter(
+                RequirementOpenIssue.related_requirement_id == related_requirement_id
+            )
 
         total = query.count()
         issues = (
@@ -538,6 +553,9 @@ class RequirementChangeLogRepository:
         target_type: str | None = None,
         target_id: int | None = None,
         action: str | None = None,
+        changed_by: int | None = None,
+        changed_at_from: datetime | None = None,
+        changed_at_to: datetime | None = None,
     ) -> tuple[list[RequirementChangeLog], int]:
         """要件定義変更履歴一覧をページング付きで取得する。"""
         query = db.query(RequirementChangeLog)
@@ -551,6 +569,12 @@ class RequirementChangeLogRepository:
             query = query.filter(RequirementChangeLog.target_id == target_id)
         if action is not None:
             query = query.filter(RequirementChangeLog.action == action)
+        if changed_by is not None:
+            query = query.filter(RequirementChangeLog.changed_by == changed_by)
+        if changed_at_from is not None:
+            query = query.filter(RequirementChangeLog.changed_at >= changed_at_from)
+        if changed_at_to is not None:
+            query = query.filter(RequirementChangeLog.changed_at <= changed_at_to)
 
         total = query.count()
         change_logs = (
@@ -573,6 +597,109 @@ class RequirementChangeLogRepository:
             .order_by(RequirementChangeLog.id)
             .all()
         )
+
+
+class RequirementApprovalRepository:
+    """RequirementApprovalテーブルへのデータアクセス処理を提供する。"""
+
+    def create(
+        self,
+        db: Session,
+        *,
+        document_id: int,
+        approval_in: RequirementApprovalRequestCreate,
+        requested_by: int,
+    ) -> RequirementApproval:
+        """要件定義承認申請を作成する。"""
+        approval = RequirementApproval(
+            document_id=document_id,
+            target_type=approval_in.target_type,
+            target_id=approval_in.target_id,
+            status="requested",
+            approver_id=approval_in.approver_id,
+            requested_by=requested_by,
+            comment=approval_in.comment,
+        )
+        db.add(approval)
+        db.commit()
+        db.refresh(approval)
+        return approval
+
+    def get_by_id(self, db: Session, approval_id: int) -> RequirementApproval | None:
+        """idに一致する要件定義承認を取得する。"""
+        return (
+            db.query(RequirementApproval)
+            .filter(RequirementApproval.id == approval_id)
+            .first()
+        )
+
+    def list_paginated(
+        self,
+        db: Session,
+        *,
+        document_ids: list[int],
+        page: int,
+        page_size: int,
+        target_type: str | None = None,
+        target_id: int | None = None,
+        status: str | None = None,
+        approver_id: int | None = None,
+    ) -> tuple[list[RequirementApproval], int]:
+        """指定要件定義書群の承認一覧をページング付きで取得する。"""
+        query = db.query(RequirementApproval).filter(
+            RequirementApproval.document_id.in_(document_ids)
+        )
+        if target_type is not None:
+            query = query.filter(RequirementApproval.target_type == target_type)
+        if target_id is not None:
+            query = query.filter(RequirementApproval.target_id == target_id)
+        if status is not None:
+            query = query.filter(RequirementApproval.status == status)
+        if approver_id is not None:
+            query = query.filter(RequirementApproval.approver_id == approver_id)
+
+        total = query.count()
+        approvals = (
+            query.order_by(RequirementApproval.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        return approvals, total
+
+    def mark_approved(
+        self,
+        db: Session,
+        *,
+        approval: RequirementApproval,
+        comment: str | None = None,
+    ) -> RequirementApproval:
+        """要件定義承認を承認済みに更新する。"""
+        approval.status = "approved"
+        approval.approved_at = datetime.now(UTC)
+        approval.rejected_at = None
+        if comment is not None:
+            approval.comment = comment
+        db.commit()
+        db.refresh(approval)
+        return approval
+
+    def mark_rejected(
+        self,
+        db: Session,
+        *,
+        approval: RequirementApproval,
+        comment: str | None = None,
+    ) -> RequirementApproval:
+        """要件定義承認を差し戻し済みに更新する。"""
+        approval.status = "rejected"
+        approval.rejected_at = datetime.now(UTC)
+        approval.approved_at = None
+        if comment is not None:
+            approval.comment = comment
+        db.commit()
+        db.refresh(approval)
+        return approval
 
 
 class RequirementTargetCommentRepository:
@@ -765,6 +892,8 @@ class RequirementRepository:
         status: str | None = None,
         requirement_type: str | None = None,
         section_id: int | None = None,
+        priority: str | None = None,
+        owner_id: int | None = None,
     ) -> tuple[list[Requirement], int]:
         """指定要件定義書群の要件一覧をページング付きで取得する。"""
         query = db.query(Requirement).filter(
@@ -786,6 +915,10 @@ class RequirementRepository:
             query = query.filter(Requirement.requirement_type == requirement_type)
         if section_id is not None:
             query = query.filter(Requirement.section_id == section_id)
+        if priority is not None:
+            query = query.filter(Requirement.priority == priority)
+        if owner_id is not None:
+            query = query.filter(Requirement.owner_id == owner_id)
 
         total = query.count()
         requirements = (
@@ -929,6 +1062,64 @@ class RequirementRevisionRepository:
             .all()
         )
         return list(reversed(revisions))
+
+
+class RequirementRelationRepository:
+    """RequirementRelationテーブルへのデータアクセス処理を提供する。"""
+
+    def create(
+        self,
+        db: Session,
+        *,
+        document_id: int,
+        source_requirement_id: int,
+        relation_in: RequirementRelationCreate,
+        actor_id: int | None = None,
+    ) -> RequirementRelation:
+        """要件関連を作成する。"""
+        relation = RequirementRelation(
+            document_id=document_id,
+            source_requirement_id=source_requirement_id,
+            target_type=relation_in.target_type,
+            target_id=relation_in.target_id,
+            relation_type=relation_in.relation_type,
+            description=relation_in.description,
+            created_by=actor_id,
+        )
+        db.add(relation)
+        db.commit()
+        db.refresh(relation)
+        return relation
+
+    def list_by_requirement(
+        self,
+        db: Session,
+        requirement_id: int,
+    ) -> list[RequirementRelation]:
+        """要件関連一覧を取得する。"""
+        return (
+            db.query(RequirementRelation)
+            .filter(RequirementRelation.source_requirement_id == requirement_id)
+            .order_by(RequirementRelation.id)
+            .all()
+        )
+
+    def get_by_id(
+        self,
+        db: Session,
+        relation_id: int,
+    ) -> RequirementRelation | None:
+        """idに一致する要件関連を取得する。"""
+        return (
+            db.query(RequirementRelation)
+            .filter(RequirementRelation.id == relation_id)
+            .first()
+        )
+
+    def delete(self, db: Session, relation: RequirementRelation) -> None:
+        """要件関連を物理削除する。"""
+        db.delete(relation)
+        db.commit()
 
 
 class RequirementDetailRepository:

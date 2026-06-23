@@ -1,5 +1,6 @@
 """要件定義関連サービスの互換importを提供するモジュール。"""
 
+from app.services.requirement_approval import RequirementApprovalService
 from app.services.requirement_change_log import RequirementChangeLogService
 from app.services.requirement_child import RequirementChildService, RequirementSummary
 from app.services.requirement_document import RequirementDocumentService
@@ -12,6 +13,7 @@ from app.services.requirement_target_comment import RequirementTargetCommentServ
 __all__ = [
     "RequirementChildService",
     "RequirementChangeLogService",
+    "RequirementApprovalService",
     "RequirementDocumentService",
     "RequirementExportService",
     "RequirementOpenIssueService",
