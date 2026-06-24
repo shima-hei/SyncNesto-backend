@@ -69,6 +69,7 @@ from app.services.authorization import AuthorizationService
 from app.services.change_log_formatter import (
     ChangeLogFormatConfig,
     ChangeLogFormatter,
+    build_changed_field_snapshots,
 )
 from app.services.conflict import (
     raise_duplicate_after_rollback,
@@ -77,6 +78,26 @@ from app.services.conflict import (
 
 AUTO_TASK_CODE_PREFIX = "TASK"
 AUTO_TASK_CODE_RETRY_LIMIT = 5
+TASK_UPDATABLE_FIELDS = {
+    "parent_task_id",
+    "task_code",
+    "title",
+    "description",
+    "task_type",
+    "status",
+    "priority",
+    "assignee_id",
+    "reporter_id",
+    "start_date",
+    "due_date",
+    "actual_start_date",
+    "actual_end_date",
+    "progress_percent",
+    "estimated_minutes",
+    "actual_minutes",
+    "sort_order",
+    "tags",
+}
 
 TASK_CHANGE_LOG_ACTION_MAP = {
     "status.changed": "status_changed",
@@ -439,7 +460,7 @@ class TaskService:
                 else task.actual_end_date,
             )
         )
-        old_values = self._task_snapshot(task)
+        before_snapshot = self._task_snapshot(task)
         try:
             task = self.task_repository.update(
                 db,
@@ -454,23 +475,29 @@ class TaskService:
                 exc,
             )
 
-        updated_fields = sorted(task_in.model_fields_set - {"version", "change_reason"})
-        self._record_task_update_logs(
-            db,
-            task=task,
-            old_values=old_values,
-            updated_fields=updated_fields,
-            reason=task_in.change_reason,
-            actor_id=actor_id,
+        updated_fields, old_values, new_values = build_changed_field_snapshots(
+            before_snapshot,
+            self._task_snapshot(task),
+            TASK_UPDATABLE_FIELDS,
         )
-        self._record_audit(
-            db,
-            event_type="task.updated",
-            actor_id=actor_id,
-            project_id=task.project_id,
-            resource_id=task.id,
-            metadata={"updated_fields": updated_fields},
-        )
+        if updated_fields:
+            self._record_task_update_logs(
+                db,
+                task=task,
+                old_values=old_values,
+                new_values=new_values,
+                updated_fields=updated_fields,
+                reason=task_in.change_reason,
+                actor_id=actor_id,
+            )
+            self._record_audit(
+                db,
+                event_type="task.updated",
+                actor_id=actor_id,
+                project_id=task.project_id,
+                resource_id=task.id,
+                metadata={"updated_fields": updated_fields},
+            )
         return task
 
     def delete_task(self, db: Session, *, task_id: int, actor_id: int | None) -> None:
@@ -1564,11 +1591,27 @@ class TaskService:
     def _task_snapshot(self, task: Task) -> dict[str, Any]:
         """タスクの変更前スナップショットを作成する。"""
         return {
+            "parent_task_id": task.parent_task_id,
+            "task_code": task.task_code,
+            "title": task.title,
+            "description": task.description,
+            "task_type": task.task_type,
             "status": task.status,
+            "priority": task.priority,
             "assignee_id": task.assignee_id,
+            "reporter_id": task.reporter_id,
             "start_date": task.start_date.isoformat() if task.start_date else None,
             "due_date": task.due_date.isoformat() if task.due_date else None,
+            "actual_start_date": (
+                task.actual_start_date.isoformat() if task.actual_start_date else None
+            ),
+            "actual_end_date": (
+                task.actual_end_date.isoformat() if task.actual_end_date else None
+            ),
             "progress_percent": task.progress_percent,
+            "estimated_minutes": task.estimated_minutes,
+            "actual_minutes": task.actual_minutes,
+            "sort_order": task.sort_order,
             "tags": task.tags,
         }
 
@@ -1877,6 +1920,7 @@ class TaskService:
         *,
         task: Task,
         old_values: dict[str, Any],
+        new_values: dict[str, Any],
         updated_fields: list[str],
         reason: str | None,
         actor_id: int | None,
@@ -1892,7 +1936,7 @@ class TaskService:
             old_value={"snapshot": old_values},
             new_value={
                 "updated_fields": updated_fields,
-                "snapshot": self._task_snapshot(task),
+                "snapshot": new_values,
             },
             reason=reason,
             changed_by=actor_id,
@@ -1914,7 +1958,7 @@ class TaskService:
                     action=action,
                     field_name=field_name,
                     old_value={field_name: old_values.get(field_name)},
-                    new_value={field_name: self._task_snapshot(task).get(field_name)},
+                    new_value={field_name: new_values.get(field_name)},
                     reason=reason,
                     changed_by=actor_id,
                 )

@@ -554,8 +554,54 @@ def test_task_change_logs_handle_many_updated_fields(
     assert updated_log["field_name"] is None
     assert "updated_fields" in updated_log["new_value"]
     assert "title" in updated_log["new_value"]["updated_fields"]
+    assert "description" in updated_log["new_value"]["updated_fields"]
+    assert "progress_percent" not in updated_log["new_value"]["updated_fields"]
     assert "snapshot" in updated_log["old_value"]
     assert "snapshot" in updated_log["new_value"]
+    assert updated_log["old_value"]["snapshot"]["description"] is None
+    assert updated_log["new_value"]["snapshot"]["description"] == (
+        "Updated description"
+    )
+    for field_name in updated_log["new_value"]["updated_fields"]:
+        assert field_name in updated_log["old_value"]["snapshot"]
+        assert field_name in updated_log["new_value"]["snapshot"]
+
+
+def test_task_update_does_not_record_change_log_when_values_are_unchanged(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_task: Callable[..., Task],
+) -> None:
+    """値が変わっていない更新では変更履歴を作成しないことを確認する。"""
+    user = create_test_user(email="unchanged-task@example.com")
+    project = create_test_project(project_code="UNCHANGED", name="Unchanged Task")
+    task = create_test_task(
+        project=project,
+        task_code="TASK-UNCHANGED",
+        title="Same title",
+        status="todo",
+        progress_percent=0,
+    )
+    assign_project_role(user=user, project=project, role_key="manager")
+    authorize_as(client, user)
+
+    update_response = client.patch(
+        f"/tasks/{task.id}",
+        json={
+            "version": task.version,
+            "title": "Same title",
+            "status": "todo",
+            "progress_percent": 0,
+        },
+    )
+    assert update_response.status_code == 200
+
+    response = client.get(f"/tasks/{task.id}/change-logs")
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 0
 
 
 def test_task_change_logs_normalize_legacy_comma_field_name(
