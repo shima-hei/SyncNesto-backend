@@ -9,7 +9,6 @@ from app.models.user import User
 from app.repositories.rbac import RbacRepository
 from app.repositories.user import UserRepository
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -28,6 +27,7 @@ PERMISSIONS = [
     ("task:create", "タスクを作成する"),
     ("task:update", "タスクを更新する"),
     ("task:delete", "タスクを削除する"),
+    ("task:comment", "タスクにコメントする"),
     ("test_plan:read", "テスト設計書を閲覧する"),
     ("test_plan:create", "テスト設計書を作成する"),
     ("test_plan:update", "テスト設計書を更新する"),
@@ -71,6 +71,7 @@ ROLE_PERMISSIONS = {
         "task:create",
         "task:update",
         "task:delete",
+        "task:comment",
         "test_plan:read",
         "test_plan:create",
         "test_plan:update",
@@ -99,6 +100,7 @@ ROLE_PERMISSIONS = {
         "task:create",
         "task:update",
         "task:delete",
+        "task:comment",
         "test_plan:read",
         "test_plan:create",
         "test_plan:update",
@@ -121,6 +123,7 @@ ROLE_PERMISSIONS = {
         "task:read",
         "task:create",
         "task:update",
+        "task:comment",
         "test_plan:read",
         "test_plan:create",
         "test_plan:update",

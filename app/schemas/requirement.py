@@ -4,6 +4,13 @@ from datetime import date, datetime
 
 from pydantic import BaseModel
 
+from app.schemas.change_log import (
+    ChangeLogUserRead,
+    ChangeLogValue,
+    RequirementChangeLogActionCode,
+    RequirementChangeLogFieldName,
+    RequirementChangeLogTargetTypeCode,
+)
 from app.schemas.user import UserSummary
 
 
@@ -292,17 +299,16 @@ class RequirementChangeLogRead(BaseModel):
 
     id: int
     document_id: int | None = None
-    target_type: str
+    target_type: RequirementChangeLogTargetTypeCode
     target_id: int
-    action: str
-    field_name: str | None = None
-    old_value: dict | None = None
-    new_value: dict | None = None
+    action: RequirementChangeLogActionCode
+    field_name: RequirementChangeLogFieldName | None = None
+    old_value: ChangeLogValue = None
+    new_value: ChangeLogValue = None
     reason: str | None = None
     changed_by: int | None = None
+    changed_by_user: ChangeLogUserRead | None = None
     changed_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 class RequirementChangeLogListResponse(BaseModel):

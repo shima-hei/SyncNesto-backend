@@ -904,7 +904,10 @@ def test_list_requirement_change_logs_allows_viewer(
     assert response.status_code == 200
     assert response.json()["total"] == 1
     assert response.json()["items"][0]["document_id"] == document.id
-    assert response.json()["items"][0]["target_type"] == "open_issue"
+    assert response.json()["items"][0]["target_type"] == "requirement_open_issue"
+    assert response.json()["items"][0]["changed_by_user"]["email"] == (
+        "viewer@example.com"
+    )
 
 
 def test_list_requirement_change_logs_filters_by_actor_and_changed_at(
@@ -964,6 +967,83 @@ def test_list_requirement_change_logs_filters_by_actor_and_changed_at(
     assert response.status_code == 200
     assert response.json()["total"] == 1
     assert response.json()["items"][0]["target_id"] == 1
+    assert response.json()["items"][0]["target_type"] == "requirement"
+
+
+def test_requirement_change_logs_normalize_action_and_values(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """要件定義変更履歴APIが安定コードと表示補助値を返すことを確認する。"""
+    viewer = create_test_user(email="requirement-log-viewer@example.com")
+    actor = create_test_user(email="requirement-log-actor@example.com")
+    assignee = create_test_user(
+        email="requirement-log-assignee@example.com",
+        name="Assignee User",
+    )
+    project = create_test_project(name="Requirement Log Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=viewer, project=project, role_key="viewer")
+    db.add_all(
+        [
+            RequirementChangeLog(
+                document_id=document.id,
+                target_type="requirement_item",
+                target_id=1,
+                action="updated",
+                field_name="priority",
+                old_value={"priority": "should"},
+                new_value={"priority": "must"},
+                changed_by=actor.id,
+            ),
+            RequirementChangeLog(
+                document_id=document.id,
+                target_type="comment",
+                target_id=2,
+                action="comment.resolved",
+                field_name="assignee_id",
+                old_value={"assignee_id": None},
+                new_value={"assignee_id": assignee.id},
+                changed_by=actor.id,
+            ),
+        ]
+    )
+    db.commit()
+    authorize_as(client, viewer)
+
+    response = client.get(f"/projects/{project.id}/change-logs")
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    priority_log = next(item for item in items if item["field_name"] == "priority")
+    assert priority_log["target_type"] == "requirement"
+    assert priority_log["old_value"] == {"code": "should", "label": "Should"}
+    assert priority_log["new_value"] == {"code": "must", "label": "Must"}
+    comment_log = next(
+        item for item in items if item["target_type"] == "requirement_comment"
+    )
+    assert comment_log["action"] == "comment_resolved"
+    assert comment_log["new_value"] == {
+        "id": assignee.id,
+        "label": "Assignee User",
+    }
+    assert comment_log["changed_by_user"]["email"] == (
+        "requirement-log-actor@example.com"
+    )
+    filtered_response = client.get(
+        f"/projects/{project.id}/change-logs"
+        "?target_type=requirement_comment&action=comment_resolved"
+    )
+    assert filtered_response.status_code == 200
+    assert filtered_response.json()["total"] == 1
+    assert filtered_response.json()["items"][0]["target_type"] == (
+        "requirement_comment"
+    )
+    assert filtered_response.json()["items"][0]["action"] == "comment_resolved"
 
 
 def test_request_and_approve_requirement_approval_records_change_logs(

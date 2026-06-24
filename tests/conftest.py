@@ -17,11 +17,13 @@ from sqlalchemy.orm import Session
 if TYPE_CHECKING:
     from app.models.project import Project, ProjectMember
     from app.models.requirement import (
+        Requirement,
         RequirementDocument,
         RequirementOpenIssue,
         RequirementSection,
         RequirementTargetComment,
     )
+    from app.models.task import Board, Task
     from app.models.user import User
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -382,6 +384,107 @@ def create_test_requirement_open_issue(
         return issue
 
     return _create_test_requirement_open_issue
+
+
+@pytest.fixture
+def create_test_requirement(db: Session) -> Callable[..., "Requirement"]:
+    """テスト用要件をDBへ直接作成するfixture。
+
+    Args:
+        db: テスト用DBセッション。
+
+    Returns:
+        任意のdocument/requirement_code/titleで要件を作成する関数。
+    """
+    from app.models.requirement import Requirement, RequirementDocument
+
+    def _create_test_requirement(
+        *,
+        document: RequirementDocument,
+        requirement_code: str | None = None,
+        title: str = "Requirement",
+        requirement_type: str = "functional",
+        status: str = "draft",
+    ) -> Requirement:
+        requirement = Requirement(
+            document_id=document.id,
+            requirement_code=requirement_code or f"REQ-{uuid4().hex[:8].upper()}",
+            requirement_type=requirement_type,
+            title=title,
+            status=status,
+        )
+        db.add(requirement)
+        db.commit()
+        db.refresh(requirement)
+        return requirement
+
+    return _create_test_requirement
+
+
+@pytest.fixture
+def create_test_task(db: Session) -> Callable[..., "Task"]:
+    """テスト用タスクをDBへ直接作成するfixture。
+
+    Args:
+        db: テスト用DBセッション。
+
+    Returns:
+        任意のproject/task_code/titleでタスクを作成する関数。
+    """
+    from app.models.project import Project
+    from app.models.task import Task
+
+    def _create_test_task(
+        *,
+        project: Project,
+        task_code: str | None = None,
+        title: str = "Task",
+        status: str = "backlog",
+        progress_percent: int = 0,
+        tags: list[str] | None = None,
+    ) -> Task:
+        task = Task(
+            project_id=project.id,
+            task_code=task_code or f"TASK-{uuid4().hex[:8].upper()}",
+            title=title,
+            status=status,
+            progress_percent=progress_percent,
+            tags=tags or [],
+        )
+        db.add(task)
+        db.commit()
+        db.refresh(task)
+        return task
+
+    return _create_test_task
+
+
+@pytest.fixture
+def create_test_board(db: Session) -> Callable[..., "Board"]:
+    """テスト用ボードをDBへ直接作成するfixture。
+
+    Args:
+        db: テスト用DBセッション。
+
+    Returns:
+        任意のproject/nameでボードを作成する関数。
+    """
+    from app.models.project import Project
+    from app.models.task import Board
+
+    def _create_test_board(
+        *,
+        project: Project,
+        name: str = "Board",
+        board_type: str = "kanban",
+    ) -> Board:
+        board = Board(project_id=project.id, name=name, board_type=board_type)
+        db.add(board)
+        db.commit()
+        db.refresh(board)
+        return board
+
+    return _create_test_board
 
 
 @pytest.fixture

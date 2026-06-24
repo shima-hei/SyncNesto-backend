@@ -20,11 +20,24 @@ from app.models.requirement import (
     RequirementTargetComment,
 )
 from app.models.session import UserSession
+from app.models.task import (
+    Board,
+    BoardColumn,
+    Milestone,
+    RequirementTaskRelation,
+    Task,
+    TaskChangeLog,
+    TaskComment,
+    TaskDependency,
+)
 from app.models.user import User
 
 __all__ = [
     "AuditLog",
+    "Board",
+    "BoardColumn",
     "LoginAttempt",
+    "Milestone",
     "Permission",
     "Project",
     "ProjectMember",
@@ -41,8 +54,13 @@ __all__ = [
     "RequirementRevision",
     "RequirementSection",
     "RequirementTargetComment",
+    "RequirementTaskRelation",
     "Role",
     "RolePermission",
+    "Task",
+    "TaskChangeLog",
+    "TaskComment",
+    "TaskDependency",
     "User",
     "UserRole",
     "UserSession",

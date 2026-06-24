@@ -9,10 +9,7 @@ from app.core.auth import require_project_permission
 from app.db.session import get_db
 from app.models.user import User
 from app.routers import requirements_shared as shared
-from app.schemas.requirement import (
-    RequirementChangeLogListResponse,
-    RequirementChangeLogRead,
-)
+from app.schemas.requirement import RequirementChangeLogListResponse
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["requirements"])
 
@@ -68,10 +65,7 @@ def list_requirement_change_logs(
         changed_at_to=changed_at_to,
     )
     return RequirementChangeLogListResponse(
-        items=[
-            RequirementChangeLogRead.model_validate(change_log)
-            for change_log in change_logs
-        ],
+        items=shared.change_log_service.build_change_log_reads(db, change_logs),
         total=total,
         page=page,
         page_size=page_size,

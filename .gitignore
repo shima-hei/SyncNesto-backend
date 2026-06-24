@@ -211,3 +211,8 @@ docker/postgres/pgdata/
 docker/pgadmin/
 .env.*
 .vscode/
+
+# docs
+/docs
+.codex
+AGENTS.md
