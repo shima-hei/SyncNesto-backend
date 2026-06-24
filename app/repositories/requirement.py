@@ -2,7 +2,7 @@
 
 from datetime import UTC, date, datetime
 
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
 from app.models.requirement import (
@@ -374,6 +374,32 @@ class RequirementOpenIssueRepository:
             .first()
         )
 
+    def get_max_auto_issue_number(self, db: Session, document_id: int) -> int:
+        """要件定義書内の自動採番未決事項ID最大番号を取得する。
+
+        Args:
+            db: DBセッション。
+            document_id: 採番対象の要件定義書ID。
+
+        Returns:
+            `ISSUE-001` 形式の最大番号。存在しない場合は0。
+        """
+        result = db.execute(
+            text(
+                """
+                SELECT COALESCE(
+                    MAX(CAST(substring(issue_code from '^ISSUE-(\\d+)$') AS INTEGER)),
+                    0
+                )
+                FROM requirement_open_issues
+                WHERE document_id = :document_id
+                  AND issue_code ~ '^ISSUE-[0-9]+$'
+                """
+            ),
+            {"document_id": document_id},
+        ).scalar_one()
+        return int(result)
+
     def list_paginated(
         self,
         db: Session,
@@ -451,7 +477,6 @@ class RequirementOpenIssueRepository:
         """未決事項を更新する。"""
         for field in (
             "related_requirement_id",
-            "issue_code",
             "title",
             "description",
             "impact_scope",
@@ -881,6 +906,34 @@ class RequirementRepository:
             .first()
         )
 
+    def get_max_auto_requirement_number(self, db: Session, document_id: int) -> int:
+        """要件定義書内の自動採番要件コード最大番号を取得する。
+
+        Args:
+            db: DBセッション。
+            document_id: 採番対象の要件定義書ID。
+
+        Returns:
+            `REQ-001` 形式の最大番号。存在しない場合は0。
+        """
+        result = db.execute(
+            text(
+                """
+                SELECT COALESCE(
+                    MAX(CAST(
+                        substring(requirement_code from '^REQ-(\\d+)$') AS INTEGER
+                    )),
+                    0
+                )
+                FROM requirements
+                WHERE document_id = :document_id
+                  AND requirement_code ~ '^REQ-[0-9]+$'
+                """
+            ),
+            {"document_id": document_id},
+        ).scalar_one()
+        return int(result)
+
     def list_paginated(
         self,
         db: Session,
@@ -939,7 +992,6 @@ class RequirementRepository:
     ) -> Requirement:
         """要件を更新する。"""
         for field in (
-            "requirement_code",
             "requirement_type",
             "category",
             "title",

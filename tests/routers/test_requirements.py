@@ -682,6 +682,51 @@ def test_create_open_issue_rejects_duplicate_issue_code(
     }
 
 
+def test_create_open_issue_auto_numbers_issue_code_per_document(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+) -> None:
+    """issue_code省略時に要件定義書単位で自動採番されることを確認する。"""
+    user = create_test_user(email="issue-auto@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    other_document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    first_response = client.post(
+        f"/projects/{project.id}/open-issues",
+        json={
+            "document_id": document.id,
+            "title": "First issue",
+        },
+    )
+    second_response = client.post(
+        f"/projects/{project.id}/open-issues",
+        json={
+            "document_id": document.id,
+            "title": "Second issue",
+        },
+    )
+    other_response = client.post(
+        f"/projects/{project.id}/open-issues",
+        json={
+            "document_id": other_document.id,
+            "title": "Other document issue",
+        },
+    )
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 201
+    assert other_response.status_code == 201
+    assert first_response.json()["issue_code"] == "ISSUE-001"
+    assert second_response.json()["issue_code"] == "ISSUE-002"
+    assert other_response.json()["issue_code"] == "ISSUE-001"
+
+
 def test_list_open_issues_filters_by_document_status_assignee_and_dates(
     client: TestClient,
     create_test_user: Callable[..., User],
@@ -830,7 +875,6 @@ def test_promote_open_issue_to_requirement(
         f"/projects/{project.id}/open-issues/{issue.id}/promote-to-requirement",
         json={
             "version": issue.version,
-            "requirement_code": "REQ-PROMOTED",
             "requirement_type": "functional",
             "section_id": section.id,
             "priority": "must",
@@ -842,7 +886,7 @@ def test_promote_open_issue_to_requirement(
     assert response.status_code == 201
     assert response.json()["document_id"] == document.id
     assert response.json()["section_id"] == section.id
-    assert response.json()["requirement_code"] == "REQ-PROMOTED"
+    assert response.json()["requirement_code"] == "REQ-001"
     assert response.json()["title"] == "SSO対応範囲"
     assert response.json()["owner_id"] == user.id
 
@@ -858,7 +902,7 @@ def test_promote_open_issue_to_requirement(
     )
     assert promoted_log.target_type == "open_issue"
     assert promoted_log.target_id == issue.id
-    assert promoted_log.new_value["requirement_code"] == "REQ-PROMOTED"
+    assert promoted_log.new_value["requirement_code"] == "REQ-001"
 
 
 def test_list_requirement_change_logs_allows_viewer(
@@ -1570,6 +1614,54 @@ def test_create_requirement_rejects_duplicate_requirement_code(
         "message": "Requirement code already exists",
         "code": "DUPLICATE_RESOURCE",
     }
+
+
+def test_create_requirement_auto_numbers_requirement_code_per_document(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+) -> None:
+    """requirement_code省略時に要件定義書単位で自動採番されることを確認する。"""
+    user = create_test_user(email="requirement-auto@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    other_document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    first_response = client.post(
+        f"/projects/{project.id}/requirements",
+        json={
+            "document_id": document.id,
+            "requirement_type": "functional",
+            "title": "First requirement",
+        },
+    )
+    second_response = client.post(
+        f"/projects/{project.id}/requirements",
+        json={
+            "document_id": document.id,
+            "requirement_type": "functional",
+            "title": "Second requirement",
+        },
+    )
+    other_response = client.post(
+        f"/projects/{project.id}/requirements",
+        json={
+            "document_id": other_document.id,
+            "requirement_type": "functional",
+            "title": "Other document requirement",
+        },
+    )
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 201
+    assert other_response.status_code == 201
+    assert first_response.json()["requirement_code"] == "REQ-001"
+    assert second_response.json()["requirement_code"] == "REQ-002"
+    assert other_response.json()["requirement_code"] == "REQ-001"
 
 
 def test_list_requirements_filters_by_document_status_priority_and_owner(

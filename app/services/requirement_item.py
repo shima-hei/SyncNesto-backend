@@ -32,6 +32,9 @@ from app.services.requirement_change_log import (
     RequirementChangeLogTargetType,
 )
 
+AUTO_REQUIREMENT_CODE_PREFIX = "REQ"
+AUTO_REQUIREMENT_CODE_RETRY_LIMIT = 5
+
 
 class RequirementService:
     """要件に関するビジネスロジックを提供する。"""
@@ -97,24 +100,46 @@ class RequirementService:
                 document_id=requirement_in.document_id,
                 section_id=requirement_in.section_id,
             )
+        requested_requirement_code = self._normalize_requirement_code(
+            requirement_in.requirement_code,
+        )
         if (
-            self.repository.get_by_document_requirement_code(
+            requested_requirement_code
+            and self.repository.get_by_document_requirement_code(
                 db,
                 document_id=requirement_in.document_id,
-                requirement_code=requirement_in.requirement_code,
+                requirement_code=requested_requirement_code,
             )
-            is not None
         ):
             raise DuplicateResourceError(
                 error_messages.REQUIREMENT_CODE_ALREADY_EXISTS
             )
 
-        try:
-            requirement = self.repository.create(
-                db,
-                requirement_in=requirement_in,
-                actor_id=actor_id,
+        retry_limit = (
+            1 if requested_requirement_code else AUTO_REQUIREMENT_CODE_RETRY_LIMIT
+        )
+        for attempt in range(retry_limit):
+            requirement_code = requested_requirement_code or (
+                self._generate_requirement_code(db, requirement_in.document_id)
             )
+            normalized = requirement_in.model_copy(
+                update={"requirement_code": requirement_code}
+            )
+            try:
+                requirement = self.repository.create(
+                    db,
+                    requirement_in=normalized,
+                    actor_id=actor_id,
+                )
+            except IntegrityError as exc:
+                db.rollback()
+                if requested_requirement_code or attempt == retry_limit - 1:
+                    raise_duplicate_after_rollback(
+                        db,
+                        error_messages.REQUIREMENT_CODE_ALREADY_EXISTS,
+                        exc,
+                    )
+                continue
             self._record_requirement_change_log(
                 db,
                 requirement=requirement,
@@ -123,12 +148,7 @@ class RequirementService:
                 changed_by=actor_id,
             )
             return requirement
-        except IntegrityError as exc:
-            raise_duplicate_after_rollback(
-                db,
-                error_messages.REQUIREMENT_CODE_ALREADY_EXISTS,
-                exc,
-            )
+        raise DuplicateResourceError(error_messages.REQUIREMENT_CODE_ALREADY_EXISTS)
 
     def list_requirements_paginated(
         self,
@@ -268,19 +288,6 @@ class RequirementService:
             current=RequirementRead.model_validate(requirement).model_dump(),
         )
 
-        if (
-            requirement_in.requirement_code is not None
-            and requirement_in.requirement_code != requirement.requirement_code
-            and self.repository.get_by_document_requirement_code(
-                db,
-                document_id=requirement.document_id,
-                requirement_code=requirement_in.requirement_code,
-            )
-            is not None
-        ):
-            raise DuplicateResourceError(
-                error_messages.REQUIREMENT_CODE_ALREADY_EXISTS
-            )
         if (
             "section_id" in requirement_in.model_fields_set
             and requirement_in.section_id is not None
@@ -521,3 +528,32 @@ class RequirementService:
             reason=reason,
             changed_by=changed_by,
         )
+
+    def _normalize_requirement_code(self, requirement_code: str | None) -> str | None:
+        """リクエスト由来の要件コードを正規化する。
+
+        Args:
+            requirement_code: リクエストで受け取った要件コード。
+
+        Returns:
+            前後空白を除去した要件コード。空文字またはNoneの場合はNone。
+        """
+        if requirement_code is None:
+            return None
+        stripped = requirement_code.strip()
+        return stripped or None
+
+    def _generate_requirement_code(self, db: Session, document_id: int) -> str:
+        """要件定義書内で次の要件コードを採番する。
+
+        Args:
+            db: DBセッション。
+            document_id: 採番対象の要件定義書ID。
+
+        Returns:
+            `REQ-001` 形式の要件コード。
+        """
+        next_number = (
+            self.repository.get_max_auto_requirement_number(db, document_id) + 1
+        )
+        return f"{AUTO_REQUIREMENT_CODE_PREFIX}-{next_number:03d}"

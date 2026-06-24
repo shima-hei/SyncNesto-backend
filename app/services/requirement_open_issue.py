@@ -36,6 +36,10 @@ from app.services.requirement_change_log import (
     RequirementChangeLogTargetType,
 )
 
+AUTO_OPEN_ISSUE_CODE_PREFIX = "ISSUE"
+AUTO_OPEN_ISSUE_CODE_RETRY_LIMIT = 5
+AUTO_PROMOTED_REQUIREMENT_CODE_RETRY_LIMIT = 5
+
 
 class RequirementOpenIssueService:
     """要件定義未決事項に関するビジネスロジックを提供する。"""
@@ -99,29 +103,45 @@ class RequirementOpenIssueService:
                 document_id=issue_in.document_id,
                 requirement_id=issue_in.related_requirement_id,
             )
+        requested_issue_code = self._normalize_issue_code(issue_in.issue_code)
         if (
-            self.repository.get_by_document_issue_code(
+            requested_issue_code
+            and self.repository.get_by_document_issue_code(
                 db,
                 document_id=issue_in.document_id,
-                issue_code=issue_in.issue_code,
+                issue_code=requested_issue_code,
             )
-            is not None
         ):
             raise DuplicateResourceError(
                 error_messages.REQUIREMENT_OPEN_ISSUE_CODE_ALREADY_EXISTS
             )
 
-        try:
-            issue = self.repository.create(
+        retry_limit = 1 if requested_issue_code else AUTO_OPEN_ISSUE_CODE_RETRY_LIMIT
+        for attempt in range(retry_limit):
+            issue_code = requested_issue_code or self._generate_issue_code(
                 db,
-                issue_in=issue_in,
-                actor_id=actor_id,
+                issue_in.document_id,
             )
-        except IntegrityError as exc:
-            raise_duplicate_after_rollback(
-                db,
-                error_messages.REQUIREMENT_OPEN_ISSUE_CODE_ALREADY_EXISTS,
-                exc,
+            normalized = issue_in.model_copy(update={"issue_code": issue_code})
+            try:
+                issue = self.repository.create(
+                    db,
+                    issue_in=normalized,
+                    actor_id=actor_id,
+                )
+            except IntegrityError as exc:
+                db.rollback()
+                if requested_issue_code or attempt == retry_limit - 1:
+                    raise_duplicate_after_rollback(
+                        db,
+                        error_messages.REQUIREMENT_OPEN_ISSUE_CODE_ALREADY_EXISTS,
+                        exc,
+                    )
+                continue
+            break
+        else:
+            raise DuplicateResourceError(
+                error_messages.REQUIREMENT_OPEN_ISSUE_CODE_ALREADY_EXISTS
             )
 
         self.change_log_service.record(
@@ -214,19 +234,6 @@ class RequirementOpenIssueService:
             ),
         )
         if (
-            issue_in.issue_code is not None
-            and issue_in.issue_code != issue.issue_code
-            and self.repository.get_by_document_issue_code(
-                db,
-                document_id=issue.document_id,
-                issue_code=issue_in.issue_code,
-            )
-            is not None
-        ):
-            raise DuplicateResourceError(
-                error_messages.REQUIREMENT_OPEN_ISSUE_CODE_ALREADY_EXISTS
-            )
-        if (
             "related_requirement_id" in issue_in.model_fields_set
             and issue_in.related_requirement_id is not None
         ):
@@ -314,44 +321,44 @@ class RequirementOpenIssueService:
                 document_id=issue.document_id,
                 section_id=promote_in.section_id,
             )
-        if (
-            self.requirement_repository.get_by_document_requirement_code(
-                db,
+        for attempt in range(AUTO_PROMOTED_REQUIREMENT_CODE_RETRY_LIMIT):
+            requirement_in = RequirementCreate(
                 document_id=issue.document_id,
-                requirement_code=promote_in.requirement_code,
+                section_id=promote_in.section_id,
+                requirement_code=self._generate_requirement_code(
+                    db,
+                    issue.document_id,
+                ),
+                requirement_type=promote_in.requirement_type,
+                category=promote_in.category,
+                title=promote_in.title or issue.title,
+                description=promote_in.description or issue.description,
+                rationale=promote_in.rationale,
+                acceptance_criteria=promote_in.acceptance_criteria,
+                priority=promote_in.priority,
+                status=promote_in.status,
+                source=promote_in.source or issue.issue_code,
+                owner_id=promote_in.owner_id or issue.assignee_id,
             )
-            is not None
-        ):
+            try:
+                requirement = self.requirement_repository.create(
+                    db,
+                    requirement_in=requirement_in,
+                    actor_id=actor_id,
+                )
+            except IntegrityError as exc:
+                db.rollback()
+                if attempt == AUTO_PROMOTED_REQUIREMENT_CODE_RETRY_LIMIT - 1:
+                    raise_duplicate_after_rollback(
+                        db,
+                        error_messages.REQUIREMENT_CODE_ALREADY_EXISTS,
+                        exc,
+                    )
+                continue
+            break
+        else:
             raise DuplicateResourceError(
                 error_messages.REQUIREMENT_CODE_ALREADY_EXISTS
-            )
-
-        requirement_in = RequirementCreate(
-            document_id=issue.document_id,
-            section_id=promote_in.section_id,
-            requirement_code=promote_in.requirement_code,
-            requirement_type=promote_in.requirement_type,
-            category=promote_in.category,
-            title=promote_in.title or issue.title,
-            description=promote_in.description or issue.description,
-            rationale=promote_in.rationale,
-            acceptance_criteria=promote_in.acceptance_criteria,
-            priority=promote_in.priority,
-            status=promote_in.status,
-            source=promote_in.source or issue.issue_code,
-            owner_id=promote_in.owner_id or issue.assignee_id,
-        )
-        try:
-            requirement = self.requirement_repository.create(
-                db,
-                requirement_in=requirement_in,
-                actor_id=actor_id,
-            )
-        except IntegrityError as exc:
-            raise_duplicate_after_rollback(
-                db,
-                error_messages.REQUIREMENT_CODE_ALREADY_EXISTS,
-                exc,
             )
 
         before_value = self._build_issue_snapshot(issue)
@@ -378,6 +385,52 @@ class RequirementOpenIssueService:
             changed_by=actor_id,
         )
         return requirement
+
+    def _normalize_issue_code(self, issue_code: str | None) -> str | None:
+        """リクエスト由来の未決事項IDを正規化する。
+
+        Args:
+            issue_code: リクエストで受け取った未決事項ID。
+
+        Returns:
+            前後空白を除去した未決事項ID。空文字またはNoneの場合はNone。
+        """
+        if issue_code is None:
+            return None
+        stripped = issue_code.strip()
+        return stripped or None
+
+    def _generate_issue_code(self, db: Session, document_id: int) -> str:
+        """要件定義書内で次の未決事項IDを採番する。
+
+        Args:
+            db: DBセッション。
+            document_id: 採番対象の要件定義書ID。
+
+        Returns:
+            `ISSUE-001` 形式の未決事項ID。
+        """
+        next_number = self.repository.get_max_auto_issue_number(db, document_id) + 1
+        return f"{AUTO_OPEN_ISSUE_CODE_PREFIX}-{next_number:03d}"
+
+    def _generate_requirement_code(self, db: Session, document_id: int) -> str:
+        """要件定義書内で次の昇格先要件コードを採番する。
+
+        Args:
+            db: DBセッション。
+            document_id: 採番対象の要件定義書ID。
+
+        Returns:
+            `REQ-001` 形式の要件コード。
+        """
+        next_number = (
+            self.requirement_repository.get_max_auto_requirement_number(
+                db,
+                document_id,
+            )
+            + 1
+        )
+        return f"REQ-{next_number:03d}"
 
     def _get_document_in_project(
         self,

@@ -168,6 +168,7 @@ class RequirementCreate(RequirementBase):
     """要件作成リクエストで受け取るschema。"""
 
     document_id: int
+    requirement_code: str | None = None
 
 
 class RequirementUpdate(BaseModel):
@@ -175,7 +176,6 @@ class RequirementUpdate(BaseModel):
 
     version: int
     section_id: int | None = None
-    requirement_code: str | None = None
     requirement_type: str | None = None
     category: str | None = None
     title: str | None = None
@@ -233,6 +233,7 @@ class RequirementOpenIssueCreate(RequirementOpenIssueBase):
     """未決事項作成リクエストで受け取るschema。"""
 
     document_id: int
+    issue_code: str | None = None
 
 
 class RequirementOpenIssueUpdate(BaseModel):
@@ -240,7 +241,6 @@ class RequirementOpenIssueUpdate(BaseModel):
 
     version: int
     related_requirement_id: int | None = None
-    issue_code: str | None = None
     title: str | None = None
     description: str | None = None
     impact_scope: str | None = None
@@ -255,7 +255,6 @@ class RequirementOpenIssuePromoteCreate(BaseModel):
     """未決事項を要件へ昇格するリクエストで受け取るschema。"""
 
     version: int
-    requirement_code: str
     requirement_type: str = "functional"
     section_id: int | None = None
     category: str | None = None
