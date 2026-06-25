@@ -22,6 +22,10 @@ from app.schemas.requirement import (
     RequirementRead,
     RequirementUpdate,
 )
+from app.services.change_log_formatter import (
+    build_changed_field_snapshots,
+    build_update_change_log_entry,
+)
 from app.services.conflict import (
     raise_duplicate_after_rollback,
     raise_if_version_conflict,
@@ -34,6 +38,22 @@ from app.services.requirement_change_log import (
 
 AUTO_REQUIREMENT_CODE_PREFIX = "REQ"
 AUTO_REQUIREMENT_CODE_RETRY_LIMIT = 5
+REQUIREMENT_UPDATABLE_FIELDS = {
+    "section_id",
+    "requirement_code",
+    "requirement_type",
+    "category",
+    "title",
+    "description",
+    "rationale",
+    "acceptance_criteria",
+    "priority",
+    "status",
+    "source",
+    "owner_id",
+    "approved_by",
+    "approved_at",
+}
 
 
 class RequirementService:
@@ -317,12 +337,16 @@ class RequirementService:
                 after_value=after_value,
                 reason=requirement_in.reason,
             )
-            self._record_requirement_change_log(
+            self._record_requirement_update_change_log(
                 db,
                 requirement=updated_requirement,
-                action=RequirementChangeLogAction.UPDATED,
-                old_value=before_value,
-                new_value=after_value,
+                old_snapshot=before_value,
+                new_snapshot=after_value,
+                updated_fields=(
+                    requirement_in.model_fields_set
+                    - {"version", "reason", "change_summary"}
+                )
+                & REQUIREMENT_UPDATABLE_FIELDS,
                 reason=requirement_in.reason,
                 changed_by=actor_id,
             )
@@ -525,6 +549,42 @@ class RequirementService:
             action=action,
             old_value=old_value,
             new_value=new_value,
+            reason=reason,
+            changed_by=changed_by,
+        )
+
+    def _record_requirement_update_change_log(
+        self,
+        db: Session,
+        *,
+        requirement: Requirement,
+        old_snapshot: dict[str, object],
+        new_snapshot: dict[str, object],
+        updated_fields: set[str],
+        reason: str | None = None,
+        changed_by: int | None = None,
+    ) -> None:
+        """要件更新の変更履歴を記録する。"""
+        changed_fields, old_value, new_value = build_changed_field_snapshots(
+            old_snapshot,
+            new_snapshot,
+            updated_fields,
+        )
+        change_log_entry = build_update_change_log_entry(
+            updated_fields=changed_fields,
+            old_values=old_value,
+            new_values=new_value,
+            default_action=RequirementChangeLogAction.UPDATED,
+        )
+        if change_log_entry is None:
+            return
+
+        self._record_requirement_change_log(
+            db,
+            requirement=requirement,
+            action=change_log_entry.action,
+            old_value=change_log_entry.old_value,
+            new_value=change_log_entry.new_value,
             reason=reason,
             changed_by=changed_by,
         )

@@ -26,6 +26,10 @@ from app.schemas.requirement import (
     RequirementOpenIssueRead,
     RequirementOpenIssueUpdate,
 )
+from app.services.change_log_formatter import (
+    build_changed_field_snapshots,
+    build_update_change_log_entry,
+)
 from app.services.conflict import (
     raise_duplicate_after_rollback,
     raise_if_version_conflict,
@@ -39,6 +43,16 @@ from app.services.requirement_change_log import (
 AUTO_OPEN_ISSUE_CODE_PREFIX = "ISSUE"
 AUTO_OPEN_ISSUE_CODE_RETRY_LIMIT = 5
 AUTO_PROMOTED_REQUIREMENT_CODE_RETRY_LIMIT = 5
+REQUIREMENT_OPEN_ISSUE_UPDATABLE_FIELDS = {
+    "related_requirement_id",
+    "title",
+    "description",
+    "impact_scope",
+    "assignee_id",
+    "due_date",
+    "status",
+    "resolution",
+}
 
 
 class RequirementOpenIssueService:
@@ -258,14 +272,15 @@ class RequirementOpenIssueService:
                 exc,
             )
 
-        self.change_log_service.record(
+        self._record_issue_update_change_log(
             db,
-            document_id=updated_issue.document_id,
-            target_type=RequirementChangeLogTargetType.OPEN_ISSUE,
-            target_id=updated_issue.id,
-            action=RequirementChangeLogAction.UPDATED,
-            old_value=before_value,
-            new_value=self._build_issue_snapshot(updated_issue),
+            issue=updated_issue,
+            old_snapshot=before_value,
+            new_snapshot=self._build_issue_snapshot(updated_issue),
+            updated_fields=(
+                issue_in.model_fields_set - {"version", "reason"}
+            )
+            & REQUIREMENT_OPEN_ISSUE_UPDATABLE_FIELDS,
             reason=issue_in.reason,
             changed_by=actor_id,
         )
@@ -477,3 +492,42 @@ class RequirementOpenIssueService:
     ) -> dict[str, object]:
         """変更履歴に保存する未決事項スナップショットを作成する。"""
         return RequirementOpenIssueRead.model_validate(issue).model_dump(mode="json")
+
+    def _record_issue_update_change_log(
+        self,
+        db: Session,
+        *,
+        issue: RequirementOpenIssue,
+        old_snapshot: dict[str, object],
+        new_snapshot: dict[str, object],
+        updated_fields: set[str],
+        reason: str | None = None,
+        changed_by: int | None = None,
+    ) -> None:
+        """未決事項更新の変更履歴を記録する。"""
+        changed_fields, old_value, new_value = build_changed_field_snapshots(
+            old_snapshot,
+            new_snapshot,
+            updated_fields,
+        )
+        change_log_entry = build_update_change_log_entry(
+            updated_fields=changed_fields,
+            old_values=old_value,
+            new_values=new_value,
+            default_action=RequirementChangeLogAction.UPDATED,
+        )
+        if change_log_entry is None:
+            return
+
+        self.change_log_service.record(
+            db,
+            document_id=issue.document_id,
+            target_type=RequirementChangeLogTargetType.OPEN_ISSUE,
+            target_id=issue.id,
+            action=change_log_entry.action,
+            field_name=change_log_entry.field_name,
+            old_value=change_log_entry.old_value,
+            new_value=change_log_entry.new_value,
+            reason=reason,
+            changed_by=changed_by,
+        )

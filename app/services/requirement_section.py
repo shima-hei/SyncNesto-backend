@@ -15,12 +15,24 @@ from app.schemas.requirement import (
     RequirementSectionSortUpdate,
     RequirementSectionUpdate,
 )
+from app.services.change_log_formatter import (
+    build_changed_field_snapshots,
+    build_update_change_log_entry,
+)
 from app.services.conflict import raise_if_version_conflict
 from app.services.requirement_change_log import (
     RequirementChangeLogAction,
     RequirementChangeLogService,
     RequirementChangeLogTargetType,
 )
+
+REQUIREMENT_SECTION_UPDATABLE_FIELDS = {
+    "title",
+    "section_type",
+    "content",
+    "sort_order",
+    "status",
+}
 
 
 class RequirementSectionService:
@@ -184,12 +196,15 @@ class RequirementSectionService:
             section_in=section_in,
             actor_id=actor_id,
         )
-        self._record_section_change_log(
+        self._record_section_update_change_log(
             db,
             section=updated_section,
-            action=RequirementChangeLogAction.UPDATED,
-            old_value=before_value,
-            new_value=self._build_section_snapshot(updated_section),
+            old_snapshot=before_value,
+            new_snapshot=self._build_section_snapshot(updated_section),
+            updated_fields=(
+                section_in.model_fields_set - {"version", "reason"}
+            )
+            & REQUIREMENT_SECTION_UPDATABLE_FIELDS,
             changed_by=actor_id,
         )
         return updated_section
@@ -327,6 +342,40 @@ class RequirementSectionService:
             action=action,
             old_value=old_value,
             new_value=new_value,
+            changed_by=changed_by,
+        )
+
+    def _record_section_update_change_log(
+        self,
+        db: Session,
+        *,
+        section: RequirementSection,
+        old_snapshot: dict[str, object],
+        new_snapshot: dict[str, object],
+        updated_fields: set[str],
+        changed_by: int | None = None,
+    ) -> None:
+        """要件定義セクション更新の変更履歴を記録する。"""
+        changed_fields, old_value, new_value = build_changed_field_snapshots(
+            old_snapshot,
+            new_snapshot,
+            updated_fields,
+        )
+        change_log_entry = build_update_change_log_entry(
+            updated_fields=changed_fields,
+            old_values=old_value,
+            new_values=new_value,
+            default_action=RequirementChangeLogAction.UPDATED,
+        )
+        if change_log_entry is None:
+            return
+
+        self._record_section_change_log(
+            db,
+            section=section,
+            action=change_log_entry.action,
+            old_value=change_log_entry.old_value,
+            new_value=change_log_entry.new_value,
             changed_by=changed_by,
         )
 

@@ -9,6 +9,16 @@ from app.schemas.change_log import ChangeLogUserRead
 ChangeLogValueFormatter = Callable[[Any], Any]
 
 
+@dataclass(frozen=True)
+class ChangeLogUpdateEntry:
+    """更新操作1回分として保存する変更履歴値を表す。"""
+
+    action: str
+    field_name: str | None
+    old_value: dict[str, Any] | None
+    new_value: dict[str, Any] | None
+
+
 def build_changed_field_snapshots(
     before: dict[str, Any],
     after: dict[str, Any],
@@ -36,6 +46,50 @@ def build_changed_field_snapshots(
         field_name: after.get(field_name) for field_name in changed_fields
     }
     return changed_fields, before_snapshot, after_snapshot
+
+
+def build_update_change_log_entry(
+    *,
+    updated_fields: list[str],
+    old_values: dict[str, Any],
+    new_values: dict[str, Any],
+    default_action: str,
+    field_action_map: dict[str, str] | None = None,
+) -> ChangeLogUpdateEntry | None:
+    """更新操作1回分の変更履歴保存値を作成する。
+
+    Args:
+        updated_fields: 実際に値が変わったフィールド名一覧。
+        old_values: 変更前スナップショット。
+        new_values: 変更後スナップショット。
+        default_action: 汎用更新時に保存する操作種別。
+        field_action_map: 単一項目更新時に専用actionへ変換するマップ。
+
+    Returns:
+        変更履歴保存値。変更がない場合はNone。
+    """
+    if not updated_fields:
+        return None
+
+    actions_by_field = field_action_map or {}
+    if len(updated_fields) == 1 and updated_fields[0] in actions_by_field:
+        field_name = updated_fields[0]
+        return ChangeLogUpdateEntry(
+            action=actions_by_field[field_name],
+            field_name=field_name,
+            old_value={field_name: old_values.get(field_name)},
+            new_value={field_name: new_values.get(field_name)},
+        )
+
+    return ChangeLogUpdateEntry(
+        action=default_action,
+        field_name=None,
+        old_value={"snapshot": old_values},
+        new_value={
+            "updated_fields": updated_fields,
+            "snapshot": new_values,
+        },
+    )
 
 
 @dataclass(frozen=True)

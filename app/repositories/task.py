@@ -153,6 +153,8 @@ class TaskRepository:
         status: str | None = None,
         assignee_id: int | None = None,
         requirement_id: int | None = None,
+        parent_task_id: int | None = None,
+        root_only: bool | None = None,
         start_date_from: date | None = None,
         due_date_to: date | None = None,
         overdue: bool | None = None,
@@ -172,6 +174,10 @@ class TaskRepository:
                 RequirementTaskRelation,
                 RequirementTaskRelation.task_id == Task.id,
             ).filter(RequirementTaskRelation.requirement_id == requirement_id)
+        if parent_task_id is not None:
+            query = query.filter(Task.parent_task_id == parent_task_id)
+        if root_only:
+            query = query.filter(Task.parent_task_id.is_(None))
         if status is not None:
             query = query.filter(Task.status == status)
         if task_type is not None:

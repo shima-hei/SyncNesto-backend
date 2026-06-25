@@ -187,6 +187,87 @@ def test_list_tasks_filters_by_requirement_and_overdue(
     assert response.json()["items"][0]["is_overdue"] is True
 
 
+def test_list_tasks_filters_by_parent_task_and_root_only(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_task: Callable[..., Task],
+    db: Session,
+) -> None:
+    """タスク一覧を親タスクIDとルートタスクで絞り込めることを確認する。"""
+    user = create_test_user(email="task-tree@example.com")
+    project = create_test_project(project_code="TREE", name="Task Tree")
+    parent = create_test_task(project=project, task_code="TASK-PARENT")
+    child = create_test_task(project=project, task_code="TASK-CHILD")
+    root = create_test_task(project=project, task_code="TASK-ROOT")
+    child.parent_task_id = parent.id
+    db.commit()
+    assign_project_role(user=user, project=project, role_key="manager")
+    authorize_as(client, user)
+
+    child_response = client.get(
+        f"/projects/{project.id}/tasks?parent_task_id={parent.id}"
+    )
+    root_response = client.get(f"/projects/{project.id}/tasks?root_only=true")
+
+    assert child_response.status_code == 200
+    assert child_response.json()["total"] == 1
+    assert child_response.json()["items"][0]["id"] == child.id
+    assert root_response.status_code == 200
+    assert {item["id"] for item in root_response.json()["items"]} == {
+        parent.id,
+        root.id,
+    }
+
+
+def test_list_tasks_rejects_conflicting_parent_filters(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_task: Callable[..., Task],
+) -> None:
+    """parent_task_idとroot_onlyを同時指定すると400になることを確認する。"""
+    user = create_test_user(email="task-tree-conflict@example.com")
+    project = create_test_project(project_code="TREECONF", name="Task Tree Conflict")
+    parent = create_test_task(project=project, task_code="TASK-PARENT")
+    assign_project_role(user=user, project=project, role_key="manager")
+    authorize_as(client, user)
+
+    response = client.get(
+        f"/projects/{project.id}/tasks?parent_task_id={parent.id}&root_only=true"
+    )
+
+    assert response.status_code == 400
+    assert response.json()["message"] == (
+        "parent_task_id and root_only cannot be used together"
+    )
+
+
+def test_list_tasks_rejects_parent_task_from_other_project(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_task: Callable[..., Task],
+) -> None:
+    """別プロジェクトの親タスクIDでの一覧絞り込みを404で拒否する。"""
+    user = create_test_user(email="task-tree-other@example.com")
+    project = create_test_project(project_code="TREEA", name="Task Tree A")
+    other_project = create_test_project(project_code="TREEB", name="Task Tree B")
+    other_parent = create_test_task(project=other_project, task_code="TASK-OTHER")
+    assign_project_role(user=user, project=project, role_key="manager")
+    authorize_as(client, user)
+
+    response = client.get(
+        f"/projects/{project.id}/tasks?parent_task_id={other_parent.id}"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["message"] == "Parent task not found"
+
+
 def test_update_task_uses_optimistic_lock(
     client: TestClient,
     create_test_user: Callable[..., User],
@@ -209,6 +290,86 @@ def test_update_task_uses_optimistic_lock(
     assert response.status_code == 409
     assert response.json()["code"] == "VERSION_CONFLICT"
     assert response.json()["current"]["id"] == task.id
+
+
+def test_update_task_rejects_self_parent(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_task: Callable[..., Task],
+) -> None:
+    """タスク自身を親タスクに指定できないことを確認する。"""
+    user = create_test_user(email="self-parent@example.com")
+    project = create_test_project(project_code="SELFPARENT", name="Self Parent")
+    task = create_test_task(project=project, task_code="TASK-SELF")
+    assign_project_role(user=user, project=project, role_key="manager")
+    authorize_as(client, user)
+
+    response = client.patch(
+        f"/tasks/{task.id}",
+        json={"version": task.version, "parent_task_id": task.id},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "Task cannot be its own parent"
+
+
+def test_update_task_rejects_parent_cycle(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_task: Callable[..., Task],
+    db: Session,
+) -> None:
+    """親子関係が循環する更新を拒否することを確認する。"""
+    user = create_test_user(email="parent-cycle@example.com")
+    project = create_test_project(project_code="CYCLE", name="Parent Cycle")
+    parent = create_test_task(project=project, task_code="TASK-PARENT")
+    child = create_test_task(project=project, task_code="TASK-CHILD")
+    grandchild = create_test_task(project=project, task_code="TASK-GRANDCHILD")
+    child.parent_task_id = parent.id
+    grandchild.parent_task_id = child.id
+    db.commit()
+    assign_project_role(user=user, project=project, role_key="manager")
+    authorize_as(client, user)
+
+    response = client.patch(
+        f"/tasks/{parent.id}",
+        json={"version": parent.version, "parent_task_id": grandchild.id},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "Task parent creates a cycle"
+
+
+def test_update_task_can_clear_parent_task(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_task: Callable[..., Task],
+    db: Session,
+) -> None:
+    """parent_task_idにnullを送ると親タスクを解除できることを確認する。"""
+    user = create_test_user(email="clear-parent@example.com")
+    project = create_test_project(project_code="CLEARPARENT", name="Clear Parent")
+    parent = create_test_task(project=project, task_code="TASK-PARENT")
+    child = create_test_task(project=project, task_code="TASK-CHILD")
+    child.parent_task_id = parent.id
+    db.commit()
+    db.refresh(child)
+    assign_project_role(user=user, project=project, role_key="manager")
+    authorize_as(client, user)
+
+    response = client.patch(
+        f"/tasks/{child.id}",
+        json={"version": child.version, "parent_task_id": None},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["parent_task_id"] is None
 
 
 def test_dependency_marks_successor_as_blocked(
@@ -498,8 +659,10 @@ def test_task_change_logs_return_field_values(
     response = client.get(f"/tasks/{task.id}/change-logs")
 
     assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
     status_log = next(
-        item for item in response.json()["items"] if item["field_name"] == "status"
+        item for item in body["items"] if item["field_name"] == "status"
     )
     assert status_log["action"] == "status_changed"
     assert status_log["old_value"] == {"code": "backlog", "label": "バックログ"}
@@ -509,6 +672,88 @@ def test_task_change_logs_return_field_values(
     }
     assert status_log["reason"] == "着手したため"
     assert status_log["created_by_user"]["email"] == "history@example.com"
+
+
+def test_task_change_logs_create_single_dedicated_log_for_single_field_changes(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+) -> None:
+    """単一の専用変更では専用actionだけが作成されることを確認する。"""
+    user = create_test_user(email="single-change@example.com")
+    project = create_test_project(project_code="SINGLELOG", name="Single Log")
+    assign_project_role(user=user, project=project, role_key="manager")
+    authorize_as(client, user)
+    cases = [
+        ("status", "in_progress", "status_changed"),
+        ("assignee_id", user.id, "assignee_changed"),
+        ("due_date", "2026-07-10", "schedule_changed"),
+        ("progress_percent", 50, "progress_changed"),
+    ]
+
+    for index, (field_name, value, expected_action) in enumerate(cases, start=1):
+        create_response = client.post(
+            f"/projects/{project.id}/tasks",
+            json={"title": f"Single change task {index}"},
+        )
+        assert create_response.status_code == 201
+        task = create_response.json()
+
+        update_response = client.patch(
+            f"/tasks/{task['id']}",
+            json={"version": task["version"], field_name: value},
+        )
+        assert update_response.status_code == 200
+
+        response = client.get(f"/tasks/{task['id']}/change-logs")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 2
+        update_logs = [
+            item for item in body["items"] if item["action"] != "created"
+        ]
+        assert len(update_logs) == 1
+        assert update_logs[0]["action"] == expected_action
+        assert update_logs[0]["field_name"] == field_name
+
+
+def test_task_change_logs_create_only_updated_log_for_multiple_field_changes(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_task: Callable[..., Task],
+) -> None:
+    """複数項目変更では汎用updatedだけが作成されることを確認する。"""
+    user = create_test_user(email="multiple-change@example.com")
+    project = create_test_project(project_code="MULTILOG", name="Multi Log")
+    task = create_test_task(project=project, task_code="TASK-MULTI")
+    assign_project_role(user=user, project=project, role_key="manager")
+    authorize_as(client, user)
+
+    update_response = client.patch(
+        f"/tasks/{task.id}",
+        json={
+            "version": task.version,
+            "status": "in_progress",
+            "assignee_id": user.id,
+        },
+    )
+    assert update_response.status_code == 200
+
+    response = client.get(f"/tasks/{task.id}/change-logs")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["action"] == "updated"
+    assert body["items"][0]["field_name"] is None
+    assert set(body["items"][0]["new_value"]["updated_fields"]) == {
+        "assignee_id",
+        "status",
+    }
 
 
 def test_task_change_logs_handle_many_updated_fields(

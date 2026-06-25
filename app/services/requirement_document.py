@@ -13,6 +13,10 @@ from app.schemas.requirement import (
     RequirementDocumentRead,
     RequirementDocumentUpdate,
 )
+from app.services.change_log_formatter import (
+    build_changed_field_snapshots,
+    build_update_change_log_entry,
+)
 from app.services.conflict import (
     raise_duplicate_after_rollback,
     raise_if_version_conflict,
@@ -22,6 +26,20 @@ from app.services.requirement_change_log import (
     RequirementChangeLogService,
     RequirementChangeLogTargetType,
 )
+
+REQUIREMENT_DOCUMENT_UPDATABLE_FIELDS = {
+    "title",
+    "document_code",
+    "status",
+    "purpose",
+    "target_system_name",
+    "client_name",
+    "vendor_name",
+    "author_id",
+    "reviewer_id",
+    "approver_id",
+    "approved_at",
+}
 
 
 class RequirementDocumentService:
@@ -218,13 +236,16 @@ class RequirementDocumentService:
                 document_in=document_in,
                 actor_id=actor_id,
             )
-            self._record_change_log(
+            self._record_update_change_log(
                 db,
                 document=updated_document,
-                action=RequirementChangeLogAction.UPDATED,
-                old_value=before_value,
-                new_value=self._build_document_snapshot(updated_document),
-                reason=getattr(document_in, "reason", None),
+                old_snapshot=before_value,
+                new_snapshot=self._build_document_snapshot(updated_document),
+                updated_fields=(
+                    document_in.model_fields_set
+                    - {"version", "reason"}
+                )
+                & REQUIREMENT_DOCUMENT_UPDATABLE_FIELDS,
                 changed_by=actor_id,
             )
             return updated_document
@@ -299,6 +320,40 @@ class RequirementDocumentService:
             old_value=old_value,
             new_value=new_value,
             reason=reason,
+            changed_by=changed_by,
+        )
+
+    def _record_update_change_log(
+        self,
+        db: Session,
+        *,
+        document: RequirementDocument,
+        old_snapshot: dict[str, object],
+        new_snapshot: dict[str, object],
+        updated_fields: set[str],
+        changed_by: int | None = None,
+    ) -> None:
+        """要件定義書更新の変更履歴を記録する。"""
+        changed_fields, old_value, new_value = build_changed_field_snapshots(
+            old_snapshot,
+            new_snapshot,
+            updated_fields,
+        )
+        change_log_entry = build_update_change_log_entry(
+            updated_fields=changed_fields,
+            old_values=old_value,
+            new_values=new_value,
+            default_action=RequirementChangeLogAction.UPDATED,
+        )
+        if change_log_entry is None:
+            return
+
+        self._record_change_log(
+            db,
+            document=document,
+            action=change_log_entry.action,
+            old_value=change_log_entry.old_value,
+            new_value=change_log_entry.new_value,
             changed_by=changed_by,
         )
 

@@ -70,6 +70,7 @@ from app.services.change_log_formatter import (
     ChangeLogFormatConfig,
     ChangeLogFormatter,
     build_changed_field_snapshots,
+    build_update_change_log_entry,
 )
 from app.services.conflict import (
     raise_duplicate_after_rollback,
@@ -368,6 +369,8 @@ class TaskService:
         status: str | None = None,
         assignee_id: int | None = None,
         requirement_id: int | None = None,
+        parent_task_id: int | None = None,
+        root_only: bool | None = None,
         start_date_from: date | None = None,
         due_date_to: date | None = None,
         overdue: bool | None = None,
@@ -381,6 +384,10 @@ class TaskService:
         self._ensure_project_exists(db, project_id)
         if requirement_id is not None:
             self._ensure_requirement_in_project(db, project_id, requirement_id)
+        if parent_task_id is not None and root_only:
+            raise BadRequestError(error_messages.TASK_PARENT_FILTER_CONFLICT)
+        if parent_task_id is not None:
+            self._validate_parent_task(db, project_id, parent_task_id)
         return self.task_repository.list_paginated(
             db,
             project_id=project_id,
@@ -389,6 +396,8 @@ class TaskService:
             status=status,
             assignee_id=assignee_id,
             requirement_id=requirement_id,
+            parent_task_id=parent_task_id,
+            root_only=root_only,
             start_date_from=start_date_from,
             due_date_to=due_date_to,
             overdue=overdue,
@@ -429,7 +438,12 @@ class TaskService:
             else:
                 task_in = task_in.model_copy(update={"task_code": normalized_task_code})
         if "parent_task_id" in task_in.model_fields_set:
-            self._validate_parent_task(db, task.project_id, task_in.parent_task_id)
+            self._validate_parent_task(
+                db,
+                task.project_id,
+                task_in.parent_task_id,
+                task_id=task.id,
+            )
         if (
             task_in.task_code is not None
             and task_in.task_code != task.task_code
@@ -475,10 +489,13 @@ class TaskService:
                 exc,
             )
 
+        candidate_fields = (
+            task_in.model_fields_set - {"version", "change_reason"}
+        ) & TASK_UPDATABLE_FIELDS
         updated_fields, old_values, new_values = build_changed_field_snapshots(
             before_snapshot,
             self._task_snapshot(task),
-            TASK_UPDATABLE_FIELDS,
+            candidate_fields,
         )
         if updated_fields:
             self._record_task_update_logs(
@@ -1427,13 +1444,51 @@ class TaskService:
         db: Session,
         project_id: int,
         parent_task_id: int | None,
+        task_id: int | None = None,
     ) -> None:
         """親タスクが同じプロジェクトに存在することを確認する。"""
         if parent_task_id is None:
             return
+        if task_id is not None and parent_task_id == task_id:
+            raise BadRequestError(error_messages.TASK_PARENT_SELF_REFERENCE)
         parent = self.task_repository.get_by_id(db, parent_task_id)
         if parent is None or parent.project_id != project_id:
             raise NotFoundError(error_messages.TASK_PARENT_NOT_FOUND)
+        if task_id is not None and self._creates_parent_cycle(
+            db,
+            task_id=task_id,
+            parent_task_id=parent_task_id,
+        ):
+            raise BadRequestError(error_messages.TASK_PARENT_CYCLE)
+
+    def _creates_parent_cycle(
+        self,
+        db: Session,
+        *,
+        task_id: int,
+        parent_task_id: int,
+    ) -> bool:
+        """親タスク変更により循環参照が発生するか判定する。
+
+        Args:
+            db: DBセッション。
+            task_id: 更新対象タスクID。
+            parent_task_id: 新しい親タスクID。
+
+        Returns:
+            循環参照が発生する場合はTrue。
+        """
+        current_parent_id: int | None = parent_task_id
+        visited_task_ids: set[int] = set()
+        while current_parent_id is not None:
+            if current_parent_id == task_id:
+                return True
+            if current_parent_id in visited_task_ids:
+                return True
+            visited_task_ids.add(current_parent_id)
+            parent = self.task_repository.get_by_id(db, current_parent_id)
+            current_parent_id = parent.parent_task_id if parent is not None else None
+        return False
 
     def _normalize_task_code(self, task_code: str | None) -> str | None:
         """タスクコード入力値を正規化する。
@@ -1926,42 +1981,36 @@ class TaskService:
         actor_id: int | None,
     ) -> None:
         """タスク更新の変更履歴を記録する。"""
+        change_log_entry = build_update_change_log_entry(
+            updated_fields=updated_fields,
+            old_values=old_values,
+            new_values=new_values,
+            default_action=TaskChangeLogAction.UPDATED,
+            field_action_map={
+                "status": TaskChangeLogAction.STATUS_CHANGED,
+                "assignee_id": TaskChangeLogAction.ASSIGNEE_CHANGED,
+                "start_date": TaskChangeLogAction.SCHEDULE_CHANGED,
+                "due_date": TaskChangeLogAction.SCHEDULE_CHANGED,
+                "actual_start_date": TaskChangeLogAction.SCHEDULE_CHANGED,
+                "actual_end_date": TaskChangeLogAction.SCHEDULE_CHANGED,
+                "progress_percent": TaskChangeLogAction.PROGRESS_CHANGED,
+            },
+        )
+        if change_log_entry is None:
+            return
+
         self._record_change(
             db,
             project_id=task.project_id,
             target_type=TaskTargetType.TASK,
             target_id=task.id,
-            action=TaskChangeLogAction.UPDATED,
-            field_name=None,
-            old_value={"snapshot": old_values},
-            new_value={
-                "updated_fields": updated_fields,
-                "snapshot": new_values,
-            },
+            action=change_log_entry.action,
+            field_name=change_log_entry.field_name,
+            old_value=change_log_entry.old_value,
+            new_value=change_log_entry.new_value,
             reason=reason,
             changed_by=actor_id,
         )
-        field_action_map = {
-            "status": TaskChangeLogAction.STATUS_CHANGED,
-            "assignee_id": TaskChangeLogAction.ASSIGNEE_CHANGED,
-            "start_date": TaskChangeLogAction.SCHEDULE_CHANGED,
-            "due_date": TaskChangeLogAction.SCHEDULE_CHANGED,
-            "progress_percent": TaskChangeLogAction.PROGRESS_CHANGED,
-        }
-        for field_name, action in field_action_map.items():
-            if field_name in updated_fields:
-                self._record_change(
-                    db,
-                    project_id=task.project_id,
-                    target_type=TaskTargetType.TASK,
-                    target_id=task.id,
-                    action=action,
-                    field_name=field_name,
-                    old_value={field_name: old_values.get(field_name)},
-                    new_value={field_name: new_values.get(field_name)},
-                    reason=reason,
-                    changed_by=actor_id,
-                )
 
     def _record_change(
         self,

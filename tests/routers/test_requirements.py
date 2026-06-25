@@ -1090,6 +1090,232 @@ def test_requirement_change_logs_normalize_action_and_values(
     assert filtered_response.json()["items"][0]["action"] == "comment_resolved"
 
 
+def test_requirement_document_update_change_log_uses_updated_fields_snapshot(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """要件定義書更新履歴が差分スナップショット形式で1件だけ作られる。"""
+    user = create_test_user(email="document-log-manager@example.com")
+    project = create_test_project(name="Document Log Project")
+    document = create_test_requirement_document(
+        project=project,
+        title="Before",
+    )
+    document.purpose = "旧目的"
+    db.commit()
+    db.refresh(document)
+    assign_project_role(user=user, project=project, role_key="manager")
+    authorize_as(client, user)
+
+    response = client.patch(
+        f"/projects/{project.id}/requirement-documents/{document.id}",
+        json={
+            "version": document.version,
+            "title": "After",
+            "purpose": "新目的",
+        },
+    )
+    assert response.status_code == 200
+
+    logs_response = client.get(f"/projects/{project.id}/change-logs")
+
+    assert logs_response.status_code == 200
+    body = logs_response.json()
+    assert body["total"] == 1
+    log = body["items"][0]
+    assert log["target_type"] == "requirement_document"
+    assert log["action"] == "updated"
+    assert log["field_name"] is None
+    assert log["old_value"] == {
+        "snapshot": {
+            "purpose": "旧目的",
+            "title": "Before",
+        }
+    }
+    assert log["new_value"] == {
+        "updated_fields": ["purpose", "title"],
+        "snapshot": {
+            "purpose": "新目的",
+            "title": "After",
+        },
+    }
+
+
+def test_requirement_section_update_change_log_uses_updated_fields_snapshot(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_section: Callable[..., RequirementSection],
+) -> None:
+    """セクション更新履歴が差分スナップショット形式で1件だけ作られる。"""
+    user = create_test_user(email="section-log-manager@example.com")
+    project = create_test_project(name="Section Log Project")
+    document = create_test_requirement_document(project=project)
+    section = create_test_requirement_section(
+        document=document,
+        title="Before",
+        status="draft",
+    )
+    assign_project_role(user=user, project=project, role_key="manager")
+    authorize_as(client, user)
+
+    response = client.patch(
+        f"/projects/{project.id}/requirement-sections/{section.id}",
+        json={
+            "version": section.version,
+            "title": "After",
+            "status": "review",
+        },
+    )
+    assert response.status_code == 200
+
+    logs_response = client.get(f"/projects/{project.id}/change-logs")
+
+    assert logs_response.status_code == 200
+    body = logs_response.json()
+    assert body["total"] == 1
+    log = body["items"][0]
+    assert log["target_type"] == "requirement_section"
+    assert log["action"] == "updated"
+    assert log["field_name"] is None
+    assert log["old_value"] == {
+        "snapshot": {
+            "status": "draft",
+            "title": "Before",
+        }
+    }
+    assert log["new_value"] == {
+        "updated_fields": ["status", "title"],
+        "snapshot": {
+            "status": "review",
+            "title": "After",
+        },
+    }
+
+
+def test_requirement_update_change_log_uses_updated_fields_snapshot(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """要件更新履歴が差分スナップショット形式で1件だけ作られる。"""
+    user = create_test_user(email="requirement-log-manager@example.com")
+    project = create_test_project(name="Requirement Log Project")
+    document = create_test_requirement_document(project=project)
+    requirement = Requirement(
+        document_id=document.id,
+        requirement_code="REQ-LOG",
+        requirement_type="functional",
+        title="Before",
+        priority="should",
+    )
+    db.add(requirement)
+    db.commit()
+    db.refresh(requirement)
+    assign_project_role(user=user, project=project, role_key="manager")
+    authorize_as(client, user)
+
+    response = client.patch(
+        f"/projects/{project.id}/requirements/{requirement.id}",
+        json={
+            "version": requirement.version,
+            "title": "After",
+            "priority": "must",
+            "reason": "優先度見直し",
+        },
+    )
+    assert response.status_code == 200
+
+    logs_response = client.get(f"/projects/{project.id}/change-logs")
+
+    assert logs_response.status_code == 200
+    body = logs_response.json()
+    assert body["total"] == 1
+    log = body["items"][0]
+    assert log["target_type"] == "requirement"
+    assert log["action"] == "updated"
+    assert log["field_name"] is None
+    assert log["old_value"] == {
+        "snapshot": {
+            "priority": "should",
+            "title": "Before",
+        }
+    }
+    assert log["new_value"] == {
+        "updated_fields": ["priority", "title"],
+        "snapshot": {
+            "priority": "must",
+            "title": "After",
+        },
+    }
+    assert log["reason"] == "優先度見直し"
+
+
+def test_open_issue_update_change_log_uses_updated_fields_snapshot(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_open_issue: Callable[..., RequirementOpenIssue],
+) -> None:
+    """未決事項更新履歴が差分スナップショット形式で1件だけ作られる。"""
+    user = create_test_user(email="issue-log-manager@example.com")
+    project = create_test_project(name="Issue Log Project")
+    document = create_test_requirement_document(project=project)
+    issue = create_test_requirement_open_issue(
+        document=document,
+        title="Before",
+        status="open",
+    )
+    assign_project_role(user=user, project=project, role_key="manager")
+    authorize_as(client, user)
+
+    response = client.patch(
+        f"/projects/{project.id}/open-issues/{issue.id}",
+        json={
+            "version": issue.version,
+            "title": "After",
+            "status": "resolved",
+            "reason": "解決済み",
+        },
+    )
+    assert response.status_code == 200
+
+    logs_response = client.get(f"/projects/{project.id}/change-logs")
+
+    assert logs_response.status_code == 200
+    body = logs_response.json()
+    assert body["total"] == 1
+    log = body["items"][0]
+    assert log["target_type"] == "requirement_open_issue"
+    assert log["action"] == "updated"
+    assert log["field_name"] is None
+    assert log["old_value"] == {
+        "snapshot": {
+            "status": "open",
+            "title": "Before",
+        }
+    }
+    assert log["new_value"] == {
+        "updated_fields": ["status", "title"],
+        "snapshot": {
+            "status": "resolved",
+            "title": "After",
+        },
+    }
+    assert log["reason"] == "解決済み"
+
+
 def test_request_and_approve_requirement_approval_records_change_logs(
     client: TestClient,
     create_test_user: Callable[..., User],
