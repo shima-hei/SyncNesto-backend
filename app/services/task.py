@@ -766,6 +766,23 @@ class TaskService:
         self.get_task(db, task_id)
         return self.comment_repository.list_by_task(db, task_id)
 
+    def list_comment_reads(self, db: Session, task_id: int) -> list[TaskCommentRead]:
+        """タスクコメント一覧レスポンスを取得する。"""
+        comments = self.list_comments(db, task_id)
+        users_by_id = self._get_change_log_users_by_id(
+            db,
+            [comment.created_by for comment in comments],
+        )
+        return [
+            self._build_task_comment_read(comment, users_by_id=users_by_id)
+            for comment in comments
+        ]
+
+    def build_comment_read(self, db: Session, comment: TaskComment) -> TaskCommentRead:
+        """タスクコメントレスポンスを作成する。"""
+        users_by_id = self._get_change_log_users_by_id(db, [comment.created_by])
+        return self._build_task_comment_read(comment, users_by_id=users_by_id)
+
     def get_comment(self, db: Session, comment_id: int) -> TaskComment:
         """タスクコメントを取得する。"""
         comment = self.comment_repository.get_by_id(db, comment_id)
@@ -1669,6 +1686,23 @@ class TaskService:
             "sort_order": task.sort_order,
             "tags": task.tags,
         }
+
+    def _build_task_comment_read(
+        self,
+        comment: TaskComment,
+        *,
+        users_by_id: dict[int, ChangeLogUserRead],
+    ) -> TaskCommentRead:
+        """タスクコメントレスポンスを作成する。"""
+        return TaskCommentRead.model_validate(comment).model_copy(
+            update={
+                "created_by_user": (
+                    users_by_id.get(comment.created_by)
+                    if comment.created_by is not None
+                    else None
+                ),
+            },
+        )
 
     def _build_task_change_log_read(
         self,

@@ -135,6 +135,7 @@ class TaskCommentRead(BaseModel):
     is_resolved: bool
     version: int
     created_by: int | None = None
+    created_by_user: ChangeLogUserRead | None = None
     updated_by: int | None = None
     created_at: datetime
     updated_at: datetime

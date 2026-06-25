@@ -517,7 +517,7 @@ def test_task_comments_lifecycle(
     create_test_task: Callable[..., Task],
 ) -> None:
     """タスクコメントの作成、更新、解決、再オープン、削除を確認する。"""
-    user = create_test_user(email="commenter@example.com")
+    user = create_test_user(email="commenter@example.com", name="Comment User")
     project = create_test_project(project_code="COMMENT", name="Comment")
     task = create_test_task(project=project, task_code="TASK-COMMENT")
     assign_project_role(user=user, project=project, role_key="member")
@@ -532,10 +532,17 @@ def test_task_comments_lifecycle(
     assert comment["body"] == "確認してください"
     assert comment["is_resolved"] is False
     assert comment["version"] == 1
+    assert comment["created_by_user"] == {
+        "id": user.id,
+        "name": "Comment User",
+        "email": "commenter@example.com",
+        "avatar_url": None,
+    }
 
     list_response = client.get(f"/tasks/{task.id}/comments")
     assert list_response.status_code == 200
     assert list_response.json()[0]["id"] == comment["id"]
+    assert list_response.json()[0]["created_by_user"]["name"] == "Comment User"
 
     update_response = client.patch(
         f"/task-comments/{comment['id']}",

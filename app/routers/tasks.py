@@ -214,10 +214,7 @@ def list_task_comments(
         task=task,
         permission_code="task:read",
     )
-    return [
-        TaskCommentRead.model_validate(comment)
-        for comment in task_service.list_comments(db, task_id)
-    ]
+    return task_service.list_comment_reads(db, task_id)
 
 
 @router.post(
@@ -245,7 +242,7 @@ def create_task_comment(
         comment_in=comment_in,
         actor_id=current_user.id,
     )
-    return TaskCommentRead.model_validate(comment)
+    return task_service.build_comment_read(db, comment)
 
 
 @router.patch("/task-comments/{comment_id}", response_model=TaskCommentRead)
@@ -270,7 +267,7 @@ def update_task_comment(
         comment_in=comment_in,
         actor_id=current_user.id,
     )
-    return TaskCommentRead.model_validate(comment)
+    return task_service.build_comment_read(db, comment)
 
 
 @router.delete("/task-comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -317,7 +314,7 @@ def resolve_task_comment(
         comment_in=comment_in,
         actor_id=current_user.id,
     )
-    return TaskCommentRead.model_validate(comment)
+    return task_service.build_comment_read(db, comment)
 
 
 @router.post("/task-comments/{comment_id}/reopen", response_model=TaskCommentRead)
@@ -342,7 +339,7 @@ def reopen_task_comment(
         comment_in=comment_in,
         actor_id=current_user.id,
     )
-    return TaskCommentRead.model_validate(comment)
+    return task_service.build_comment_read(db, comment)
 
 
 @router.get(
