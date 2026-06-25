@@ -370,7 +370,7 @@ def create_requirement_comment(
         user_id=current_user.id,
         comment_in=comment_in,
     )
-    return RequirementCommentRead.model_validate(comment)
+    return shared.requirement_child_service.build_comment_read(db, comment)
 
 
 @router.get(
@@ -394,12 +394,11 @@ def list_requirement_comments(
     Returns:
         要件コメント一覧。
     """
-    comments = shared.requirement_child_service.list_comments(
+    return shared.requirement_child_service.list_comment_reads(
         db,
         project_id=project_id,
         requirement_id=requirement_id,
     )
-    return [RequirementCommentRead.model_validate(comment) for comment in comments]
 
 
 @router.delete(

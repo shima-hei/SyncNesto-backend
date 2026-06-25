@@ -23,8 +23,11 @@ from app.repositories.requirement import (
     RequirementReviewRepository,
     RequirementRevisionRepository,
 )
+from app.repositories.user import UserRepository
+from app.schemas.change_log import ChangeLogUserRead
 from app.schemas.requirement import (
     RequirementCommentCreate,
+    RequirementCommentRead,
     RequirementDetailCreate,
     RequirementDetailUpdate,
     RequirementLinkCreate,
@@ -38,6 +41,7 @@ from app.services.requirement_change_log import (
     RequirementChangeLogTargetType,
 )
 from app.services.requirement_item import RequirementService
+from app.services.response_user import build_response_users_by_id
 
 
 class RequirementSummary(TypedDict):
@@ -64,6 +68,7 @@ class RequirementChildService:
         review_repository: RequirementReviewRepository | None = None,
         revision_repository: RequirementRevisionRepository | None = None,
         change_log_service: RequirementChangeLogService | None = None,
+        user_repository: UserRepository | None = None,
     ) -> None:
         """RequirementChildServiceを初期化する。
 
@@ -76,6 +81,7 @@ class RequirementChildService:
             review_repository: 要件レビューRepository。
             revision_repository: 要件改訂履歴Repository。
             change_log_service: 要件定義変更履歴Service。
+            user_repository: ユーザーRepository。
         """
         self.requirement_service = requirement_service or RequirementService()
         self.detail_repository = detail_repository or RequirementDetailRepository()
@@ -89,6 +95,7 @@ class RequirementChildService:
             revision_repository or RequirementRevisionRepository()
         )
         self.change_log_service = change_log_service or RequirementChangeLogService()
+        self.user_repository = user_repository or UserRepository()
 
     def get_summary(
         self,
@@ -554,6 +561,45 @@ class RequirementChildService:
         self._ensure_requirement_in_project(db, project_id, requirement_id)
         return self.comment_repository.list_by_requirement(db, requirement_id)
 
+    def list_comment_reads(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        requirement_id: int,
+    ) -> list[RequirementCommentRead]:
+        """要件コメント一覧レスポンスを取得する。"""
+        comments = self.list_comments(
+            db,
+            project_id=project_id,
+            requirement_id=requirement_id,
+        )
+        return self.build_comment_reads(db, comments)
+
+    def build_comment_read(
+        self,
+        db: Session,
+        comment: RequirementComment,
+    ) -> RequirementCommentRead:
+        """要件コメントレスポンスを作成する。"""
+        return self.build_comment_reads(db, [comment])[0]
+
+    def build_comment_reads(
+        self,
+        db: Session,
+        comments: list[RequirementComment],
+    ) -> list[RequirementCommentRead]:
+        """要件コメントモデル一覧からレスポンス一覧を作成する。"""
+        users_by_id = build_response_users_by_id(
+            db,
+            self.user_repository,
+            [comment.user_id for comment in comments],
+        )
+        return [
+            self._build_requirement_comment_read(comment, users_by_id=users_by_id)
+            for comment in comments
+        ]
+
     def delete_comment(
         self,
         db: Session,
@@ -580,6 +626,17 @@ class RequirementChildService:
             comment_id,
         )
         self.comment_repository.delete(db, comment)
+
+    def _build_requirement_comment_read(
+        self,
+        comment: RequirementComment,
+        *,
+        users_by_id: dict[int, ChangeLogUserRead],
+    ) -> RequirementCommentRead:
+        """要件コメントレスポンスを作成する。"""
+        return RequirementCommentRead.model_validate(comment).model_copy(
+            update={"user": users_by_id.get(comment.user_id)},
+        )
 
     def create_review(
         self,

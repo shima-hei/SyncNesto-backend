@@ -1443,7 +1443,7 @@ def test_create_target_comment_for_section_records_change_log(
     db: Session,
 ) -> None:
     """セクションへコメントでき、変更履歴が記録されることを確認する。"""
-    user = create_test_user(email="member@example.com")
+    user = create_test_user(email="member@example.com", name="Comment Member")
     project = create_test_project(name="Project")
     document = create_test_requirement_document(project=project)
     section = create_test_requirement_section(document=document)
@@ -1465,6 +1465,12 @@ def test_create_target_comment_for_section_records_change_log(
     assert response.json()["target_id"] == section.id
     assert response.json()["body"] == "この章の説明を補足してください。"
     assert response.json()["author_id"] == user.id
+    assert response.json()["author"] == {
+        "id": user.id,
+        "name": "Comment Member",
+        "email": "member@example.com",
+        "avatar_url": None,
+    }
     assert response.json()["is_resolved"] is False
     assert response.json()["version"] == 1
 
@@ -1546,7 +1552,7 @@ def test_list_target_comments_allows_viewer(
 ) -> None:
     """viewerが対象コメント一覧を取得できることを確認する。"""
     viewer = create_test_user(email="viewer@example.com")
-    author = create_test_user(email="author@example.com")
+    author = create_test_user(email="author@example.com", name="Requirement Author")
     project = create_test_project(name="Project")
     document = create_test_requirement_document(project=project)
     assign_project_role(user=viewer, project=project, role_key="viewer")
@@ -1573,6 +1579,10 @@ def test_list_target_comments_allows_viewer(
 
     assert response.status_code == 200
     assert [item["body"] for item in response.json()] == ["First", "Second"]
+    assert [item["author"]["name"] for item in response.json()] == [
+        "Requirement Author",
+        "Requirement Author",
+    ]
 
 
 def test_update_target_comment_rejects_stale_version(
@@ -2290,7 +2300,7 @@ def test_requirement_comment_create_list_delete_allows_member(
     db: Session,
 ) -> None:
     """memberが要件コメントを作成、取得、削除できることを確認する。"""
-    user = create_test_user(email="member@example.com")
+    user = create_test_user(email="member@example.com", name="Requirement Commenter")
     project = create_test_project(name="Project")
     document = create_test_requirement_document(project=project)
     assign_project_role(user=user, project=project, role_key="member")
@@ -2319,9 +2329,16 @@ def test_requirement_comment_create_list_delete_allows_member(
 
     assert create_response.status_code == 201
     assert create_response.json()["user_id"] == user.id
+    assert create_response.json()["user"] == {
+        "id": user.id,
+        "name": "Requirement Commenter",
+        "email": "member@example.com",
+        "avatar_url": None,
+    }
     assert create_response.json()["comment"] == "確認してください"
     assert list_response.status_code == 200
     assert list_response.json()[0]["id"] == comment_id
+    assert list_response.json()[0]["user"]["name"] == "Requirement Commenter"
     assert delete_response.status_code == 204
     assert db.get(RequirementComment, comment_id) is None
 
@@ -2423,7 +2440,7 @@ def test_read_requirement_summary_returns_related_resources_with_latest_limits(
     db: Session,
 ) -> None:
     """要件summaryが関連情報をまとめて返し、コメントと履歴を直近20件に絞ることを確認する。"""
-    user = create_test_user(email="viewer@example.com")
+    user = create_test_user(email="viewer@example.com", name="Summary Viewer")
     reviewer = create_test_user(email="reviewer@example.com")
     project = create_test_project(name="Project")
     document = create_test_requirement_document(project=project)
@@ -2490,7 +2507,9 @@ def test_read_requirement_summary_returns_related_resources_with_latest_limits(
     assert response.json()["reviews"][0]["reviewer_id"] == reviewer.id
     assert len(response.json()["comments"]) == 20
     assert response.json()["comments"][0]["comment"] == "comment-1"
+    assert response.json()["comments"][0]["user"]["name"] == "Summary Viewer"
     assert response.json()["comments"][-1]["comment"] == "comment-20"
+    assert response.json()["comments"][-1]["user"]["name"] == "Summary Viewer"
     assert len(response.json()["revisions"]) == 20
     assert response.json()["revisions"][0]["version"] == 2
     assert response.json()["revisions"][-1]["version"] == 21

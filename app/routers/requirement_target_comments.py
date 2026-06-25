@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import require_project_permission
 from app.db.session import get_db
-from app.models.requirement import RequirementTargetComment
 from app.models.user import User
 from app.routers import requirements_shared as shared
 from app.schemas.requirement import (
@@ -28,7 +27,7 @@ def create_target_comment(
     comment_in: RequirementTargetCommentCreate,
     current_user: User = Depends(require_project_permission("requirement:comment")),
     db: Session = Depends(get_db),
-) -> RequirementTargetComment:
+) -> RequirementTargetCommentRead:
     """要件定義対象コメントを作成する。
 
     Args:
@@ -40,12 +39,13 @@ def create_target_comment(
     Returns:
         作成された要件定義対象コメント。
     """
-    return shared.target_comment_service.create_comment(
+    comment = shared.target_comment_service.create_comment(
         db,
         project_id=project_id,
         comment_in=comment_in,
         author_id=current_user.id,
     )
+    return shared.target_comment_service.build_comment_read(db, comment)
 
 
 @router.get(
@@ -58,7 +58,7 @@ def list_target_comments(
     target_id: int = Query(),
     _: User = Depends(require_project_permission("requirement:read")),
     db: Session = Depends(get_db),
-) -> list[RequirementTargetComment]:
+) -> list[RequirementTargetCommentRead]:
     """要件定義対象コメント一覧を取得する。
 
     Args:
@@ -71,7 +71,7 @@ def list_target_comments(
     Returns:
         要件定義対象コメント一覧。
     """
-    return shared.target_comment_service.list_comments(
+    return shared.target_comment_service.list_comment_reads(
         db,
         project_id=project_id,
         target_type=target_type,
@@ -89,7 +89,7 @@ def update_target_comment(
     comment_in: RequirementTargetCommentUpdate,
     current_user: User = Depends(require_project_permission("requirement:comment")),
     db: Session = Depends(get_db),
-) -> RequirementTargetComment:
+) -> RequirementTargetCommentRead:
     """要件定義対象コメントを更新する。
 
     Args:
@@ -102,13 +102,14 @@ def update_target_comment(
     Returns:
         更新された要件定義対象コメント。
     """
-    return shared.target_comment_service.update_comment(
+    comment = shared.target_comment_service.update_comment(
         db,
         project_id=project_id,
         comment_id=comment_id,
         comment_in=comment_in,
         actor_id=current_user.id,
     )
+    return shared.target_comment_service.build_comment_read(db, comment)
 
 
 @router.delete(
@@ -147,7 +148,7 @@ def resolve_target_comment(
     state_in: RequirementTargetCommentStateUpdate,
     current_user: User = Depends(require_project_permission("requirement:comment")),
     db: Session = Depends(get_db),
-) -> RequirementTargetComment:
+) -> RequirementTargetCommentRead:
     """要件定義対象コメントを解決済みにする。
 
     Args:
@@ -160,13 +161,14 @@ def resolve_target_comment(
     Returns:
         更新された要件定義対象コメント。
     """
-    return shared.target_comment_service.resolve_comment(
+    comment = shared.target_comment_service.resolve_comment(
         db,
         project_id=project_id,
         comment_id=comment_id,
         state_in=state_in,
         actor_id=current_user.id,
     )
+    return shared.target_comment_service.build_comment_read(db, comment)
 
 
 @router.post(
@@ -179,7 +181,7 @@ def reopen_target_comment(
     state_in: RequirementTargetCommentStateUpdate,
     current_user: User = Depends(require_project_permission("requirement:comment")),
     db: Session = Depends(get_db),
-) -> RequirementTargetComment:
+) -> RequirementTargetCommentRead:
     """要件定義対象コメントを未解決に戻す。
 
     Args:
@@ -192,10 +194,11 @@ def reopen_target_comment(
     Returns:
         更新された要件定義対象コメント。
     """
-    return shared.target_comment_service.reopen_comment(
+    comment = shared.target_comment_service.reopen_comment(
         db,
         project_id=project_id,
         comment_id=comment_id,
         state_in=state_in,
         actor_id=current_user.id,
     )
+    return shared.target_comment_service.build_comment_read(db, comment)

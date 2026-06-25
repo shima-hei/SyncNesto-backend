@@ -9,7 +9,6 @@ from app.models.requirement import Requirement
 from app.models.user import User
 from app.routers import requirements_shared as shared
 from app.schemas.requirement import (
-    RequirementCommentRead,
     RequirementCreate,
     RequirementDetailRead,
     RequirementLinkRead,
@@ -175,10 +174,10 @@ def read_requirement_summary(
             for detail in summary["details"]
         ],
         links=[RequirementLinkRead.model_validate(link) for link in summary["links"]],
-        comments=[
-            RequirementCommentRead.model_validate(comment)
-            for comment in summary["comments"]
-        ],
+        comments=shared.requirement_child_service.build_comment_reads(
+            db,
+            summary["comments"],
+        ),
         reviews=[
             RequirementReviewRead.model_validate(review)
             for review in summary["reviews"]

@@ -397,6 +397,7 @@ class RequirementTargetCommentRead(BaseModel):
     parent_comment_id: int | None = None
     body: str
     author_id: int
+    author: ChangeLogUserRead | None = None
     is_resolved: bool
     version: int
     created_at: datetime
@@ -504,6 +505,7 @@ class RequirementCommentRead(BaseModel):
     id: int
     requirement_id: int
     user_id: int
+    user: ChangeLogUserRead | None = None
     comment: str
     created_at: datetime
 
