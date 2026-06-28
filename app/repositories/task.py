@@ -240,6 +240,23 @@ class TaskRepository:
         }
         return sort_map.get(sort or "", [Task.sort_order.asc(), Task.id.asc()])
 
+    def list_tags(self, db: Session, project_id: int) -> list[str]:
+        """プロジェクト内の未削除タスクで使われているタグを取得する。"""
+        rows = db.execute(
+            text(
+                """
+                SELECT DISTINCT tag
+                FROM tasks, jsonb_array_elements_text(tasks.tags) AS task_tag(tag)
+                WHERE tasks.project_id = :project_id
+                  AND tasks.deleted_at IS NULL
+                  AND tag <> ''
+                ORDER BY tag ASC
+                """
+            ),
+            {"project_id": project_id},
+        )
+        return [row[0] for row in rows]
+
     def list_for_gantt(
         self,
         db: Session,

@@ -1080,6 +1080,44 @@ def test_task_list_returns_requirements_and_filters_by_tags(
     ]
 
 
+def test_task_tag_list_returns_project_tags(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    create_test_task: Callable[..., Task],
+    assign_project_role: Callable[..., ProjectMember],
+) -> None:
+    """プロジェクト内で使われているタグ候補を重複なしで返すことを確認する。"""
+    user = create_test_user(email="task-tags@example.com")
+    project = create_test_project(project_code="TASKTAG", name="Task Tag")
+    other_project = create_test_project(
+        project_code="OTHERTAG",
+        name="Other Tag",
+    )
+    assign_project_role(user=user, project=project, role_key="manager")
+    create_test_task(
+        project=project,
+        task_code="TASK-TAG-1",
+        tags=["frontend", "ui"],
+    )
+    create_test_task(
+        project=project,
+        task_code="TASK-TAG-2",
+        tags=["backend", "frontend"],
+    )
+    create_test_task(
+        project=other_project,
+        task_code="TASK-TAG-3",
+        tags=["other"],
+    )
+    authorize_as(client, user)
+
+    response = client.get(f"/projects/{project.id}/tasks/tags")
+
+    assert response.status_code == 200
+    assert response.json() == {"items": ["backend", "frontend", "ui"]}
+
+
 def test_requirement_tasks_return_relation_id(
     client: TestClient,
     create_test_user: Callable[..., User],

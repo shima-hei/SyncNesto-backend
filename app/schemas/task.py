@@ -105,6 +105,12 @@ class TaskListResponse(BaseModel):
     page_size: int
 
 
+class TaskTagListResponse(BaseModel):
+    """プロジェクト内タスクタグ候補一覧レスポンスschema。"""
+
+    items: list[str]
+
+
 class TaskCommentCreate(BaseModel):
     """タスクコメント作成リクエストで受け取るschema。"""
 

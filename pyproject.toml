@@ -28,7 +28,7 @@ dev = [
 
 [tool.pyright]
 venvPath = "."
-venv = "venv"
+venv = ".venv"
 pythonVersion = "3.14"
 typeCheckingMode = "basic"
 

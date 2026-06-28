@@ -35,6 +35,7 @@ from app.schemas.task import (
     TaskListResponse,
     TaskMoveRequest,
     TaskRead,
+    TaskTagListResponse,
     TaskUpdate,
 )
 from app.services.task import TaskService
@@ -67,6 +68,53 @@ def build_task_responses(db: Session, tasks: list) -> list[TaskRead]:
         タスクレスポンス一覧。
     """
     return task_service.build_task_reads(db, tasks)
+
+
+def build_requirement_task_relation_response(relation) -> RequirementTaskRelationRead:
+    """要件タスク関連レスポンスを作成する。"""
+    return RequirementTaskRelationRead.model_validate(relation)
+
+
+def build_task_dependency_response(dependency) -> TaskDependencyRead:
+    """タスク依存関係レスポンスを作成する。"""
+    return TaskDependencyRead.model_validate(dependency)
+
+
+def build_task_dependency_responses(dependencies: list) -> list[TaskDependencyRead]:
+    """タスク依存関係一覧レスポンスを作成する。"""
+    return [
+        build_task_dependency_response(dependency) for dependency in dependencies
+    ]
+
+
+def build_board_response(board) -> BoardRead:
+    """ボードレスポンスを作成する。"""
+    return BoardRead.model_validate(board)
+
+
+def build_board_responses(boards: list) -> list[BoardRead]:
+    """ボード一覧レスポンスを作成する。"""
+    return [build_board_response(board) for board in boards]
+
+
+def build_board_column_response(column) -> BoardColumnRead:
+    """ボード列レスポンスを作成する。"""
+    return BoardColumnRead.model_validate(column)
+
+
+def build_board_column_responses(columns: list) -> list[BoardColumnRead]:
+    """ボード列一覧レスポンスを作成する。"""
+    return [build_board_column_response(column) for column in columns]
+
+
+def build_milestone_response(milestone) -> MilestoneRead:
+    """マイルストーンレスポンスを作成する。"""
+    return MilestoneRead.model_validate(milestone)
+
+
+def build_milestone_responses(milestones: list) -> list[MilestoneRead]:
+    """マイルストーン一覧レスポンスを作成する。"""
+    return [build_milestone_response(milestone) for milestone in milestones]
 
 
 @router.get(
@@ -119,6 +167,19 @@ def list_tasks(
         page=page,
         page_size=page_size,
     )
+
+
+@router.get(
+    "/projects/{project_id}/tasks/tags",
+    response_model=TaskTagListResponse,
+)
+def list_task_tags(
+    project_id: int,
+    _: User = Depends(require_project_permission("task:read")),
+    db: Session = Depends(get_db),
+) -> TaskTagListResponse:
+    """プロジェクト内で利用済みのタスクタグ候補を取得する。"""
+    return TaskTagListResponse(items=task_service.list_task_tags(db, project_id))
 
 
 @router.post(
@@ -451,7 +512,7 @@ def create_requirement_task_relation(
     relation_in: RequirementTaskRelationCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> RequirementTaskRelationRead:
     """要件タスク関連を作成する。"""
     project_id = task_service.get_requirement_project_id(db, requirement_id)
     task_service.ensure_user_can_access_project_resource(
@@ -460,13 +521,14 @@ def create_requirement_task_relation(
         project_id=project_id,
         permission_code="task:update",
     )
-    return task_service.create_requirement_task_relation(
+    relation = task_service.create_requirement_task_relation(
         db,
         requirement_id=requirement_id,
         task_id=relation_in.task_id,
         relation_type=relation_in.relation_type,
         actor_id=current_user.id,
     )
+    return build_requirement_task_relation_response(relation)
 
 
 @router.delete(
@@ -509,7 +571,9 @@ def list_task_dependencies(
         task=task,
         permission_code="task:read",
     )
-    return task_service.list_dependencies(db, task_id)
+    return build_task_dependency_responses(
+        task_service.list_dependencies(db, task_id)
+    )
 
 
 @router.post(
@@ -533,11 +597,12 @@ def create_task_dependency(
     )
     if task_id != dependency_in.successor_task_id:
         dependency_in = dependency_in.model_copy(update={"successor_task_id": task_id})
-    return task_service.create_dependency(
+    dependency = task_service.create_dependency(
         db,
         dependency_in=dependency_in,
         actor_id=current_user.id,
     )
+    return build_task_dependency_response(dependency)
 
 
 @router.patch(
@@ -559,12 +624,13 @@ def update_task_dependency(
         task=task,
         permission_code="task:update",
     )
-    return task_service.update_dependency(
+    dependency = task_service.update_dependency(
         db,
         dependency_id=dependency_id,
         dependency_in=dependency_in,
         actor_id=current_user.id,
     )
+    return build_task_dependency_response(dependency)
 
 
 @router.delete(
@@ -599,7 +665,7 @@ def list_boards(
     db: Session = Depends(get_db),
 ) -> list[BoardRead]:
     """プロジェクト内ボード一覧を取得する。"""
-    return task_service.list_boards(db, project_id)
+    return build_board_responses(task_service.list_boards(db, project_id))
 
 
 @router.post(
@@ -614,12 +680,13 @@ def create_board(
     db: Session = Depends(get_db),
 ) -> BoardRead:
     """プロジェクト内にボードを作成する。"""
-    return task_service.create_board(
+    board = task_service.create_board(
         db,
         project_id=project_id,
         board_in=board_in,
         actor_id=current_user.id,
     )
+    return build_board_response(board)
 
 
 @router.get("/boards/{board_id}", response_model=BoardRead)
@@ -636,7 +703,7 @@ def read_board(
         project_id=board.project_id,
         permission_code="task:read",
     )
-    return board
+    return build_board_response(board)
 
 
 @router.patch("/boards/{board_id}", response_model=BoardRead)
@@ -654,12 +721,13 @@ def update_board(
         project_id=board.project_id,
         permission_code="task:update",
     )
-    return task_service.update_board(
+    board = task_service.update_board(
         db,
         board_id=board_id,
         board_in=board_in,
         actor_id=current_user.id,
     )
+    return build_board_response(board)
 
 
 @router.delete("/boards/{board_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -693,7 +761,9 @@ def list_board_columns(
         project_id=board.project_id,
         permission_code="task:read",
     )
-    return task_service.list_board_columns(db, board_id)
+    return build_board_column_responses(
+        task_service.list_board_columns(db, board_id)
+    )
 
 
 @router.post(
@@ -715,12 +785,13 @@ def create_board_column(
         project_id=board.project_id,
         permission_code="task:update",
     )
-    return task_service.create_board_column(
+    column = task_service.create_board_column(
         db,
         board_id=board_id,
         column_in=column_in,
         actor_id=current_user.id,
     )
+    return build_board_column_response(column)
 
 
 @router.patch("/board-columns/{column_id}", response_model=BoardColumnRead)
@@ -739,12 +810,13 @@ def update_board_column(
         project_id=board.project_id,
         permission_code="task:update",
     )
-    return task_service.update_board_column(
+    column = task_service.update_board_column(
         db,
         column_id=column_id,
         column_in=column_in,
         actor_id=current_user.id,
     )
+    return build_board_column_response(column)
 
 
 @router.delete("/board-columns/{column_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -817,11 +889,11 @@ def read_gantt(
     return GanttResponse(
         tasks=build_task_responses(db, tasks),
         dependencies=[
-            TaskDependencyRead.model_validate(dependency)
+            build_task_dependency_response(dependency)
             for dependency in dependencies
         ],
         milestones=[
-            MilestoneRead.model_validate(milestone) for milestone in milestones
+            build_milestone_response(milestone) for milestone in milestones
         ],
     )
 
@@ -836,7 +908,9 @@ def list_milestones(
     db: Session = Depends(get_db),
 ) -> list[MilestoneRead]:
     """プロジェクト内マイルストーン一覧を取得する。"""
-    return task_service.list_milestones(db, project_id)
+    return build_milestone_responses(
+        task_service.list_milestones(db, project_id)
+    )
 
 
 @router.post(
@@ -851,12 +925,13 @@ def create_milestone(
     db: Session = Depends(get_db),
 ) -> MilestoneRead:
     """プロジェクト内にマイルストーンを作成する。"""
-    return task_service.create_milestone(
+    milestone = task_service.create_milestone(
         db,
         project_id=project_id,
         milestone_in=milestone_in,
         actor_id=current_user.id,
     )
+    return build_milestone_response(milestone)
 
 
 @router.get("/milestones/{milestone_id}", response_model=MilestoneRead)
@@ -873,7 +948,7 @@ def read_milestone(
         project_id=milestone.project_id,
         permission_code="task:read",
     )
-    return milestone
+    return build_milestone_response(milestone)
 
 
 @router.patch("/milestones/{milestone_id}", response_model=MilestoneRead)
@@ -891,12 +966,13 @@ def update_milestone(
         project_id=milestone.project_id,
         permission_code="task:update",
     )
-    return task_service.update_milestone(
+    milestone = task_service.update_milestone(
         db,
         milestone_id=milestone_id,
         milestone_in=milestone_in,
         actor_id=current_user.id,
     )
+    return build_milestone_response(milestone)
 
 
 @router.delete("/milestones/{milestone_id}", status_code=status.HTTP_204_NO_CONTENT)

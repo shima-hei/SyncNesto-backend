@@ -1,7 +1,7 @@
 """タスク管理のビジネスロジックを提供するモジュール。"""
 
 from datetime import date
-from typing import Any
+from typing import Any, TypedDict, cast
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -38,7 +38,12 @@ from app.repositories.task import (
     TaskRequirementLookupRepository,
 )
 from app.repositories.user import UserRepository
-from app.schemas.change_log import ChangeLogUserRead
+from app.schemas.change_log import (
+    ChangeLogUserRead,
+    TaskChangeLogActionCode,
+    TaskChangeLogFieldName,
+    TaskChangeLogTargetTypeCode,
+)
 from app.schemas.task import (
     BoardColumnCreate,
     BoardColumnRead,
@@ -117,6 +122,15 @@ TASK_CHANGE_LOG_ACTION_MAP = {
     "dependency.deleted": "updated",
     "moved": "updated",
 }
+
+
+class TaskDateNormalization(TypedDict):
+    """状態変更時に補完したタスク日付・進捗値。"""
+
+    progress_percent: int
+    actual_start_date: date | None
+    actual_end_date: date | None
+
 TASK_STATUS_LABELS = {
     "backlog": "バックログ",
     "todo": "未着手",
@@ -414,6 +428,11 @@ class TaskService:
         if task is None:
             raise NotFoundError(error_messages.TASK_NOT_FOUND)
         return task
+
+    def list_task_tags(self, db: Session, project_id: int) -> list[str]:
+        """プロジェクト内で利用済みのタスクタグ候補を取得する。"""
+        self._ensure_project_exists(db, project_id)
+        return self.task_repository.list_tags(db, project_id)
 
     def update_task(
         self,
@@ -1600,10 +1619,10 @@ class TaskService:
         progress_percent: int,
         actual_start_date: date | None,
         actual_end_date: date | None,
-    ) -> dict[str, object]:
+    ) -> TaskDateNormalization:
         """状態変更に応じて進捗率と実績日を補完する。"""
         today = date.today()
-        normalized: dict[str, object] = {
+        normalized: TaskDateNormalization = {
             "progress_percent": progress_percent,
             "actual_start_date": actual_start_date,
             "actual_end_date": actual_end_date,
@@ -1713,8 +1732,11 @@ class TaskService:
         requirements_by_id: dict[int, Requirement],
     ) -> TaskChangeLogRead:
         """タスク変更履歴レスポンスを作成する。"""
-        field_name = TASK_CHANGE_LOG_FORMATTER.normalize_field_name(
-            change_log.field_name,
+        field_name = cast(
+            TaskChangeLogFieldName | None,
+            TASK_CHANGE_LOG_FORMATTER.normalize_field_name(
+                change_log.field_name,
+            ),
         )
         value_formatters = {
             "parent_task_id": lambda value: self._format_task_id_label_value(
@@ -1776,13 +1798,22 @@ class TaskService:
             task_id = change_log.old_value.get("task_id")
         return task_id if isinstance(task_id, int) else change_log.target_id
 
-    def _normalize_change_log_action(self, action: str) -> str:
+    def _normalize_change_log_action(self, action: str) -> TaskChangeLogActionCode:
         """DB保存済みの操作種別をAPI用の安定コードに変換する。"""
-        return TASK_CHANGE_LOG_FORMATTER.normalize_action(action)
+        return cast(
+            TaskChangeLogActionCode,
+            TASK_CHANGE_LOG_FORMATTER.normalize_action(action),
+        )
 
-    def _normalize_change_log_target_type(self, target_type: str) -> str:
+    def _normalize_change_log_target_type(
+        self,
+        target_type: str,
+    ) -> TaskChangeLogTargetTypeCode:
         """DB保存済みの対象種別をAPI用の安定コードに変換する。"""
-        return TASK_CHANGE_LOG_FORMATTER.normalize_target_type(target_type)
+        return cast(
+            TaskChangeLogTargetTypeCode,
+            TASK_CHANGE_LOG_FORMATTER.normalize_target_type(target_type),
+        )
 
     def _get_change_log_users_by_id(
         self,
