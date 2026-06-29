@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import get_current_user, require_project_permission
 from app.db.session import get_db
 from app.models.user import User
+from app.presenters.task import TaskPresenter
 from app.schemas.task import (
     BoardColumnCreate,
     BoardColumnRead,
@@ -42,79 +43,7 @@ from app.services.task import TaskService
 
 router = APIRouter(tags=["tasks"])
 task_service = TaskService()
-
-
-def build_task_response(db: Session, task) -> TaskRead:
-    """タスクレスポンスを作成する。
-
-    Args:
-        db: DBセッション。
-        task: タスクモデル。
-
-    Returns:
-        タスクレスポンス。
-    """
-    return task_service.build_task_read(db, task)
-
-
-def build_task_responses(db: Session, tasks: list) -> list[TaskRead]:
-    """タスク一覧レスポンスを作成する。
-
-    Args:
-        db: DBセッション。
-        tasks: タスクモデル一覧。
-
-    Returns:
-        タスクレスポンス一覧。
-    """
-    return task_service.build_task_reads(db, tasks)
-
-
-def build_requirement_task_relation_response(relation) -> RequirementTaskRelationRead:
-    """要件タスク関連レスポンスを作成する。"""
-    return RequirementTaskRelationRead.model_validate(relation)
-
-
-def build_task_dependency_response(dependency) -> TaskDependencyRead:
-    """タスク依存関係レスポンスを作成する。"""
-    return TaskDependencyRead.model_validate(dependency)
-
-
-def build_task_dependency_responses(dependencies: list) -> list[TaskDependencyRead]:
-    """タスク依存関係一覧レスポンスを作成する。"""
-    return [
-        build_task_dependency_response(dependency) for dependency in dependencies
-    ]
-
-
-def build_board_response(board) -> BoardRead:
-    """ボードレスポンスを作成する。"""
-    return BoardRead.model_validate(board)
-
-
-def build_board_responses(boards: list) -> list[BoardRead]:
-    """ボード一覧レスポンスを作成する。"""
-    return [build_board_response(board) for board in boards]
-
-
-def build_board_column_response(column) -> BoardColumnRead:
-    """ボード列レスポンスを作成する。"""
-    return BoardColumnRead.model_validate(column)
-
-
-def build_board_column_responses(columns: list) -> list[BoardColumnRead]:
-    """ボード列一覧レスポンスを作成する。"""
-    return [build_board_column_response(column) for column in columns]
-
-
-def build_milestone_response(milestone) -> MilestoneRead:
-    """マイルストーンレスポンスを作成する。"""
-    return MilestoneRead.model_validate(milestone)
-
-
-def build_milestone_responses(milestones: list) -> list[MilestoneRead]:
-    """マイルストーン一覧レスポンスを作成する。"""
-    return [build_milestone_response(milestone) for milestone in milestones]
+task_presenter = TaskPresenter(task_service)
 
 
 @router.get(
@@ -162,7 +91,7 @@ def list_tasks(
         q=q,
     )
     return TaskListResponse(
-        items=build_task_responses(db, tasks),
+        items=task_presenter.build_task_responses(db, tasks),
         total=total,
         page=page,
         page_size=page_size,
@@ -200,7 +129,7 @@ def create_task(
         task_in=task_in,
         actor_id=current_user.id,
     )
-    return build_task_response(db, task)
+    return task_presenter.build_task_response(db, task)
 
 
 @router.get("/tasks/{task_id}", response_model=TaskRead)
@@ -217,7 +146,7 @@ def read_task(
         task=task,
         permission_code="task:read",
     )
-    return build_task_response(db, task)
+    return task_presenter.build_task_response(db, task)
 
 
 @router.patch("/tasks/{task_id}", response_model=TaskRead)
@@ -241,7 +170,7 @@ def update_task(
         task_in=task_in,
         actor_id=current_user.id,
     )
-    return build_task_response(db, task)
+    return task_presenter.build_task_response(db, task)
 
 
 @router.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -303,7 +232,7 @@ def create_task_comment(
         comment_in=comment_in,
         actor_id=current_user.id,
     )
-    return task_service.build_comment_read(db, comment)
+    return task_presenter.build_task_comment_response(db, comment)
 
 
 @router.patch("/task-comments/{comment_id}", response_model=TaskCommentRead)
@@ -328,7 +257,7 @@ def update_task_comment(
         comment_in=comment_in,
         actor_id=current_user.id,
     )
-    return task_service.build_comment_read(db, comment)
+    return task_presenter.build_task_comment_response(db, comment)
 
 
 @router.delete("/task-comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -375,7 +304,7 @@ def resolve_task_comment(
         comment_in=comment_in,
         actor_id=current_user.id,
     )
-    return task_service.build_comment_read(db, comment)
+    return task_presenter.build_task_comment_response(db, comment)
 
 
 @router.post("/task-comments/{comment_id}/reopen", response_model=TaskCommentRead)
@@ -400,7 +329,7 @@ def reopen_task_comment(
         comment_in=comment_in,
         actor_id=current_user.id,
     )
-    return task_service.build_comment_read(db, comment)
+    return task_presenter.build_task_comment_response(db, comment)
 
 
 @router.get(
@@ -451,7 +380,7 @@ def list_requirement_tasks(
         permission_code="task:read",
     )
     tasks = task_service.list_requirement_tasks(db, requirement_id)
-    return build_task_responses(db, tasks)
+    return task_presenter.build_task_responses(db, tasks)
 
 
 @router.post(
@@ -479,7 +408,7 @@ def create_requirement_task(
         task_in=task_in,
         actor_id=current_user.id,
     )
-    return build_task_response(db, task)
+    return task_presenter.build_task_response(db, task)
 
 
 @router.get(
@@ -528,7 +457,7 @@ def create_requirement_task_relation(
         relation_type=relation_in.relation_type,
         actor_id=current_user.id,
     )
-    return build_requirement_task_relation_response(relation)
+    return task_presenter.build_requirement_task_relation_response(relation)
 
 
 @router.delete(
@@ -571,7 +500,7 @@ def list_task_dependencies(
         task=task,
         permission_code="task:read",
     )
-    return build_task_dependency_responses(
+    return task_presenter.build_task_dependency_responses(
         task_service.list_dependencies(db, task_id)
     )
 
@@ -602,7 +531,7 @@ def create_task_dependency(
         dependency_in=dependency_in,
         actor_id=current_user.id,
     )
-    return build_task_dependency_response(dependency)
+    return task_presenter.build_task_dependency_response(dependency)
 
 
 @router.patch(
@@ -630,7 +559,7 @@ def update_task_dependency(
         dependency_in=dependency_in,
         actor_id=current_user.id,
     )
-    return build_task_dependency_response(dependency)
+    return task_presenter.build_task_dependency_response(dependency)
 
 
 @router.delete(
@@ -665,7 +594,9 @@ def list_boards(
     db: Session = Depends(get_db),
 ) -> list[BoardRead]:
     """プロジェクト内ボード一覧を取得する。"""
-    return build_board_responses(task_service.list_boards(db, project_id))
+    return task_presenter.build_board_responses(
+        task_service.list_boards(db, project_id)
+    )
 
 
 @router.post(
@@ -686,7 +617,7 @@ def create_board(
         board_in=board_in,
         actor_id=current_user.id,
     )
-    return build_board_response(board)
+    return task_presenter.build_board_response(board)
 
 
 @router.get("/boards/{board_id}", response_model=BoardRead)
@@ -703,7 +634,7 @@ def read_board(
         project_id=board.project_id,
         permission_code="task:read",
     )
-    return build_board_response(board)
+    return task_presenter.build_board_response(board)
 
 
 @router.patch("/boards/{board_id}", response_model=BoardRead)
@@ -727,7 +658,7 @@ def update_board(
         board_in=board_in,
         actor_id=current_user.id,
     )
-    return build_board_response(board)
+    return task_presenter.build_board_response(board)
 
 
 @router.delete("/boards/{board_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -761,7 +692,7 @@ def list_board_columns(
         project_id=board.project_id,
         permission_code="task:read",
     )
-    return build_board_column_responses(
+    return task_presenter.build_board_column_responses(
         task_service.list_board_columns(db, board_id)
     )
 
@@ -791,7 +722,7 @@ def create_board_column(
         column_in=column_in,
         actor_id=current_user.id,
     )
-    return build_board_column_response(column)
+    return task_presenter.build_board_column_response(column)
 
 
 @router.patch("/board-columns/{column_id}", response_model=BoardColumnRead)
@@ -816,7 +747,7 @@ def update_board_column(
         column_in=column_in,
         actor_id=current_user.id,
     )
-    return build_board_column_response(column)
+    return task_presenter.build_board_column_response(column)
 
 
 @router.delete("/board-columns/{column_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -864,7 +795,7 @@ def move_task(
         move_in=move_in,
         actor_id=current_user.id,
     )
-    return build_task_response(db, task)
+    return task_presenter.build_task_response(db, task)
 
 
 @router.get("/projects/{project_id}/gantt", response_model=GanttResponse)
@@ -886,15 +817,11 @@ def read_gantt(
         requirement_id=requirement_id,
         assignee_id=assignee_id,
     )
-    return GanttResponse(
-        tasks=build_task_responses(db, tasks),
-        dependencies=[
-            build_task_dependency_response(dependency)
-            for dependency in dependencies
-        ],
-        milestones=[
-            build_milestone_response(milestone) for milestone in milestones
-        ],
+    return task_presenter.build_gantt_response(
+        db,
+        tasks=tasks,
+        dependencies=dependencies,
+        milestones=milestones,
     )
 
 
@@ -908,7 +835,7 @@ def list_milestones(
     db: Session = Depends(get_db),
 ) -> list[MilestoneRead]:
     """プロジェクト内マイルストーン一覧を取得する。"""
-    return build_milestone_responses(
+    return task_presenter.build_milestone_responses(
         task_service.list_milestones(db, project_id)
     )
 
@@ -931,7 +858,7 @@ def create_milestone(
         milestone_in=milestone_in,
         actor_id=current_user.id,
     )
-    return build_milestone_response(milestone)
+    return task_presenter.build_milestone_response(milestone)
 
 
 @router.get("/milestones/{milestone_id}", response_model=MilestoneRead)
@@ -948,7 +875,7 @@ def read_milestone(
         project_id=milestone.project_id,
         permission_code="task:read",
     )
-    return build_milestone_response(milestone)
+    return task_presenter.build_milestone_response(milestone)
 
 
 @router.patch("/milestones/{milestone_id}", response_model=MilestoneRead)
@@ -972,7 +899,7 @@ def update_milestone(
         milestone_in=milestone_in,
         actor_id=current_user.id,
     )
-    return build_milestone_response(milestone)
+    return task_presenter.build_milestone_response(milestone)
 
 
 @router.delete("/milestones/{milestone_id}", status_code=status.HTTP_204_NO_CONTENT)
