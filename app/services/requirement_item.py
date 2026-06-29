@@ -11,15 +11,12 @@ from app.models.requirement import (
     RequirementRevision,
     RequirementSection,
 )
-from app.repositories.requirement import (
-    RequirementDocumentRepository,
-    RequirementRepository,
-    RequirementRevisionRepository,
-    RequirementSectionRepository,
-)
+from app.repositories.requirement_child import RequirementRevisionRepository
+from app.repositories.requirement_document import RequirementDocumentRepository
+from app.repositories.requirement_item import RequirementRepository
+from app.repositories.requirement_section import RequirementSectionRepository
 from app.schemas.requirement import (
     RequirementCreate,
-    RequirementRead,
     RequirementUpdate,
 )
 from app.services.change_log_formatter import (
@@ -27,6 +24,7 @@ from app.services.change_log_formatter import (
     build_update_change_log_entry,
 )
 from app.services.conflict import (
+    build_conflict_current,
     raise_duplicate_after_rollback,
     raise_if_version_conflict,
 )
@@ -54,6 +52,29 @@ REQUIREMENT_UPDATABLE_FIELDS = {
     "approved_by",
     "approved_at",
 }
+REQUIREMENT_CONFLICT_CURRENT_FIELDS = (
+    "section_id",
+    "requirement_code",
+    "requirement_type",
+    "category",
+    "title",
+    "description",
+    "rationale",
+    "acceptance_criteria",
+    "priority",
+    "status",
+    "source",
+    "owner_id",
+    "approved_by",
+    "approved_at",
+    "id",
+    "document_id",
+    "version",
+    "created_by",
+    "updated_by",
+    "created_at",
+    "updated_at",
+)
 
 
 class RequirementService:
@@ -305,7 +326,10 @@ class RequirementService:
         raise_if_version_conflict(
             current_version=requirement.version,
             requested_version=requirement_in.version,
-            current=RequirementRead.model_validate(requirement).model_dump(),
+            current=build_conflict_current(
+                requirement,
+                REQUIREMENT_CONFLICT_CURRENT_FIELDS,
+            ),
         )
 
         if (

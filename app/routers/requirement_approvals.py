@@ -6,6 +6,10 @@ from sqlalchemy.orm import Session
 from app.core.auth import require_project_permission
 from app.db.session import get_db
 from app.models.user import User
+from app.presenters.requirement import (
+    build_requirement_approval_list_response,
+    build_requirement_approval_response,
+)
 from app.routers import requirements_shared as shared
 from app.schemas.requirement import (
     RequirementApprovalDecisionCreate,
@@ -58,11 +62,8 @@ def list_requirement_approvals(
         status=status,
         approver_id=approver_id,
     )
-    return RequirementApprovalListResponse(
-        items=[
-            RequirementApprovalRead.model_validate(approval)
-            for approval in approvals
-        ],
+    return build_requirement_approval_list_response(
+        approvals,
         total=total,
         page=page,
         page_size=page_size,
@@ -97,7 +98,7 @@ def request_requirement_approval(
         approval_in=approval_in,
         requested_by=current_user.id,
     )
-    return RequirementApprovalRead.model_validate(approval)
+    return build_requirement_approval_response(approval)
 
 
 @router.post(
@@ -130,7 +131,7 @@ def approve_requirement_approval(
         decision_in=decision_in,
         actor_id=current_user.id,
     )
-    return RequirementApprovalRead.model_validate(approval)
+    return build_requirement_approval_response(approval)
 
 
 @router.post(
@@ -163,4 +164,4 @@ def reject_requirement_approval(
         decision_in=decision_in,
         actor_id=current_user.id,
     )
-    return RequirementApprovalRead.model_validate(approval)
+    return build_requirement_approval_response(approval)

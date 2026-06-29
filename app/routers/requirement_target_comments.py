@@ -6,6 +6,10 @@ from sqlalchemy.orm import Session
 from app.core.auth import require_project_permission
 from app.db.session import get_db
 from app.models.user import User
+from app.presenters.requirement import (
+    build_requirement_target_comment_response,
+    build_requirement_target_comment_responses,
+)
 from app.routers import requirements_shared as shared
 from app.schemas.requirement import (
     RequirementTargetCommentCreate,
@@ -45,7 +49,7 @@ def create_target_comment(
         comment_in=comment_in,
         author_id=current_user.id,
     )
-    return shared.target_comment_service.build_comment_read(db, comment)
+    return build_requirement_target_comment_response(comment, user=current_user)
 
 
 @router.get(
@@ -71,11 +75,15 @@ def list_target_comments(
     Returns:
         要件定義対象コメント一覧。
     """
-    return shared.target_comment_service.list_comment_reads(
+    comments = shared.target_comment_service.list_comments(
         db,
         project_id=project_id,
         target_type=target_type,
         target_id=target_id,
+    )
+    return build_requirement_target_comment_responses(
+        comments,
+        users_by_id=shared.get_requirement_target_comment_users_by_id(db, comments),
     )
 
 
@@ -109,7 +117,10 @@ def update_target_comment(
         comment_in=comment_in,
         actor_id=current_user.id,
     )
-    return shared.target_comment_service.build_comment_read(db, comment)
+    return build_requirement_target_comment_response(
+        comment,
+        user=current_user,
+    )
 
 
 @router.delete(
@@ -168,7 +179,10 @@ def resolve_target_comment(
         state_in=state_in,
         actor_id=current_user.id,
     )
-    return shared.target_comment_service.build_comment_read(db, comment)
+    return build_requirement_target_comment_response(
+        comment,
+        user=current_user,
+    )
 
 
 @router.post(
@@ -201,4 +215,7 @@ def reopen_target_comment(
         state_in=state_in,
         actor_id=current_user.id,
     )
-    return shared.target_comment_service.build_comment_read(db, comment)
+    return build_requirement_target_comment_response(
+        comment,
+        user=current_user,
+    )

@@ -19,16 +19,31 @@ from app.schemas.project import (
     ProjectCreate,
     ProjectMemberCreate,
     ProjectMemberUpdate,
-    ProjectRead,
     ProjectUpdate,
 )
 from app.services.audit_log import AuditLogService
 from app.services.authorization import AuthorizationService
 from app.services.conflict import (
+    build_conflict_current,
     raise_duplicate_after_rollback,
     raise_if_version_conflict,
 )
 from app.services.session import SessionService
+
+PROJECT_CONFLICT_CURRENT_FIELDS = (
+    "project_code",
+    "name",
+    "description",
+    "status",
+    "start_date",
+    "end_date",
+    "id",
+    "version",
+    "created_by",
+    "updated_by",
+    "created_at",
+    "updated_at",
+)
 
 
 class ProjectService:
@@ -193,7 +208,10 @@ class ProjectService:
         raise_if_version_conflict(
             current_version=project.version,
             requested_version=project_in.version,
-            current=ProjectRead.model_validate(project).model_dump(),
+            current=build_conflict_current(
+                project,
+                PROJECT_CONFLICT_CURRENT_FIELDS,
+            ),
         )
 
         if (

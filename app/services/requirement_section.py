@@ -5,13 +5,10 @@ from sqlalchemy.orm import Session
 from app.core import error_messages
 from app.core.exceptions import NotFoundError
 from app.models.requirement import RequirementDocument, RequirementSection
-from app.repositories.requirement import (
-    RequirementDocumentRepository,
-    RequirementSectionRepository,
-)
+from app.repositories.requirement_document import RequirementDocumentRepository
+from app.repositories.requirement_section import RequirementSectionRepository
 from app.schemas.requirement import (
     RequirementSectionCreate,
-    RequirementSectionRead,
     RequirementSectionSortUpdate,
     RequirementSectionUpdate,
 )
@@ -19,7 +16,7 @@ from app.services.change_log_formatter import (
     build_changed_field_snapshots,
     build_update_change_log_entry,
 )
-from app.services.conflict import raise_if_version_conflict
+from app.services.conflict import build_conflict_current, raise_if_version_conflict
 from app.services.requirement_change_log import (
     RequirementChangeLogAction,
     RequirementChangeLogService,
@@ -33,6 +30,20 @@ REQUIREMENT_SECTION_UPDATABLE_FIELDS = {
     "sort_order",
     "status",
 }
+REQUIREMENT_SECTION_CONFLICT_CURRENT_FIELDS = (
+    "title",
+    "section_type",
+    "content",
+    "sort_order",
+    "status",
+    "id",
+    "document_id",
+    "version",
+    "created_by",
+    "updated_by",
+    "created_at",
+    "updated_at",
+)
 
 
 class RequirementSectionService:
@@ -187,7 +198,10 @@ class RequirementSectionService:
         raise_if_version_conflict(
             current_version=section.version,
             requested_version=section_in.version,
-            current=RequirementSectionRead.model_validate(section).model_dump(),
+            current=build_conflict_current(
+                section,
+                REQUIREMENT_SECTION_CONFLICT_CURRENT_FIELDS,
+            ),
         )
         before_value = self._build_section_snapshot(section)
         updated_section = self.repository.update(
@@ -251,7 +265,10 @@ class RequirementSectionService:
             raise_if_version_conflict(
                 current_version=section.version,
                 requested_version=item.version,
-                current=RequirementSectionRead.model_validate(section).model_dump(),
+                current=build_conflict_current(
+                    section,
+                    REQUIREMENT_SECTION_CONFLICT_CURRENT_FIELDS,
+                ),
             )
             sort_orders_by_id[section.id] = item.sort_order
             target_sections.append(section)

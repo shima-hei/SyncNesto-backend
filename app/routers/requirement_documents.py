@@ -7,8 +7,9 @@ from app.core.auth import require_project_permission
 from app.db.session import get_db
 from app.models.user import User
 from app.presenters.requirement import (
+    build_requirement_document_export_response,
+    build_requirement_document_list_response,
     build_requirement_document_response,
-    build_requirement_document_responses,
 )
 from app.routers import requirements_shared as shared
 from app.schemas.requirement import (
@@ -93,12 +94,10 @@ def list_requirement_documents(
         q=q,
         status=status,
     )
-    return RequirementDocumentListResponse(
-        items=build_requirement_document_responses(
-            documents,
-            shared.get_requirement_document_users_by_id(db, documents),
-            shared.storage_service,
-        ),
+    return build_requirement_document_list_response(
+        documents,
+        users_by_id=shared.get_requirement_document_users_by_id(db, documents),
+        storage_service=shared.storage_service,
         total=total,
         page=page,
         page_size=page_size,
@@ -224,10 +223,11 @@ def export_requirement_document(
     Returns:
         要件定義書の出力結果。
     """
-    return shared.export_service.export_document(
+    export_result = shared.export_service.export_document(
         db,
         project_id=project_id,
         document_id=document_id,
         export_in=export_in,
         actor_id=current_user.id,
     )
+    return build_requirement_document_export_response(export_result)

@@ -7,10 +7,9 @@ from app.core import error_messages
 from app.core.exceptions import DuplicateResourceError, NotFoundError
 from app.models.requirement import RequirementDocument
 from app.repositories.project import ProjectRepository
-from app.repositories.requirement import RequirementDocumentRepository
+from app.repositories.requirement_document import RequirementDocumentRepository
 from app.schemas.requirement import (
     RequirementDocumentCreate,
-    RequirementDocumentRead,
     RequirementDocumentUpdate,
 )
 from app.services.change_log_formatter import (
@@ -18,6 +17,7 @@ from app.services.change_log_formatter import (
     build_update_change_log_entry,
 )
 from app.services.conflict import (
+    build_conflict_current,
     raise_duplicate_after_rollback,
     raise_if_version_conflict,
 )
@@ -40,6 +40,26 @@ REQUIREMENT_DOCUMENT_UPDATABLE_FIELDS = {
     "approver_id",
     "approved_at",
 }
+REQUIREMENT_DOCUMENT_CONFLICT_CURRENT_FIELDS = (
+    "title",
+    "document_code",
+    "status",
+    "purpose",
+    "target_system_name",
+    "client_name",
+    "vendor_name",
+    "author_id",
+    "reviewer_id",
+    "approver_id",
+    "approved_at",
+    "id",
+    "project_id",
+    "version",
+    "created_by",
+    "updated_by",
+    "created_at",
+    "updated_at",
+)
 
 
 class RequirementDocumentService:
@@ -211,7 +231,11 @@ class RequirementDocumentService:
         raise_if_version_conflict(
             current_version=document.version,
             requested_version=document_in.version,
-            current=RequirementDocumentRead.model_validate(document).model_dump(),
+            current=build_conflict_current(
+                document,
+                REQUIREMENT_DOCUMENT_CONFLICT_CURRENT_FIELDS,
+                extra={"author": None, "reviewer": None, "approver": None},
+            ),
         )
 
         if (

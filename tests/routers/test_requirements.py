@@ -647,6 +647,7 @@ def test_create_open_issue_allows_member_and_records_change_log(
     assert change_log.target_type == "open_issue"
     assert change_log.action == "created"
     assert change_log.changed_by == user.id
+    assert change_log.new_value is not None
     assert change_log.new_value["issue_code"] == "ISSUE-001"
 
 
@@ -902,6 +903,7 @@ def test_promote_open_issue_to_requirement(
     )
     assert promoted_log.target_type == "open_issue"
     assert promoted_log.target_id == issue.id
+    assert promoted_log.new_value is not None
     assert promoted_log.new_value["requirement_code"] == "REQ-001"
 
 
@@ -1482,6 +1484,7 @@ def test_create_target_comment_for_section_records_change_log(
     assert change_log.document_id == document.id
     assert change_log.target_type == "comment"
     assert change_log.target_id == response.json()["id"]
+    assert change_log.new_value is not None
     assert change_log.new_value["body"] == "この章の説明を補足してください。"
 
 
@@ -2015,6 +2018,8 @@ def test_update_requirement_creates_revision(
     assert revisions[0].changed_by == user.id
     assert revisions[0].change_summary == "タイトル変更"
     assert revisions[0].reason == "表現調整"
+    assert revisions[0].before_value is not None
+    assert revisions[0].after_value is not None
     assert revisions[0].before_value["title"] == "Before"
     assert revisions[0].after_value["title"] == "After"
 

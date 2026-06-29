@@ -580,6 +580,7 @@ def test_task_change_logs_include_comment_logs(
     create_test_project: Callable[..., Project],
     assign_project_role: Callable[..., ProjectMember],
     create_test_task: Callable[..., Task],
+    db: Session,
 ) -> None:
     """タスク変更履歴APIがコメント履歴も安定コードで返すことを確認する。"""
     user = create_test_user(email="comment-history@example.com")
@@ -593,9 +594,25 @@ def test_task_change_logs_include_comment_logs(
         json={"body": "確認してください"},
     )
     comment = create_response.json()
+    created_change_log = (
+        db.query(TaskChangeLog)
+        .filter(
+            TaskChangeLog.target_type == "task_comment",
+            TaskChangeLog.action == "comment.created",
+            TaskChangeLog.target_id == comment["id"],
+        )
+        .one()
+    )
+    created_change_log.new_value = {"task_id": task.id}
+    db.commit()
+    update_comment_response = client.post(
+        f"/tasks/{task.id}/comments",
+        json={"body": "更新前コメント"},
+    )
+    update_comment = update_comment_response.json()
     update_response = client.patch(
-        f"/task-comments/{comment['id']}",
-        json={"version": comment["version"], "body": "確認しました"},
+        f"/task-comments/{update_comment['id']}",
+        json={"version": update_comment["version"], "body": "確認しました"},
     )
     assert update_response.status_code == 200
 
@@ -611,6 +628,13 @@ def test_task_change_logs_include_comment_logs(
         "comment_created",
         "comment_updated",
     }
+    created_log = next(
+        log
+        for log in comment_logs
+        if log["action"] == "comment_created"
+        and log["new_value"]["body"] == "確認してください"
+    )
+    assert created_log["new_value"]["body"] == "確認してください"
     assert all(log["task_id"] == task.id for log in comment_logs)
     assert comment_logs[0]["created_by_user"]["email"] == "comment-history@example.com"
 

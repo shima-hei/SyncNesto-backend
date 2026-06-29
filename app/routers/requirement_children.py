@@ -6,6 +6,18 @@ from sqlalchemy.orm import Session
 from app.core.auth import require_project_permission
 from app.db.session import get_db
 from app.models.user import User
+from app.presenters.requirement import (
+    build_requirement_comment_response,
+    build_requirement_comment_responses,
+    build_requirement_detail_response,
+    build_requirement_detail_responses,
+    build_requirement_link_response,
+    build_requirement_link_responses,
+    build_requirement_relation_response,
+    build_requirement_relation_responses,
+    build_requirement_review_response,
+    build_requirement_review_responses,
+)
 from app.routers import requirements_shared as shared
 from app.schemas.requirement import (
     RequirementCommentCreate,
@@ -56,7 +68,7 @@ def create_requirement_detail(
         detail_in=detail_in,
         actor_id=current_user.id,
     )
-    return RequirementDetailRead.model_validate(detail)
+    return build_requirement_detail_response(detail)
 
 
 @router.get(
@@ -85,7 +97,7 @@ def list_requirement_details(
         project_id=project_id,
         requirement_id=requirement_id,
     )
-    return [RequirementDetailRead.model_validate(detail) for detail in details]
+    return build_requirement_detail_responses(details)
 
 
 @router.patch(
@@ -121,7 +133,7 @@ def update_requirement_detail(
         detail_in=detail_in,
         actor_id=current_user.id,
     )
-    return RequirementDetailRead.model_validate(detail)
+    return build_requirement_detail_response(detail)
 
 
 @router.delete(
@@ -184,7 +196,7 @@ def create_requirement_link(
         link_in=link_in,
         actor_id=current_user.id,
     )
-    return RequirementLinkRead.model_validate(link)
+    return build_requirement_link_response(link)
 
 
 @router.get(
@@ -213,7 +225,7 @@ def list_requirement_links(
         project_id=project_id,
         requirement_id=requirement_id,
     )
-    return [RequirementLinkRead.model_validate(link) for link in links]
+    return build_requirement_link_responses(links)
 
 
 @router.delete(
@@ -276,7 +288,7 @@ def create_requirement_relation(
         relation_in=relation_in,
         actor_id=current_user.id,
     )
-    return RequirementRelationRead.model_validate(relation)
+    return build_requirement_relation_response(relation)
 
 
 @router.get(
@@ -305,9 +317,7 @@ def list_requirement_relations(
         project_id=project_id,
         requirement_id=requirement_id,
     )
-    return [
-        RequirementRelationRead.model_validate(relation) for relation in relations
-    ]
+    return build_requirement_relation_responses(relations)
 
 
 @router.delete(
@@ -370,7 +380,7 @@ def create_requirement_comment(
         user_id=current_user.id,
         comment_in=comment_in,
     )
-    return shared.requirement_child_service.build_comment_read(db, comment)
+    return build_requirement_comment_response(comment, user=current_user)
 
 
 @router.get(
@@ -394,10 +404,14 @@ def list_requirement_comments(
     Returns:
         要件コメント一覧。
     """
-    return shared.requirement_child_service.list_comment_reads(
+    comments = shared.requirement_child_service.list_comments(
         db,
         project_id=project_id,
         requirement_id=requirement_id,
+    )
+    return build_requirement_comment_responses(
+        comments,
+        users_by_id=shared.get_requirement_comment_users_by_id(db, comments),
     )
 
 
@@ -460,7 +474,7 @@ def create_requirement_review(
         review_in=review_in,
         actor_id=current_user.id,
     )
-    return RequirementReviewRead.model_validate(review)
+    return build_requirement_review_response(review)
 
 
 @router.get(
@@ -489,7 +503,7 @@ def list_requirement_reviews(
         project_id=project_id,
         requirement_id=requirement_id,
     )
-    return [RequirementReviewRead.model_validate(review) for review in reviews]
+    return build_requirement_review_responses(reviews)
 
 
 @router.patch(
@@ -525,7 +539,7 @@ def update_requirement_review(
         review_in=review_in,
         actor_id=current_user.id,
     )
-    return RequirementReviewRead.model_validate(review)
+    return build_requirement_review_response(review)
 
 
 @router.delete(

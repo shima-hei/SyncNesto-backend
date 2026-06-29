@@ -1,7 +1,7 @@
 """タスク管理のビジネスロジックを提供するモジュール。"""
 
 from datetime import date
-from typing import Any, TypedDict, cast
+from typing import Any, TypedDict
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -13,60 +13,26 @@ from app.core.exceptions import (
     ForbiddenError,
     NotFoundError,
 )
-from app.models.requirement import Requirement
 from app.models.task import (
-    Board,
-    BoardColumn,
     Milestone,
     RequirementTaskRelation,
     Task,
-    TaskChangeLog,
-    TaskComment,
     TaskDependency,
 )
 from app.models.user import User
 from app.repositories.project import ProjectRepository
-from app.repositories.task import (
-    BoardColumnRepository,
-    BoardRepository,
-    MilestoneRepository,
+from app.repositories.task_change_log import TaskChangeLogRepository
+from app.repositories.task_comment import TaskCommentRepository
+from app.repositories.task_dependency import TaskDependencyRepository
+from app.repositories.task_item import TaskRepository
+from app.repositories.task_milestone import MilestoneRepository
+from app.repositories.task_requirement import (
     RequirementTaskRelationRepository,
-    TaskChangeLogRepository,
-    TaskCommentRepository,
-    TaskDependencyRepository,
-    TaskRepository,
     TaskRequirementLookupRepository,
 )
-from app.repositories.user import UserRepository
-from app.schemas.change_log import (
-    ChangeLogUserRead,
-    TaskChangeLogActionCode,
-    TaskChangeLogFieldName,
-    TaskChangeLogTargetTypeCode,
-)
 from app.schemas.task import (
-    BoardColumnCreate,
-    BoardColumnRead,
-    BoardColumnUpdate,
-    BoardCreate,
-    BoardRead,
-    BoardUpdate,
-    MilestoneCreate,
-    MilestoneRead,
-    MilestoneUpdate,
     RequirementTaskProgressRead,
-    TaskChangeLogRead,
-    TaskCommentCreate,
-    TaskCommentRead,
-    TaskCommentStateUpdate,
-    TaskCommentUpdate,
     TaskCreate,
-    TaskDependencyCreate,
-    TaskDependencyRead,
-    TaskDependencyUpdate,
-    TaskMoveRequest,
-    TaskRead,
-    TaskRequirementSummary,
     TaskUpdate,
 )
 from app.services.audit_log import AuditLogService
@@ -80,6 +46,10 @@ from app.services.change_log_formatter import (
 from app.services.conflict import (
     raise_duplicate_after_rollback,
     raise_if_version_conflict,
+)
+from app.services.task_presentation import (
+    TaskPresentationData,
+    TaskPresentationDataService,
 )
 
 AUTO_TASK_CODE_PREFIX = "TASK"
@@ -130,6 +100,7 @@ class TaskDateNormalization(TypedDict):
     progress_percent: int
     actual_start_date: date | None
     actual_end_date: date | None
+
 
 TASK_STATUS_LABELS = {
     "backlog": "バックログ",
@@ -251,15 +222,13 @@ class TaskService:
         relation_repository: RequirementTaskRelationRepository | None = None,
         dependency_repository: TaskDependencyRepository | None = None,
         milestone_repository: MilestoneRepository | None = None,
-        board_repository: BoardRepository | None = None,
-        column_repository: BoardColumnRepository | None = None,
         requirement_lookup_repository: TaskRequirementLookupRepository | None = None,
         project_repository: ProjectRepository | None = None,
         authorization_service: AuthorizationService | None = None,
         change_log_repository: TaskChangeLogRepository | None = None,
         comment_repository: TaskCommentRepository | None = None,
-        user_repository: UserRepository | None = None,
         audit_log_service: AuditLogService | None = None,
+        presentation_data_service: TaskPresentationDataService | None = None,
     ) -> None:
         """TaskServiceを初期化する。"""
         self.task_repository = task_repository or TaskRepository()
@@ -270,8 +239,6 @@ class TaskService:
             dependency_repository or TaskDependencyRepository()
         )
         self.milestone_repository = milestone_repository or MilestoneRepository()
-        self.board_repository = board_repository or BoardRepository()
-        self.column_repository = column_repository or BoardColumnRepository()
         self.requirement_lookup_repository = (
             requirement_lookup_repository or TaskRequirementLookupRepository()
         )
@@ -279,8 +246,14 @@ class TaskService:
         self.authorization_service = authorization_service or AuthorizationService()
         self.change_log_repository = change_log_repository or TaskChangeLogRepository()
         self.comment_repository = comment_repository or TaskCommentRepository()
-        self.user_repository = user_repository or UserRepository()
         self.audit_log_service = audit_log_service or AuditLogService()
+        self.presentation_data_service = (
+            presentation_data_service or TaskPresentationDataService(
+                task_repository=self.task_repository,
+                relation_repository=self.relation_repository,
+                dependency_repository=self.dependency_repository,
+            )
+        )
 
     def create_task(
         self,
@@ -444,7 +417,7 @@ class TaskService:
     ) -> Task:
         """タスクを更新する。"""
         task = self.get_task(db, task_id)
-        current = self.build_task_read(db, task).model_dump()
+        current = self._build_task_conflict_current(db, task)
         raise_if_version_conflict(
             current_version=task.version,
             requested_version=task_in.version,
@@ -557,57 +530,6 @@ class TaskService:
             resource_id=task.id,
             metadata={"task_code": task.task_code},
         )
-
-    def move_task(
-        self,
-        db: Session,
-        *,
-        board_id: int,
-        task_id: int,
-        move_in: TaskMoveRequest,
-        actor_id: int | None,
-    ) -> Task:
-        """ボード上のタスクを移動する。"""
-        board = self.get_board(db, board_id)
-        task = self.get_task(db, task_id)
-        if task.project_id != board.project_id:
-            raise NotFoundError(error_messages.TASK_NOT_FOUND)
-        raise_if_version_conflict(
-            current_version=task.version,
-            requested_version=move_in.version,
-            current=self.build_task_read(db, task).model_dump(),
-        )
-        old_values = {"status": task.status, "sort_order": task.sort_order}
-        normalized = self._normalize_task_dates(
-            status=move_in.status,
-            progress_percent=100 if move_in.status == "done" else task.progress_percent,
-            actual_start_date=task.actual_start_date,
-            actual_end_date=task.actual_end_date,
-        )
-        if normalized["actual_start_date"] is not None:
-            task.actual_start_date = normalized["actual_start_date"]
-        if normalized["actual_end_date"] is not None:
-            task.actual_end_date = normalized["actual_end_date"]
-        if normalized["progress_percent"] == 100:
-            task.progress_percent = 100
-        task = self.task_repository.move(
-            db,
-            task=task,
-            status=move_in.status,
-            sort_order=move_in.sort_order,
-            actor_id=actor_id,
-        )
-        self._record_change(
-            db,
-            project_id=task.project_id,
-            target_type=TaskTargetType.TASK,
-            target_id=task.id,
-            action=TaskChangeLogAction.MOVED,
-            old_value=old_values,
-            new_value={"status": task.status, "sort_order": task.sort_order},
-            changed_by=actor_id,
-        )
-        return task
 
     def create_requirement_task(
         self,
@@ -741,586 +663,6 @@ class TaskService:
         """
         return self._get_requirement_project_id(db, requirement_id)
 
-    def create_comment(
-        self,
-        db: Session,
-        *,
-        task_id: int,
-        comment_in: TaskCommentCreate,
-        actor_id: int | None,
-    ) -> TaskComment:
-        """タスクコメントを作成する。
-
-        Args:
-            db: DBセッション。
-            task_id: コメント対象タスクID。
-            comment_in: コメント作成リクエスト。
-            actor_id: 操作ユーザーID。
-
-        Returns:
-            作成されたタスクコメント。
-        """
-        task = self.get_task(db, task_id)
-        self._validate_parent_comment(db, task_id, comment_in.parent_comment_id)
-        comment = self.comment_repository.create(
-            db,
-            task_id=task_id,
-            parent_comment_id=comment_in.parent_comment_id,
-            body=comment_in.body,
-            actor_id=actor_id,
-        )
-        self._record_change(
-            db,
-            project_id=task.project_id,
-            target_type=TaskTargetType.COMMENT,
-            target_id=comment.id,
-            action=TaskChangeLogAction.COMMENT_CREATED,
-            new_value={"task_id": task_id},
-            changed_by=actor_id,
-        )
-        return comment
-
-    def list_comments(self, db: Session, task_id: int) -> list[TaskComment]:
-        """タスクコメント一覧を取得する。"""
-        self.get_task(db, task_id)
-        return self.comment_repository.list_by_task(db, task_id)
-
-    def list_comment_reads(self, db: Session, task_id: int) -> list[TaskCommentRead]:
-        """タスクコメント一覧レスポンスを取得する。"""
-        comments = self.list_comments(db, task_id)
-        users_by_id = self._get_change_log_users_by_id(
-            db,
-            [comment.created_by for comment in comments],
-        )
-        return [
-            self._build_task_comment_read(comment, users_by_id=users_by_id)
-            for comment in comments
-        ]
-
-    def build_comment_read(self, db: Session, comment: TaskComment) -> TaskCommentRead:
-        """タスクコメントレスポンスを作成する。"""
-        users_by_id = self._get_change_log_users_by_id(db, [comment.created_by])
-        return self._build_task_comment_read(comment, users_by_id=users_by_id)
-
-    def get_comment(self, db: Session, comment_id: int) -> TaskComment:
-        """タスクコメントを取得する。"""
-        comment = self.comment_repository.get_by_id(db, comment_id)
-        if comment is None:
-            raise NotFoundError(error_messages.TASK_COMMENT_NOT_FOUND)
-        return comment
-
-    def update_comment(
-        self,
-        db: Session,
-        *,
-        comment_id: int,
-        comment_in: TaskCommentUpdate,
-        actor_id: int | None,
-    ) -> TaskComment:
-        """タスクコメントを更新する。"""
-        comment = self.get_comment(db, comment_id)
-        task = self.get_task(db, comment.task_id)
-        raise_if_version_conflict(
-            current_version=comment.version,
-            requested_version=comment_in.version,
-            current=TaskCommentRead.model_validate(comment).model_dump(),
-        )
-        old_body = comment.body
-        comment = self.comment_repository.update_body(
-            db,
-            comment=comment,
-            body=comment_in.body,
-            actor_id=actor_id,
-        )
-        self._record_change(
-            db,
-            project_id=task.project_id,
-            target_type=TaskTargetType.COMMENT,
-            target_id=comment.id,
-            action=TaskChangeLogAction.COMMENT_UPDATED,
-            field_name="body",
-            old_value={"task_id": task.id, "body": old_body},
-            new_value={"task_id": task.id, "body": comment.body},
-            changed_by=actor_id,
-        )
-        return comment
-
-    def delete_comment(
-        self,
-        db: Session,
-        *,
-        comment_id: int,
-        actor_id: int | None,
-    ) -> None:
-        """タスクコメントを論理削除する。"""
-        comment = self.get_comment(db, comment_id)
-        task = self.get_task(db, comment.task_id)
-        self.comment_repository.soft_delete(
-            db,
-            comment=comment,
-            actor_id=actor_id,
-        )
-        self._record_change(
-            db,
-            project_id=task.project_id,
-            target_type=TaskTargetType.COMMENT,
-            target_id=comment.id,
-            action=TaskChangeLogAction.COMMENT_DELETED,
-            old_value={"task_id": task.id},
-            changed_by=actor_id,
-        )
-
-    def resolve_comment(
-        self,
-        db: Session,
-        *,
-        comment_id: int,
-        comment_in: TaskCommentStateUpdate,
-        actor_id: int | None,
-    ) -> TaskComment:
-        """タスクコメントを解決済みにする。"""
-        return self._set_comment_resolved(
-            db,
-            comment_id=comment_id,
-            comment_in=comment_in,
-            is_resolved=True,
-            actor_id=actor_id,
-        )
-
-    def reopen_comment(
-        self,
-        db: Session,
-        *,
-        comment_id: int,
-        comment_in: TaskCommentStateUpdate,
-        actor_id: int | None,
-    ) -> TaskComment:
-        """タスクコメントを未解決に戻す。"""
-        return self._set_comment_resolved(
-            db,
-            comment_id=comment_id,
-            comment_in=comment_in,
-            is_resolved=False,
-            actor_id=actor_id,
-        )
-
-    def list_task_change_logs(
-        self,
-        db: Session,
-        *,
-        task_id: int,
-        page: int,
-        page_size: int,
-    ) -> tuple[list[TaskChangeLogRead], int]:
-        """タスク変更履歴一覧を取得する。"""
-        self.get_task(db, task_id)
-        change_logs, total = self.change_log_repository.list_by_task(
-            db,
-            task_id=task_id,
-            page=page,
-            page_size=page_size,
-        )
-        users_by_id = self._get_change_log_users_by_id(
-            db,
-            self._collect_change_log_user_ids(change_logs),
-        )
-        tasks_by_id = self._get_change_log_tasks_by_id(
-            db,
-            self._collect_change_log_task_ids(change_logs),
-        )
-        requirements_by_id = self._get_change_log_requirements_by_id(
-            db,
-            self._collect_change_log_requirement_ids(change_logs),
-        )
-        return [
-            self._build_task_change_log_read(
-                log,
-                users_by_id=users_by_id,
-                tasks_by_id=tasks_by_id,
-                requirements_by_id=requirements_by_id,
-            )
-            for log in change_logs
-        ], total
-
-    def create_dependency(
-        self,
-        db: Session,
-        *,
-        dependency_in: TaskDependencyCreate,
-        actor_id: int | None,
-    ) -> TaskDependency:
-        """タスク依存関係を作成する。"""
-        predecessor = self.get_task(db, dependency_in.predecessor_task_id)
-        successor = self.get_task(db, dependency_in.successor_task_id)
-        self._validate_dependency(predecessor, successor, dependency_in.dependency_type)
-        if self._creates_cycle(db, predecessor.id, successor.id):
-            raise BadRequestError(error_messages.TASK_DEPENDENCY_CYCLE)
-        try:
-            dependency = self.dependency_repository.create(
-                db,
-                dependency_in=dependency_in,
-                actor_id=actor_id,
-            )
-        except IntegrityError as exc:
-            raise_duplicate_after_rollback(
-                db,
-                error_messages.DUPLICATE_RESOURCE,
-                exc,
-            )
-        self._record_change(
-            db,
-            project_id=successor.project_id,
-            target_type=TaskTargetType.DEPENDENCY,
-            target_id=dependency.id,
-            action=TaskChangeLogAction.DEPENDENCY_CREATED,
-            new_value={
-                "predecessor_task_id": predecessor.id,
-                "successor_task_id": successor.id,
-                "dependency_type": dependency.dependency_type,
-            },
-            changed_by=actor_id,
-        )
-        return dependency
-
-    def list_dependencies(self, db: Session, task_id: int) -> list[TaskDependency]:
-        """対象タスクに関係する依存関係一覧を取得する。"""
-        self.get_task(db, task_id)
-        return self.dependency_repository.list_by_task(db, task_id)
-
-    def get_dependency(self, db: Session, dependency_id: int) -> TaskDependency:
-        """タスク依存関係を取得する。"""
-        dependency = self.dependency_repository.get_by_id(db, dependency_id)
-        if dependency is None:
-            raise NotFoundError(error_messages.TASK_DEPENDENCY_NOT_FOUND)
-        return dependency
-
-    def update_dependency(
-        self,
-        db: Session,
-        *,
-        dependency_id: int,
-        dependency_in: TaskDependencyUpdate,
-        actor_id: int | None,
-    ) -> TaskDependency:
-        """タスク依存関係を更新する。"""
-        dependency = self.get_dependency(db, dependency_id)
-        successor = self.get_task(db, dependency.successor_task_id)
-        raise_if_version_conflict(
-            current_version=dependency.version,
-            requested_version=dependency_in.version,
-            current=TaskDependencyRead.model_validate(dependency).model_dump(),
-        )
-        dependency = self.dependency_repository.update(
-            db,
-            dependency=dependency,
-            dependency_in=dependency_in,
-        )
-        self._record_change(
-            db,
-            project_id=successor.project_id,
-            target_type=TaskTargetType.DEPENDENCY,
-            target_id=dependency.id,
-            action=TaskChangeLogAction.DEPENDENCY_UPDATED,
-            changed_by=actor_id,
-        )
-        return dependency
-
-    def delete_dependency(
-        self,
-        db: Session,
-        *,
-        dependency_id: int,
-        actor_id: int | None,
-    ) -> None:
-        """タスク依存関係を削除する。"""
-        dependency = self.get_dependency(db, dependency_id)
-        successor = self.get_task(db, dependency.successor_task_id)
-        self.dependency_repository.delete(db, dependency)
-        self._record_change(
-            db,
-            project_id=successor.project_id,
-            target_type=TaskTargetType.DEPENDENCY,
-            target_id=dependency_id,
-            action=TaskChangeLogAction.DEPENDENCY_DELETED,
-            changed_by=actor_id,
-        )
-
-    def create_milestone(
-        self,
-        db: Session,
-        *,
-        project_id: int,
-        milestone_in: MilestoneCreate,
-        actor_id: int | None,
-    ) -> Milestone:
-        """マイルストーンを作成する。"""
-        self._ensure_project_exists(db, project_id)
-        milestone = self.milestone_repository.create(
-            db,
-            project_id=project_id,
-            milestone_in=milestone_in,
-            actor_id=actor_id,
-        )
-        self._record_change(
-            db,
-            project_id=project_id,
-            target_type=TaskTargetType.MILESTONE,
-            target_id=milestone.id,
-            action=TaskChangeLogAction.MILESTONE_CREATED,
-            changed_by=actor_id,
-        )
-        return milestone
-
-    def list_milestones(self, db: Session, project_id: int) -> list[Milestone]:
-        """プロジェクト内マイルストーン一覧を取得する。"""
-        self._ensure_project_exists(db, project_id)
-        return self.milestone_repository.list_by_project(db, project_id)
-
-    def get_milestone(self, db: Session, milestone_id: int) -> Milestone:
-        """マイルストーンを取得する。"""
-        milestone = self.milestone_repository.get_by_id(db, milestone_id)
-        if milestone is None:
-            raise NotFoundError(error_messages.MILESTONE_NOT_FOUND)
-        return milestone
-
-    def update_milestone(
-        self,
-        db: Session,
-        *,
-        milestone_id: int,
-        milestone_in: MilestoneUpdate,
-        actor_id: int | None,
-    ) -> Milestone:
-        """マイルストーンを更新する。"""
-        milestone = self.get_milestone(db, milestone_id)
-        raise_if_version_conflict(
-            current_version=milestone.version,
-            requested_version=milestone_in.version,
-            current=MilestoneRead.model_validate(milestone).model_dump(),
-        )
-        milestone = self.milestone_repository.update(
-            db,
-            milestone=milestone,
-            milestone_in=milestone_in,
-            actor_id=actor_id,
-        )
-        self._record_change(
-            db,
-            project_id=milestone.project_id,
-            target_type=TaskTargetType.MILESTONE,
-            target_id=milestone.id,
-            action=TaskChangeLogAction.MILESTONE_UPDATED,
-            changed_by=actor_id,
-        )
-        return milestone
-
-    def delete_milestone(
-        self,
-        db: Session,
-        *,
-        milestone_id: int,
-        actor_id: int | None,
-    ) -> None:
-        """マイルストーンを論理削除する。"""
-        milestone = self.get_milestone(db, milestone_id)
-        self.milestone_repository.soft_delete(
-            db,
-            milestone=milestone,
-            actor_id=actor_id,
-        )
-        self._record_change(
-            db,
-            project_id=milestone.project_id,
-            target_type=TaskTargetType.MILESTONE,
-            target_id=milestone.id,
-            action=TaskChangeLogAction.MILESTONE_DELETED,
-            changed_by=actor_id,
-        )
-
-    def create_board(
-        self,
-        db: Session,
-        *,
-        project_id: int,
-        board_in: BoardCreate,
-        actor_id: int | None,
-    ) -> Board:
-        """ボードを作成する。"""
-        self._ensure_project_exists(db, project_id)
-        board = self.board_repository.create(
-            db,
-            project_id=project_id,
-            board_in=board_in,
-            actor_id=actor_id,
-        )
-        self._record_change(
-            db,
-            project_id=project_id,
-            target_type=TaskTargetType.BOARD,
-            target_id=board.id,
-            action=TaskChangeLogAction.BOARD_CREATED,
-            changed_by=actor_id,
-        )
-        return board
-
-    def list_boards(self, db: Session, project_id: int) -> list[Board]:
-        """プロジェクト内ボード一覧を取得する。"""
-        self._ensure_project_exists(db, project_id)
-        return self.board_repository.list_by_project(db, project_id)
-
-    def get_board(self, db: Session, board_id: int) -> Board:
-        """ボードを取得する。"""
-        board = self.board_repository.get_by_id(db, board_id)
-        if board is None:
-            raise NotFoundError(error_messages.BOARD_NOT_FOUND)
-        return board
-
-    def update_board(
-        self,
-        db: Session,
-        *,
-        board_id: int,
-        board_in: BoardUpdate,
-        actor_id: int | None,
-    ) -> Board:
-        """ボードを更新する。"""
-        board = self.get_board(db, board_id)
-        raise_if_version_conflict(
-            current_version=board.version,
-            requested_version=board_in.version,
-            current=BoardRead.model_validate(board).model_dump(),
-        )
-        board = self.board_repository.update(
-            db,
-            board=board,
-            board_in=board_in,
-            actor_id=actor_id,
-        )
-        self._record_change(
-            db,
-            project_id=board.project_id,
-            target_type=TaskTargetType.BOARD,
-            target_id=board.id,
-            action=TaskChangeLogAction.BOARD_UPDATED,
-            changed_by=actor_id,
-        )
-        return board
-
-    def delete_board(self, db: Session, *, board_id: int, actor_id: int | None) -> None:
-        """ボードを論理削除する。"""
-        board = self.get_board(db, board_id)
-        self.board_repository.soft_delete(db, board=board, actor_id=actor_id)
-        self._record_change(
-            db,
-            project_id=board.project_id,
-            target_type=TaskTargetType.BOARD,
-            target_id=board.id,
-            action=TaskChangeLogAction.BOARD_DELETED,
-            changed_by=actor_id,
-        )
-
-    def create_board_column(
-        self,
-        db: Session,
-        *,
-        board_id: int,
-        column_in: BoardColumnCreate,
-        actor_id: int | None,
-    ) -> BoardColumn:
-        """ボード列を作成する。"""
-        board = self.get_board(db, board_id)
-        try:
-            column = self.column_repository.create(
-                db,
-                board_id=board_id,
-                column_in=column_in,
-            )
-        except IntegrityError as exc:
-            raise_duplicate_after_rollback(
-                db,
-                error_messages.DUPLICATE_RESOURCE,
-                exc,
-            )
-        self._record_change(
-            db,
-            project_id=board.project_id,
-            target_type=TaskTargetType.COLUMN,
-            target_id=column.id,
-            action=TaskChangeLogAction.COLUMN_CREATED,
-            changed_by=actor_id,
-        )
-        return column
-
-    def list_board_columns(self, db: Session, board_id: int) -> list[BoardColumn]:
-        """ボード列一覧を取得する。"""
-        self.get_board(db, board_id)
-        return self.column_repository.list_by_board(db, board_id)
-
-    def get_board_column(self, db: Session, column_id: int) -> BoardColumn:
-        """ボード列を取得する。"""
-        column = self.column_repository.get_by_id(db, column_id)
-        if column is None:
-            raise NotFoundError(error_messages.BOARD_COLUMN_NOT_FOUND)
-        return column
-
-    def update_board_column(
-        self,
-        db: Session,
-        *,
-        column_id: int,
-        column_in: BoardColumnUpdate,
-        actor_id: int | None,
-    ) -> BoardColumn:
-        """ボード列を更新する。"""
-        column = self.get_board_column(db, column_id)
-        board = self.get_board(db, column.board_id)
-        raise_if_version_conflict(
-            current_version=column.version,
-            requested_version=column_in.version,
-            current=BoardColumnRead.model_validate(column).model_dump(),
-        )
-        try:
-            column = self.column_repository.update(
-                db,
-                column=column,
-                column_in=column_in,
-            )
-        except IntegrityError as exc:
-            raise_duplicate_after_rollback(
-                db,
-                error_messages.DUPLICATE_RESOURCE,
-                exc,
-            )
-        self._record_change(
-            db,
-            project_id=board.project_id,
-            target_type=TaskTargetType.COLUMN,
-            target_id=column.id,
-            action=TaskChangeLogAction.COLUMN_UPDATED,
-            changed_by=actor_id,
-        )
-        return column
-
-    def delete_board_column(
-        self,
-        db: Session,
-        *,
-        column_id: int,
-        actor_id: int | None,
-    ) -> None:
-        """ボード列を論理削除する。"""
-        column = self.get_board_column(db, column_id)
-        board = self.get_board(db, column.board_id)
-        self.column_repository.soft_delete(db, column)
-        self._record_change(
-            db,
-            project_id=board.project_id,
-            target_type=TaskTargetType.COLUMN,
-            target_id=column.id,
-            action=TaskChangeLogAction.COLUMN_DELETED,
-            changed_by=actor_id,
-        )
-
     def get_gantt(
         self,
         db: Session,
@@ -1379,51 +721,73 @@ class TaskService:
         ):
             raise ForbiddenError()
 
-    def build_task_read(self, db: Session, task: Task) -> TaskRead:
-        """タスクモデルからレスポンスschemaを作成する。"""
-        return self.build_task_reads(db, [task])[0]
-
-    def build_task_reads(self, db: Session, tasks: list[Task]) -> list[TaskRead]:
-        """複数タスクモデルからレスポンスschemaを作成する。
+    def get_task_presentation_data(
+        self,
+        db: Session,
+        tasks: list[Task],
+    ) -> TaskPresentationData:
+        """タスクレスポンス整形に必要な表示補助データを取得する。
 
         Args:
             db: DBセッション。
-            tasks: タスクモデル一覧。
+            tasks: レスポンスへ変換するタスク一覧。
 
         Returns:
-            タスクレスポンス一覧。
+            タスクレスポンス整形に必要な表示補助データ。
         """
-        summaries_by_task_id = (
-            self.relation_repository.list_requirement_summaries_by_task_ids(
-                db,
-                [task.id for task in tasks],
-            )
+        return self.presentation_data_service.get_task_presentation_data(
+            db,
+            tasks,
         )
-        return [
-            self._build_task_read(
-                db,
-                task,
-                requirements=summaries_by_task_id.get(task.id, []),
-            )
-            for task in tasks
-        ]
 
-    def _build_task_read(
+    def _build_task_conflict_current(
         self,
         db: Session,
         task: Task,
-        *,
-        requirements: list[dict[str, Any]],
-    ) -> TaskRead:
-        """関連要件を含むタスクレスポンスschemaを作成する。"""
-        task_read = TaskRead.model_validate(task)
-        task_read.is_overdue = self.is_overdue(task)
-        task_read.is_blocked = self.is_blocked(db, task)
-        task_read.requirements = [
-            TaskRequirementSummary.model_validate(requirement)
-            for requirement in requirements
-        ]
-        return task_read
+    ) -> dict[str, Any]:
+        """排他制御エラーで返す現行タスク値を組み立てる。
+
+        Args:
+            db: DBセッション。
+            task: 現行タスクモデル。
+
+        Returns:
+            TaskReadと同じキーを持つ現行タスク値。
+        """
+        presentation_data = self.get_task_presentation_data(db, [task])
+        return {
+            "parent_task_id": task.parent_task_id,
+            "task_code": task.task_code,
+            "title": task.title,
+            "description": task.description,
+            "task_type": task.task_type,
+            "status": task.status,
+            "priority": task.priority,
+            "assignee_id": task.assignee_id,
+            "reporter_id": task.reporter_id,
+            "start_date": task.start_date,
+            "due_date": task.due_date,
+            "actual_start_date": task.actual_start_date,
+            "actual_end_date": task.actual_end_date,
+            "progress_percent": task.progress_percent,
+            "estimated_minutes": task.estimated_minutes,
+            "actual_minutes": task.actual_minutes,
+            "sort_order": task.sort_order,
+            "tags": task.tags,
+            "id": task.id,
+            "project_id": task.project_id,
+            "version": task.version,
+            "created_by": task.created_by,
+            "updated_by": task.updated_by,
+            "created_at": task.created_at,
+            "updated_at": task.updated_at,
+            "is_overdue": self.is_overdue(task),
+            "is_blocked": task.id in presentation_data.blocked_task_ids,
+            "requirements": presentation_data.requirements_by_task_id.get(
+                task.id,
+                [],
+            ),
+        }
 
     def is_overdue(self, task: Task) -> bool:
         """タスクが期限超過しているか判定する。"""
@@ -1435,19 +799,7 @@ class TaskService:
 
     def is_blocked(self, db: Session, task: Task) -> bool:
         """タスクが依存関係によりブロックされているか判定する。"""
-        dependencies = self.dependency_repository.list_by_task(db, task.id)
-        for dependency in dependencies:
-            if (
-                dependency.successor_task_id == task.id
-                and dependency.dependency_type == "finish_to_start"
-            ):
-                predecessor = self.task_repository.get_by_id(
-                    db,
-                    dependency.predecessor_task_id,
-                )
-                if predecessor is not None and predecessor.status != "done":
-                    return True
-        return False
+        return self.presentation_data_service.is_blocked(db, task)
 
     def _ensure_project_exists(self, db: Session, project_id: int) -> None:
         """プロジェクトが存在することを確認する。"""
@@ -1553,60 +905,6 @@ class TaskService:
         next_number = self.task_repository.get_max_auto_task_number(db, project_id) + 1
         return f"{AUTO_TASK_CODE_PREFIX}-{next_number:03d}"
 
-    def _validate_parent_comment(
-        self,
-        db: Session,
-        task_id: int,
-        parent_comment_id: int | None,
-    ) -> None:
-        """親コメントが同じタスクに存在することを確認する。"""
-        if parent_comment_id is None:
-            return
-        parent = self.comment_repository.get_by_id(db, parent_comment_id)
-        if parent is None or parent.task_id != task_id:
-            raise NotFoundError(error_messages.TASK_COMMENT_NOT_FOUND)
-
-    def _set_comment_resolved(
-        self,
-        db: Session,
-        *,
-        comment_id: int,
-        comment_in: TaskCommentStateUpdate,
-        is_resolved: bool,
-        actor_id: int | None,
-    ) -> TaskComment:
-        """タスクコメントの解決状態を更新する。"""
-        comment = self.get_comment(db, comment_id)
-        task = self.get_task(db, comment.task_id)
-        raise_if_version_conflict(
-            current_version=comment.version,
-            requested_version=comment_in.version,
-            current=TaskCommentRead.model_validate(comment).model_dump(),
-        )
-        old_value = comment.is_resolved
-        comment = self.comment_repository.set_resolved(
-            db,
-            comment=comment,
-            is_resolved=is_resolved,
-            actor_id=actor_id,
-        )
-        self._record_change(
-            db,
-            project_id=task.project_id,
-            target_type=TaskTargetType.COMMENT,
-            target_id=comment.id,
-            action=(
-                TaskChangeLogAction.COMMENT_RESOLVED
-                if is_resolved
-                else TaskChangeLogAction.COMMENT_REOPENED
-            ),
-            field_name="is_resolved",
-            old_value={"task_id": task.id, "is_resolved": old_value},
-            new_value={"task_id": task.id, "is_resolved": comment.is_resolved},
-            changed_by=actor_id,
-        )
-        return comment
-
     def _validate_task_state(self, status: str, progress_percent: int) -> None:
         """タスク状態と進捗率の整合性を検証する。"""
         if status == "done" and progress_percent != 100:
@@ -1635,50 +933,6 @@ class TaskService:
                 normalized["actual_end_date"] = today
         return normalized
 
-    def _validate_dependency(
-        self,
-        predecessor: Task,
-        successor: Task,
-        dependency_type: str,
-    ) -> None:
-        """タスク依存関係の基本制約を検証する。"""
-        if predecessor.id == successor.id:
-            raise BadRequestError(error_messages.TASK_DEPENDENCY_INVALID)
-        if predecessor.project_id != successor.project_id:
-            raise BadRequestError(error_messages.TASK_DEPENDENCY_INVALID)
-        if dependency_type != "finish_to_start":
-            raise BadRequestError(error_messages.TASK_DEPENDENCY_INVALID)
-        if (
-            predecessor.parent_task_id == successor.id
-            or successor.parent_task_id == predecessor.id
-        ):
-            raise BadRequestError(error_messages.TASK_DEPENDENCY_INVALID)
-
-    def _creates_cycle(
-        self,
-        db: Session,
-        predecessor_task_id: int,
-        successor_task_id: int,
-    ) -> bool:
-        """依存関係追加で循環が発生するか判定する。"""
-        stack = [successor_task_id]
-        visited: set[int] = set()
-        while stack:
-            current_task_id = stack.pop()
-            if current_task_id == predecessor_task_id:
-                return True
-            if current_task_id in visited:
-                continue
-            visited.add(current_task_id)
-            stack.extend(
-                dependency.successor_task_id
-                for dependency in self.dependency_repository.list_successors(
-                    db,
-                    current_task_id,
-                )
-            )
-        return False
-
     def _task_snapshot(self, task: Task) -> dict[str, Any]:
         """タスクの変更前スナップショットを作成する。"""
         return {
@@ -1704,334 +958,6 @@ class TaskService:
             "actual_minutes": task.actual_minutes,
             "sort_order": task.sort_order,
             "tags": task.tags,
-        }
-
-    def _build_task_comment_read(
-        self,
-        comment: TaskComment,
-        *,
-        users_by_id: dict[int, ChangeLogUserRead],
-    ) -> TaskCommentRead:
-        """タスクコメントレスポンスを作成する。"""
-        return TaskCommentRead.model_validate(comment).model_copy(
-            update={
-                "created_by_user": (
-                    users_by_id.get(comment.created_by)
-                    if comment.created_by is not None
-                    else None
-                ),
-            },
-        )
-
-    def _build_task_change_log_read(
-        self,
-        change_log: TaskChangeLog,
-        *,
-        users_by_id: dict[int, ChangeLogUserRead],
-        tasks_by_id: dict[int, Task],
-        requirements_by_id: dict[int, Requirement],
-    ) -> TaskChangeLogRead:
-        """タスク変更履歴レスポンスを作成する。"""
-        field_name = cast(
-            TaskChangeLogFieldName | None,
-            TASK_CHANGE_LOG_FORMATTER.normalize_field_name(
-                change_log.field_name,
-            ),
-        )
-        value_formatters = {
-            "parent_task_id": lambda value: self._format_task_id_label_value(
-                value,
-                tasks_by_id,
-            ),
-            "requirements": lambda value: self._format_requirement_values(
-                value,
-                requirements_by_id,
-            ),
-        }
-        return TaskChangeLogRead(
-            id=change_log.id,
-            task_id=(
-                change_log.target_id
-                if change_log.target_type == TaskTargetType.TASK
-                else self._get_task_id_from_comment_log(change_log)
-            ),
-            target_type=self._normalize_change_log_target_type(
-                change_log.target_type,
-            ),
-            action=self._normalize_change_log_action(change_log.action),
-            field_name=field_name,
-            old_value=TASK_CHANGE_LOG_FORMATTER.extract_change_value(
-                change_log.old_value,
-                field_name,
-                users_by_id=users_by_id,
-                value_formatters=value_formatters,
-            ),
-            new_value=TASK_CHANGE_LOG_FORMATTER.extract_change_value(
-                change_log.new_value,
-                field_name,
-                users_by_id=users_by_id,
-                value_formatters=value_formatters,
-            ),
-            reason=change_log.reason,
-            created_by=change_log.changed_by,
-            created_by_user=(
-                users_by_id.get(change_log.changed_by)
-                if change_log.changed_by is not None
-                else None
-            ),
-            created_at=change_log.changed_at,
-        )
-
-    def _get_task_id_from_comment_log(self, change_log: TaskChangeLog) -> int:
-        """コメント履歴のレスポンス用タスクIDを取得する。
-
-        Args:
-            change_log: タスク変更履歴モデル。
-
-        Returns:
-            コメントに紐づくタスクID。取得できない場合はtarget_id。
-        """
-        task_id = None
-        if change_log.new_value is not None:
-            task_id = change_log.new_value.get("task_id")
-        if task_id is None and change_log.old_value is not None:
-            task_id = change_log.old_value.get("task_id")
-        return task_id if isinstance(task_id, int) else change_log.target_id
-
-    def _normalize_change_log_action(self, action: str) -> TaskChangeLogActionCode:
-        """DB保存済みの操作種別をAPI用の安定コードに変換する。"""
-        return cast(
-            TaskChangeLogActionCode,
-            TASK_CHANGE_LOG_FORMATTER.normalize_action(action),
-        )
-
-    def _normalize_change_log_target_type(
-        self,
-        target_type: str,
-    ) -> TaskChangeLogTargetTypeCode:
-        """DB保存済みの対象種別をAPI用の安定コードに変換する。"""
-        return cast(
-            TaskChangeLogTargetTypeCode,
-            TASK_CHANGE_LOG_FORMATTER.normalize_target_type(target_type),
-        )
-
-    def _get_change_log_users_by_id(
-        self,
-        db: Session,
-        user_ids: list[int | None],
-    ) -> dict[int, ChangeLogUserRead]:
-        """変更履歴に含まれるユーザー概要を取得する。"""
-        ids = sorted({user_id for user_id in user_ids if user_id is not None})
-        users = self.user_repository.list_by_ids(db, ids)
-        return {
-            user.id: ChangeLogUserRead(
-                id=user.id,
-                name=user.name,
-                email=user.email,
-                avatar_url=None,
-            )
-            for user in users
-        }
-
-    def _get_change_log_tasks_by_id(
-        self,
-        db: Session,
-        task_ids: list[int],
-    ) -> dict[int, Task]:
-        """変更履歴に含まれるタスク表示補助情報を取得する。
-
-        Args:
-            db: DBセッション。
-            task_ids: 取得対象のタスクID一覧。
-
-        Returns:
-            タスクIDをキーにしたタスク辞書。
-        """
-        ids = sorted(set(task_ids))
-        return {task.id: task for task in self.task_repository.list_by_ids(db, ids)}
-
-    def _get_change_log_requirements_by_id(
-        self,
-        db: Session,
-        requirement_ids: list[int],
-    ) -> dict[int, Requirement]:
-        """変更履歴に含まれる要件表示補助情報を取得する。
-
-        Args:
-            db: DBセッション。
-            requirement_ids: 取得対象の要件ID一覧。
-
-        Returns:
-            要件IDをキーにした要件辞書。
-        """
-        ids = sorted(set(requirement_ids))
-        requirements = self.requirement_lookup_repository.list_requirements_by_ids(
-            db,
-            ids,
-        )
-        return {requirement.id: requirement for requirement in requirements}
-
-    def _collect_change_log_user_ids(
-        self,
-        change_logs: list[TaskChangeLog],
-    ) -> list[int | None]:
-        """変更履歴レスポンス整形に必要なユーザーIDを集める。"""
-        user_ids: list[int | None] = [log.changed_by for log in change_logs]
-        user_ids.extend(
-            TASK_CHANGE_LOG_FORMATTER.collect_user_ids(
-                [
-                    (log.field_name, log.old_value)
-                    for log in change_logs
-                ]
-                + [
-                    (log.field_name, log.new_value)
-                    for log in change_logs
-                ]
-            )
-        )
-        return user_ids
-
-    def _collect_change_log_task_ids(
-        self,
-        change_logs: list[TaskChangeLog],
-    ) -> list[int]:
-        """変更履歴レスポンス整形に必要なタスクIDを集める。
-
-        Args:
-            change_logs: 整形対象の変更履歴一覧。
-
-        Returns:
-            表示補助に必要なタスクID一覧。
-        """
-        task_ids: list[int] = []
-        for log in change_logs:
-            for value in (log.old_value, log.new_value):
-                if value is None:
-                    continue
-                task_id = value.get("parent_task_id")
-                if isinstance(task_id, int):
-                    task_ids.append(task_id)
-        return task_ids
-
-    def _collect_change_log_requirement_ids(
-        self,
-        change_logs: list[TaskChangeLog],
-    ) -> list[int]:
-        """変更履歴レスポンス整形に必要な要件IDを集める。
-
-        Args:
-            change_logs: 整形対象の変更履歴一覧。
-
-        Returns:
-            表示補助に必要な要件ID一覧。
-        """
-        requirement_ids: list[int] = []
-        for log in change_logs:
-            for value in (log.old_value, log.new_value):
-                if value is None:
-                    continue
-                requirement_ids.extend(
-                    self._extract_requirement_ids(value.get("requirements"))
-                )
-        return requirement_ids
-
-    def _extract_requirement_ids(self, value: Any) -> list[int]:
-        """変更履歴値から要件IDを抽出する。
-
-        Args:
-            value: 変更履歴に保存されている要件関連値。
-
-        Returns:
-            抽出できた要件ID一覧。
-        """
-        if isinstance(value, int):
-            return [value]
-        if isinstance(value, list):
-            requirement_ids: list[int] = []
-            for item in value:
-                requirement_ids.extend(self._extract_requirement_ids(item))
-            return requirement_ids
-        if isinstance(value, dict):
-            for key in ("id", "requirement_id"):
-                requirement_id = value.get(key)
-                if isinstance(requirement_id, int):
-                    return [requirement_id]
-            return self._extract_requirement_ids(value.get("requirements"))
-        return []
-
-    def _format_task_id_label_value(
-        self,
-        value: Any,
-        tasks_by_id: dict[int, Task],
-    ) -> dict[str, Any] | None:
-        """タスクIDをid/label形式に変換する。
-
-        Args:
-            value: 変更履歴に保存されているタスクID。
-            tasks_by_id: 表示補助に使うタスク辞書。
-
-        Returns:
-            id/label形式の値。値がNoneの場合はNone。
-        """
-        if value is None:
-            return None
-        task = tasks_by_id.get(value) if isinstance(value, int) else None
-        label = f"{task.task_code} {task.title}" if task is not None else str(value)
-        return {"id": value, "label": label}
-
-    def _format_requirement_values(
-        self,
-        value: Any,
-        requirements_by_id: dict[int, Requirement],
-    ) -> Any:
-        """要件IDを表示補助付きの配列に変換する。
-
-        Args:
-            value: 変更履歴に保存されている要件関連値。
-            requirements_by_id: 表示補助に使う要件辞書。
-
-        Returns:
-            要件表示補助値。配列以外の値は単一値として変換する。
-        """
-        if value is None:
-            return None
-        if isinstance(value, list):
-            return [
-                self._format_requirement_value(item, requirements_by_id)
-                for item in value
-            ]
-        return self._format_requirement_value(value, requirements_by_id)
-
-    def _format_requirement_value(
-        self,
-        value: Any,
-        requirements_by_id: dict[int, Requirement],
-    ) -> dict[str, Any] | Any:
-        """単一の要件値を表示補助付きに変換する。
-
-        Args:
-            value: 変更履歴に保存されている単一要件値。
-            requirements_by_id: 表示補助に使う要件辞書。
-
-        Returns:
-            id/requirement_code/label形式の値。IDが取れない場合は元の値。
-        """
-        requirement_ids = self._extract_requirement_ids(value)
-        if not requirement_ids:
-            return value
-        requirement_id = requirement_ids[0]
-        requirement = requirements_by_id.get(requirement_id)
-        if requirement is None:
-            return {
-                "id": requirement_id,
-                "requirement_code": str(requirement_id),
-                "label": str(requirement_id),
-            }
-        label = f"{requirement.requirement_code} {requirement.title}"
-        return {
-            "id": requirement.id,
-            "requirement_code": requirement.requirement_code,
-            "label": label,
         }
 
     def _record_task_update_logs(

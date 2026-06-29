@@ -6,6 +6,7 @@ from app.schemas.user import (
     CurrentUserRead,
     RoleRead,
     UserListItem,
+    UserListResponse,
     UserRead,
     UserSummary,
 )
@@ -119,4 +120,41 @@ def build_user_list_item(
         is_active=user.is_active,
         last_login_at=user.last_login_at,
         system_roles=build_role_reads(system_roles),
+    )
+
+
+def build_user_list_response(
+    users: list[User],
+    *,
+    roles_by_user_id: dict[int, list[Role]],
+    storage_service: StorageService,
+    total: int,
+    page: int,
+    page_size: int,
+) -> UserListResponse:
+    """ユーザー一覧レスポンスを組み立てる。
+
+    Args:
+        users: レスポンスへ変換するユーザー一覧。
+        roles_by_user_id: ユーザーIDをkeyにしたシステムロール一覧。
+        storage_service: avatar_url生成に使用するストレージサービス。
+        total: 全件数。
+        page: ページ番号。
+        page_size: 1ページあたりの件数。
+
+    Returns:
+        ユーザー一覧レスポンス。
+    """
+    return UserListResponse(
+        items=[
+            build_user_list_item(
+                user,
+                roles_by_user_id.get(user.id, []),
+                storage_service,
+            )
+            for user in users
+        ],
+        total=total,
+        page=page,
+        page_size=page_size,
     )

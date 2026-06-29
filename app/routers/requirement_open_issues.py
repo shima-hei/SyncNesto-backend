@@ -7,8 +7,12 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import require_project_permission
 from app.db.session import get_db
-from app.models.requirement import Requirement, RequirementOpenIssue
 from app.models.user import User
+from app.presenters.requirement import (
+    build_requirement_open_issue_list_response,
+    build_requirement_open_issue_response,
+    build_requirement_response,
+)
 from app.routers import requirements_shared as shared
 from app.schemas.requirement import (
     RequirementOpenIssueCreate,
@@ -32,7 +36,7 @@ def create_open_issue(
     issue_in: RequirementOpenIssueCreate,
     current_user: User = Depends(require_project_permission("requirement:create")),
     db: Session = Depends(get_db),
-) -> RequirementOpenIssue:
+) -> RequirementOpenIssueRead:
     """未決事項を作成する。
 
     Args:
@@ -44,12 +48,13 @@ def create_open_issue(
     Returns:
         作成された未決事項。
     """
-    return shared.open_issue_service.create_open_issue(
+    issue = shared.open_issue_service.create_open_issue(
         db,
         project_id=project_id,
         issue_in=issue_in,
         actor_id=current_user.id,
     )
+    return build_requirement_open_issue_response(issue)
 
 
 @router.get(
@@ -102,8 +107,8 @@ def list_open_issues(
         due_date_to=due_date_to,
         related_requirement_id=related_requirement_id,
     )
-    return RequirementOpenIssueListResponse(
-        items=[RequirementOpenIssueRead.model_validate(issue) for issue in issues],
+    return build_requirement_open_issue_list_response(
+        issues,
         total=total,
         page=page,
         page_size=page_size,
@@ -119,7 +124,7 @@ def read_open_issue(
     issue_id: int,
     _: User = Depends(require_project_permission("requirement:read")),
     db: Session = Depends(get_db),
-) -> RequirementOpenIssue:
+) -> RequirementOpenIssueRead:
     """未決事項を取得する。
 
     Args:
@@ -131,11 +136,12 @@ def read_open_issue(
     Returns:
         取得した未決事項。
     """
-    return shared.open_issue_service.get_open_issue(
+    issue = shared.open_issue_service.get_open_issue(
         db,
         project_id=project_id,
         issue_id=issue_id,
     )
+    return build_requirement_open_issue_response(issue)
 
 
 @router.patch(
@@ -148,7 +154,7 @@ def update_open_issue(
     issue_in: RequirementOpenIssueUpdate,
     current_user: User = Depends(require_project_permission("requirement:update")),
     db: Session = Depends(get_db),
-) -> RequirementOpenIssue:
+) -> RequirementOpenIssueRead:
     """未決事項を更新する。
 
     Args:
@@ -161,13 +167,14 @@ def update_open_issue(
     Returns:
         更新された未決事項。
     """
-    return shared.open_issue_service.update_open_issue(
+    issue = shared.open_issue_service.update_open_issue(
         db,
         project_id=project_id,
         issue_id=issue_id,
         issue_in=issue_in,
         actor_id=current_user.id,
     )
+    return build_requirement_open_issue_response(issue)
 
 
 @router.delete(
@@ -207,7 +214,7 @@ def promote_open_issue_to_requirement(
     promote_in: RequirementOpenIssuePromoteCreate,
     current_user: User = Depends(require_project_permission("requirement:create")),
     db: Session = Depends(get_db),
-) -> Requirement:
+) -> RequirementRead:
     """未決事項を要件へ昇格する。
 
     Args:
@@ -220,10 +227,11 @@ def promote_open_issue_to_requirement(
     Returns:
         作成された要件。
     """
-    return shared.open_issue_service.promote_to_requirement(
+    requirement = shared.open_issue_service.promote_to_requirement(
         db,
         project_id=project_id,
         issue_id=issue_id,
         promote_in=promote_in,
         actor_id=current_user.id,
     )
+    return build_requirement_response(requirement)

@@ -23,14 +23,27 @@ from app.models.rbac import Role
 from app.models.user import User
 from app.repositories.rbac import RbacRepository
 from app.repositories.user import UserRepository
-from app.schemas.user import UserCreate, UserProfileUpdate, UserRead, UserUpdate
+from app.schemas.user import UserCreate, UserProfileUpdate, UserUpdate
 from app.services.audit_log import AuditLogService
-from app.services.conflict import raise_if_version_conflict
+from app.services.conflict import build_conflict_current, raise_if_version_conflict
 from app.services.login_attempt import LoginAttemptService
 from app.services.session import SessionService
 from app.services.storage import StorageService
 
 logger = logging.getLogger(__name__)
+
+USER_CONFLICT_CURRENT_FIELDS = (
+    "email",
+    "name",
+    "id",
+    "version",
+    "department",
+    "position",
+    "is_active",
+    "last_login_at",
+    "created_by",
+    "updated_by",
+)
 
 
 class UserService:
@@ -260,7 +273,11 @@ class UserService:
         raise_if_version_conflict(
             current_version=user.version,
             requested_version=user_in.version,
-            current=UserRead.model_validate(user).model_dump(),
+            current=build_conflict_current(
+                user,
+                USER_CONFLICT_CURRENT_FIELDS,
+                extra={"avatar_url": None, "system_roles": []},
+            ),
         )
 
         if user_in.email is not None and user_in.email != user.email:
@@ -340,7 +357,11 @@ class UserService:
         raise_if_version_conflict(
             current_version=current_user.version,
             requested_version=user_in.version,
-            current=UserRead.model_validate(current_user).model_dump(),
+            current=build_conflict_current(
+                current_user,
+                USER_CONFLICT_CURRENT_FIELDS,
+                extra={"avatar_url": None, "system_roles": []},
+            ),
         )
 
         hashed_password = None

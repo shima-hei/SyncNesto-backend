@@ -13,12 +13,10 @@ from app.models.requirement import (
     RequirementOpenIssue,
     RequirementSection,
 )
-from app.repositories.requirement import (
-    RequirementDocumentRepository,
-    RequirementOpenIssueRepository,
-    RequirementRepository,
-    RequirementSectionRepository,
-)
+from app.repositories.requirement_document import RequirementDocumentRepository
+from app.repositories.requirement_item import RequirementRepository
+from app.repositories.requirement_open_issue import RequirementOpenIssueRepository
+from app.repositories.requirement_section import RequirementSectionRepository
 from app.schemas.requirement import (
     RequirementCreate,
     RequirementOpenIssueCreate,
@@ -31,6 +29,7 @@ from app.services.change_log_formatter import (
     build_update_change_log_entry,
 )
 from app.services.conflict import (
+    build_conflict_current,
     raise_duplicate_after_rollback,
     raise_if_version_conflict,
 )
@@ -53,6 +52,24 @@ REQUIREMENT_OPEN_ISSUE_UPDATABLE_FIELDS = {
     "status",
     "resolution",
 }
+REQUIREMENT_OPEN_ISSUE_CONFLICT_CURRENT_FIELDS = (
+    "related_requirement_id",
+    "issue_code",
+    "title",
+    "description",
+    "impact_scope",
+    "assignee_id",
+    "due_date",
+    "status",
+    "resolution",
+    "id",
+    "document_id",
+    "version",
+    "created_by",
+    "updated_by",
+    "created_at",
+    "updated_at",
+)
 
 
 class RequirementOpenIssueService:
@@ -243,8 +260,9 @@ class RequirementOpenIssueService:
         raise_if_version_conflict(
             current_version=issue.version,
             requested_version=issue_in.version,
-            current=RequirementOpenIssueRead.model_validate(issue).model_dump(
-                mode="json",
+            current=build_conflict_current(
+                issue,
+                REQUIREMENT_OPEN_ISSUE_CONFLICT_CURRENT_FIELDS,
             ),
         )
         if (
@@ -326,8 +344,9 @@ class RequirementOpenIssueService:
         raise_if_version_conflict(
             current_version=issue.version,
             requested_version=promote_in.version,
-            current=RequirementOpenIssueRead.model_validate(issue).model_dump(
-                mode="json",
+            current=build_conflict_current(
+                issue,
+                REQUIREMENT_OPEN_ISSUE_CONFLICT_CURRENT_FIELDS,
             ),
         )
         if promote_in.section_id is not None:

@@ -7,13 +7,10 @@ from sqlalchemy.orm import Session
 from app.core import error_messages
 from app.core.exceptions import NotFoundError
 from app.models.requirement import RequirementChangeLog
-from app.repositories.requirement import (
-    RequirementChangeLogRepository,
-    RequirementDocumentRepository,
-)
+from app.models.user import User
+from app.repositories.requirement_change_log import RequirementChangeLogRepository
+from app.repositories.requirement_document import RequirementDocumentRepository
 from app.repositories.user import UserRepository
-from app.schemas.change_log import ChangeLogUserRead
-from app.schemas.requirement import RequirementChangeLogRead
 from app.services.change_log_formatter import (
     ChangeLogFormatConfig,
     ChangeLogFormatter,
@@ -280,73 +277,24 @@ class RequirementChangeLogService:
             changed_at_to=changed_at_to,
         )
 
-    def build_change_log_reads(
+    def get_change_log_users_by_id(
         self,
         db: Session,
         change_logs: list[RequirementChangeLog],
-    ) -> list[RequirementChangeLogRead]:
-        """要件定義変更履歴レスポンス一覧を作成する。
+    ) -> dict[int, User]:
+        """要件定義変更履歴レスポンス整形に必要なユーザーを取得する。
 
         Args:
             db: DBセッション。
             change_logs: 要件定義変更履歴モデル一覧。
 
         Returns:
-            要件定義変更履歴レスポンス一覧。
+            ユーザーIDをキーにしたユーザー辞書。
         """
-        users_by_id = self._get_change_log_users_by_id(
+        return self._get_change_log_users_by_id(
             db,
             self._collect_change_log_user_ids(change_logs),
         )
-        return [
-            self._build_change_log_read(log, users_by_id=users_by_id)
-            for log in change_logs
-        ]
-
-    def _build_change_log_read(
-        self,
-        change_log: RequirementChangeLog,
-        *,
-        users_by_id: dict[int, ChangeLogUserRead],
-    ) -> RequirementChangeLogRead:
-        """要件定義変更履歴レスポンスを作成する。"""
-        field_name = REQUIREMENT_CHANGE_LOG_FORMATTER.normalize_field_name(
-            change_log.field_name,
-        )
-        return RequirementChangeLogRead(
-            id=change_log.id,
-            document_id=change_log.document_id,
-            target_type=self._normalize_target_type(change_log.target_type),
-            target_id=change_log.target_id,
-            action=self._normalize_action(change_log.action),
-            field_name=field_name,
-            old_value=REQUIREMENT_CHANGE_LOG_FORMATTER.extract_change_value(
-                change_log.old_value,
-                field_name,
-                users_by_id=users_by_id,
-            ),
-            new_value=REQUIREMENT_CHANGE_LOG_FORMATTER.extract_change_value(
-                change_log.new_value,
-                field_name,
-                users_by_id=users_by_id,
-            ),
-            reason=change_log.reason,
-            changed_by=change_log.changed_by,
-            changed_by_user=(
-                users_by_id.get(change_log.changed_by)
-                if change_log.changed_by is not None
-                else None
-            ),
-            changed_at=change_log.changed_at,
-        )
-
-    def _normalize_action(self, action: str) -> str:
-        """操作種別をAPI用の安定コードに変換する。"""
-        return REQUIREMENT_CHANGE_LOG_FORMATTER.normalize_action(action)
-
-    def _normalize_target_type(self, target_type: str) -> str:
-        """対象種別をAPI用の安定コードに変換する。"""
-        return REQUIREMENT_CHANGE_LOG_FORMATTER.normalize_target_type(target_type)
 
     def _collect_change_log_user_ids(
         self,
@@ -379,19 +327,11 @@ class RequirementChangeLogService:
         self,
         db: Session,
         user_ids: list[int | None],
-    ) -> dict[int, ChangeLogUserRead]:
-        """変更履歴に含まれるユーザー概要を取得する。"""
+    ) -> dict[int, User]:
+        """変更履歴に含まれるユーザーを取得する。"""
         ids = sorted({user_id for user_id in user_ids if user_id is not None})
         users = self.user_repository.list_by_ids(db, ids)
-        return {
-            user.id: ChangeLogUserRead(
-                id=user.id,
-                name=user.name,
-                email=user.email,
-                avatar_url=None,
-            )
-            for user in users
-        }
+        return {user.id: user for user in users}
 
     def _get_document_in_project(
         self,

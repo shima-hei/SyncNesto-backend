@@ -1,6 +1,7 @@
 """要件定義書出力サービスを定義するモジュール。"""
 
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, datetime
 from html import escape
 
@@ -16,23 +17,28 @@ from app.models.requirement import (
     RequirementSection,
     RequirementTargetComment,
 )
-from app.repositories.requirement import (
-    RequirementChangeLogRepository,
-    RequirementDocumentRepository,
-    RequirementOpenIssueRepository,
-    RequirementRepository,
-    RequirementSectionRepository,
+from app.repositories.requirement_change_log import RequirementChangeLogRepository
+from app.repositories.requirement_document import RequirementDocumentRepository
+from app.repositories.requirement_item import RequirementRepository
+from app.repositories.requirement_open_issue import RequirementOpenIssueRepository
+from app.repositories.requirement_section import RequirementSectionRepository
+from app.repositories.requirement_target_comment import (
     RequirementTargetCommentRepository,
 )
-from app.schemas.requirement import (
-    RequirementDocumentExportCreate,
-    RequirementDocumentExportRead,
-)
+from app.schemas.requirement import RequirementDocumentExportCreate
 from app.services.requirement_change_log import (
     RequirementChangeLogAction,
     RequirementChangeLogService,
     RequirementChangeLogTargetType,
 )
+
+
+@dataclass(frozen=True)
+class RequirementDocumentExportResult:
+    """要件定義書出力処理の結果値。"""
+
+    format: str
+    content: str
 
 
 class RequirementExportService:
@@ -85,7 +91,7 @@ class RequirementExportService:
         document_id: int,
         export_in: RequirementDocumentExportCreate,
         actor_id: int | None = None,
-    ) -> RequirementDocumentExportRead:
+    ) -> RequirementDocumentExportResult:
         """要件定義書を指定形式で出力する。
 
         Args:
@@ -96,7 +102,7 @@ class RequirementExportService:
             actor_id: 操作ユーザーID。
 
         Returns:
-            要件定義書の出力結果。
+            要件定義書の出力結果値。
 
         Raises:
             BadRequestError: 未対応の出力形式が指定された場合。
@@ -134,7 +140,10 @@ class RequirementExportService:
             },
             changed_by=actor_id,
         )
-        return RequirementDocumentExportRead(format=export_in.format, content=content)
+        return RequirementDocumentExportResult(
+            format=export_in.format,
+            content=content,
+        )
 
     def _build_html(self, markdown_content: str) -> str:
         """Markdown本文を簡易HTMLへ変換する。"""
