@@ -16,6 +16,7 @@ INVALID_CREDENTIALS = "Invalid email or password"
 EMAIL_ALREADY_REGISTERED = "Email already registered"
 
 INVALID_SYSTEM_ROLE_KEY = "Invalid system role key: {role_key}"
+GUEST_SYSTEM_ADMIN_NOT_ALLOWED = "Guest users cannot have system_admin role"
 
 UNSUPPORTED_IMAGE_CONTENT_TYPE = "Unsupported image content type"
 IMAGE_FILE_REQUIRED = "Image file is required"

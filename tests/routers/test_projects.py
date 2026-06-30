@@ -271,6 +271,7 @@ def test_list_project_member_users_returns_project_members(
                 "email": "target@example.com",
                 "name": "Target User",
                 "avatar_url": "https://example.com/default-avatar.png?signature=test",
+                "user_type": "internal",
                 "is_active": True,
             }
         ]
@@ -335,6 +336,7 @@ def test_list_project_member_candidates_returns_non_member_active_users(
                 "email": "candidate-target@example.com",
                 "name": "Target Candidate",
                 "avatar_url": "https://example.com/default-avatar.png?signature=test",
+                "user_type": "internal",
                 "is_active": True,
             }
         ]

@@ -20,7 +20,7 @@ from app.core.exceptions import (
 )
 from app.core.security import get_password_hash, verify_password
 from app.models.rbac import Role
-from app.models.user import User
+from app.models.user import User, UserType
 from app.repositories.rbac import RbacRepository
 from app.repositories.user import UserRepository
 from app.schemas.user import UserCreate, UserProfileUpdate, UserUpdate
@@ -39,6 +39,7 @@ USER_CONFLICT_CURRENT_FIELDS = (
     "version",
     "department",
     "position",
+    "user_type",
     "is_active",
     "last_login_at",
     "created_by",
@@ -105,6 +106,26 @@ class UserService:
 
         return roles
 
+    def _validate_user_type_roles(
+        self,
+        *,
+        user_type: UserType,
+        roles: list[Role],
+    ) -> None:
+        """ユーザー区分とシステムロールの組み合わせを検証する。
+
+        Args:
+            user_type: ユーザー区分。
+            roles: 付与予定のシステムロール一覧。
+
+        Raises:
+            BadRequestError: guestにsystem_adminを付与しようとした場合。
+        """
+        if user_type == UserType.GUEST and any(
+            role.key == "system_admin" for role in roles
+        ):
+            raise BadRequestError(error_messages.GUEST_SYSTEM_ADMIN_NOT_ALLOWED)
+
     def create_user(
         self,
         db: Session,
@@ -129,9 +150,10 @@ class UserService:
             logger.warning("Email already registered: email=%s", user_in.email)
             raise EmailAlreadyRegisteredError()
 
+        roles = self._resolve_system_roles(db, user_in.system_role_keys)
+        self._validate_user_type_roles(user_type=user_in.user_type, roles=roles)
         hashed_password = get_password_hash(user_in.password)
         user = self.repository.create(db, user_in, hashed_password, actor_id=actor_id)
-        roles = self._resolve_system_roles(db, user_in.system_role_keys)
         self.rbac_repository.replace_system_roles_for_user(db, user=user, roles=roles)
         db.commit()
         db.refresh(user)
@@ -289,6 +311,14 @@ class UserService:
         if user_in.password is not None:
             hashed_password = get_password_hash(user_in.password)
 
+        should_revoke_sessions = "system_role_keys" in user_in.model_fields_set
+        if should_revoke_sessions:
+            roles = self._resolve_system_roles(db, user_in.system_role_keys or [])
+        else:
+            roles = self.rbac_repository.list_system_roles_by_user(db, user.id)
+        next_user_type = user_in.user_type or UserType(user.user_type)
+        self._validate_user_type_roles(user_type=next_user_type, roles=roles)
+
         user = self.repository.update(
             db,
             user=user,
@@ -296,9 +326,7 @@ class UserService:
             hashed_password=hashed_password,
             actor_id=actor_id,
         )
-        should_revoke_sessions = "system_role_keys" in user_in.model_fields_set
         if should_revoke_sessions:
-            roles = self._resolve_system_roles(db, user_in.system_role_keys or [])
             self.rbac_repository.replace_system_roles_for_user(
                 db,
                 user=user,

@@ -66,6 +66,7 @@ def test_read_requirement_document_returns_assignee_users(
         "email": "author@example.com",
         "name": "Author",
         "avatar_url": "https://example.com/users/author.png?signature=test",
+        "user_type": "internal",
         "is_active": True,
     }
     assert response.json()["reviewer"] == {
@@ -73,6 +74,7 @@ def test_read_requirement_document_returns_assignee_users(
         "email": "reviewer@example.com",
         "name": "Reviewer",
         "avatar_url": None,
+        "user_type": "internal",
         "is_active": True,
     }
     assert response.json()["approver"] == {
@@ -80,6 +82,7 @@ def test_read_requirement_document_returns_assignee_users(
         "email": "approver@example.com",
         "name": "Approver",
         "avatar_url": "https://example.com/users/approver.png?signature=test",
+        "user_type": "internal",
         "is_active": True,
     }
 
@@ -114,6 +117,7 @@ def test_list_requirement_documents_returns_assignee_users(
         "email": "author@example.com",
         "name": "Author",
         "avatar_url": "https://example.com/default-avatar.png?signature=test",
+        "user_type": "internal",
         "is_active": True,
     }
     assert response.json()["items"][0]["reviewer"] is None

@@ -40,6 +40,7 @@ def build_user_summary(user: User, storage_service: StorageService) -> UserSumma
         email=user.email,
         name=user.name,
         avatar_url=storage_service.generate_presigned_url(user.avatar_key),
+        user_type=user.user_type,
         is_active=user.is_active,
     )
 
@@ -67,6 +68,7 @@ def build_user_response(
         department=user.department,
         position=user.position,
         avatar_url=storage_service.generate_presigned_url(user.avatar_key),
+        user_type=user.user_type,
         is_active=user.is_active,
         last_login_at=user.last_login_at,
         created_by=user.created_by,
@@ -117,6 +119,7 @@ def build_user_list_item(
         department=user.department,
         position=user.position,
         avatar_url=storage_service.generate_presigned_url(user.avatar_key),
+        user_type=user.user_type,
         is_active=user.is_active,
         last_login_at=user.last_login_at,
         system_roles=build_role_reads(system_roles),

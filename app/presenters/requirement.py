@@ -106,6 +106,7 @@ def build_requirement_document_response(
             email=user.email,
             name=user.name,
             avatar_url=storage_service.generate_presigned_url(user.avatar_key),
+            user_type=user.user_type,
             is_active=user.is_active,
         )
 
