@@ -293,6 +293,71 @@ def test_list_project_member_users_requires_project_read_permission(
     assert response.status_code == 403
 
 
+def test_list_project_member_candidates_returns_non_member_active_users(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    monkeypatch,
+    db: Session,
+) -> None:
+    """project_adminが追加可能な有効ユーザー候補を検索できることを確認する。"""
+    from app.routers import projects
+
+    monkeypatch.setattr(projects, "storage_service", FakeStorageService())
+    admin_user = create_test_user(email="project-admin@example.com")
+    existing_member = create_test_user(
+        email="existing-target@example.com",
+        name="Target Existing",
+    )
+    candidate = create_test_user(
+        email="candidate-target@example.com",
+        name="Target Candidate",
+    )
+    inactive_candidate = create_test_user(
+        email="inactive-target@example.com",
+        name="Target Inactive",
+    )
+    inactive_candidate.is_active = False
+    project = create_test_project(project_code="CANDIDATE", name="Candidate")
+    assign_project_role(user=admin_user, project=project, role_key="project_admin")
+    assign_project_role(user=existing_member, project=project, role_key="member")
+    db.commit()
+    authorize_as(client, admin_user)
+
+    response = client.get(f"/projects/{project.id}/member-candidates?q=target")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [
+            {
+                "id": candidate.id,
+                "email": "candidate-target@example.com",
+                "name": "Target Candidate",
+                "avatar_url": "https://example.com/default-avatar.png?signature=test",
+                "is_active": True,
+            }
+        ]
+    }
+
+
+def test_list_project_member_candidates_rejects_viewer(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+) -> None:
+    """viewerの追加候補ユーザー検索を拒否する。"""
+    viewer = create_test_user(email="viewer@example.com")
+    project = create_test_project(project_code="CANDIDATE", name="Candidate")
+    assign_project_role(user=viewer, project=project, role_key="viewer")
+    authorize_as(client, viewer)
+
+    response = client.get(f"/projects/{project.id}/member-candidates")
+
+    assert response.status_code == 403
+
+
 def test_list_projects_filters_by_status(
     client: TestClient,
     create_test_user: Callable[..., User],
@@ -913,6 +978,34 @@ def test_update_project_member_rejects_invalid_role_key(
     }
 
 
+def test_update_project_member_rejects_demoting_last_project_admin(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+) -> None:
+    """最後のproject_adminを降格する操作を拒否する。"""
+    admin_user = create_test_user(email="admin@example.com")
+    project = create_test_project(name="Project")
+    member = assign_project_role(
+        user=admin_user,
+        project=project,
+        role_key="project_admin",
+    )
+    authorize_as(client, admin_user)
+
+    response = client.patch(
+        f"/projects/{project.id}/members/{admin_user.id}",
+        json={"role_key": "member", "version": member.version},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "message": "At least one project admin is required",
+        "code": "LAST_PROJECT_ADMIN_REQUIRED",
+    }
+
+
 def test_remove_project_member_allows_project_admin(
     client: TestClient,
     create_test_user: Callable[..., User],
@@ -943,6 +1036,27 @@ def test_remove_project_member_allows_project_admin(
     assert audit_log.resource_type == "project_member"
     assert audit_log.resource_id == member_id
     assert audit_log.extra_metadata == {"role_key": "viewer"}
+
+
+def test_remove_project_member_rejects_removing_last_project_admin(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+) -> None:
+    """最後のproject_adminを削除する操作を拒否する。"""
+    admin_user = create_test_user(email="admin@example.com")
+    project = create_test_project(name="Project")
+    assign_project_role(user=admin_user, project=project, role_key="project_admin")
+    authorize_as(client, admin_user)
+
+    response = client.delete(f"/projects/{project.id}/members/{admin_user.id}")
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "message": "At least one project admin is required",
+        "code": "LAST_PROJECT_ADMIN_REQUIRED",
+    }
 
 
 def test_remove_project_member_revokes_target_sessions(

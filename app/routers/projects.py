@@ -188,6 +188,40 @@ def list_project_member_users(
     )
 
 
+@router.get(
+    "/{project_id}/member-candidates",
+    response_model=UserSummaryListResponse,
+)
+def list_project_member_candidates(
+    project_id: int,
+    q: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+    _: User = Depends(require_project_permission("project:invite_member")),
+    db: Session = Depends(get_db),
+) -> UserSummaryListResponse:
+    """プロジェクトへ追加可能なユーザー候補一覧を取得する。
+
+    Args:
+        project_id: プロジェクトID。
+        q: 検索キーワード。
+        limit: 最大取得件数。
+        db: DBセッション。
+
+    Returns:
+        プロジェクト未所属の有効ユーザー一覧。
+    """
+    users = project_member_service.list_member_candidates(
+        db,
+        project_id=project_id,
+        q=q,
+        limit=limit,
+    )
+    return build_project_member_user_list_response(
+        users,
+        storage_service,
+    )
+
+
 @router.patch(
     "/{project_id}",
     response_model=ProjectRead,

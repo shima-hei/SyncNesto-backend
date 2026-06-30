@@ -26,6 +26,7 @@ PROJECT_NOT_FOUND = "Project not found"
 PROJECT_MEMBER_ALREADY_EXISTS = "Project member already exists"
 PROJECT_MEMBER_NOT_FOUND = "Project member not found"
 PROJECT_ROLE_NOT_FOUND = "Project role not found"
+LAST_PROJECT_ADMIN_REQUIRED = "At least one project admin is required"
 
 USER_NOT_FOUND = "User not found"
 

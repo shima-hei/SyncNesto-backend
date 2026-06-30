@@ -106,6 +106,13 @@ class VersionConflictError(ConflictError):
         super().__init__(message)
 
 
+class LastProjectAdminRequiredError(ConflictError):
+    """プロジェクト管理者が0人になる操作を拒否する例外。"""
+
+    message = error_messages.LAST_PROJECT_ADMIN_REQUIRED
+    code = "LAST_PROJECT_ADMIN_REQUIRED"
+
+
 class InvalidCredentialsError(UnauthorizedError):
     """ログイン認証情報が正しくない場合の例外。"""
 

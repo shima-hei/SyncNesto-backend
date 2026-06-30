@@ -7,6 +7,7 @@ from app.core import error_messages
 from app.core.exceptions import (
     DuplicateResourceError,
     ForbiddenError,
+    LastProjectAdminRequiredError,
     NotFoundError,
 )
 from app.models.project import Project, ProjectMember
@@ -411,6 +412,33 @@ class ProjectMemberService:
             limit=limit,
         )
 
+    def list_member_candidates(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        q: str | None = None,
+        limit: int = 20,
+    ) -> list[User]:
+        """プロジェクトへ追加可能なユーザー候補一覧を取得する。
+
+        Args:
+            db: DBセッション。
+            project_id: プロジェクトID。
+            q: 検索キーワード。
+            limit: 最大取得件数。
+
+        Returns:
+            プロジェクト未所属の有効ユーザー一覧。
+        """
+        self._ensure_project_exists(db, project_id)
+        return self.repository.list_member_candidates(
+            db,
+            project_id=project_id,
+            q=q,
+            limit=limit,
+        )
+
     def add_member(
         self,
         db: Session,
@@ -504,6 +532,12 @@ class ProjectMemberService:
 
         before_role = self.get_member_role(db, member)
         role = self._get_project_role_by_key(db, member_in.role_key)
+        self._ensure_project_admin_remains(
+            db,
+            project_id=project_id,
+            target_role_key=before_role.key,
+            next_role_key=role.key,
+        )
         updated_member = self.repository.update_role(db, member=member, role_id=role.id)
         self.audit_log_service.record_project_member_role_changed(
             db,
@@ -538,6 +572,12 @@ class ProjectMemberService:
         """
         member = self._get_member(db, project_id=project_id, user_id=user_id)
         role = self.get_member_role(db, member)
+        self._ensure_project_admin_remains(
+            db,
+            project_id=project_id,
+            target_role_key=role.key,
+            next_role_key=None,
+        )
         member_id = member.id
         self.repository.delete(db, member)
         self.audit_log_service.record_project_member_removed(
@@ -608,6 +648,21 @@ class ProjectMemberService:
             },
             "version": member.version,
         }
+
+    def _ensure_project_admin_remains(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        target_role_key: str,
+        next_role_key: str | None,
+    ) -> None:
+        """プロジェクト管理者が0人にならないことを確認する。"""
+        if target_role_key != "project_admin" or next_role_key == "project_admin":
+            return
+
+        if self.repository.count_project_admins(db, project_id=project_id) <= 1:
+            raise LastProjectAdminRequiredError()
 
     def _get_member(
         self,
