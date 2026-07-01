@@ -40,6 +40,27 @@ class AuthorizationService:
             permission_code=permission_code,
         )
 
+    def can_moderate_requirement_comments(
+        self,
+        db: Session,
+        *,
+        user: User,
+    ) -> bool:
+        """system adminとして要件コメントを管理できるか判定する。
+
+        Args:
+            db: DBセッション。
+            user: 判定対象ユーザー。
+
+        Returns:
+            要件コメントを管理できる場合はTrue。
+        """
+        return self.has_system_permission(
+            db,
+            user=user,
+            permission_code="requirement:comment",
+        )
+
     def has_project_permission(
         self,
         db: Session,

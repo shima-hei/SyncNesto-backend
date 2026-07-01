@@ -17,8 +17,19 @@ from app.schemas.requirement import (
     RequirementTargetCommentStateUpdate,
     RequirementTargetCommentUpdate,
 )
+from app.services.authorization import AuthorizationService
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["requirements"])
+authorization_service = AuthorizationService()
+
+
+def _get_target_comment_author(
+    db: Session,
+    author_id: int,
+) -> User | None:
+    """コメント投稿者を取得する。"""
+    users = shared.user_service.list_users_by_ids(db, [author_id])
+    return users[0] if users else None
 
 
 @router.post(
@@ -49,7 +60,10 @@ def create_target_comment(
         comment_in=comment_in,
         author_id=current_user.id,
     )
-    return build_requirement_target_comment_response(comment, user=current_user)
+    return build_requirement_target_comment_response(
+        comment,
+        user=_get_target_comment_author(db, comment.author_id),
+    )
 
 
 @router.get(
@@ -116,10 +130,14 @@ def update_target_comment(
         comment_id=comment_id,
         comment_in=comment_in,
         actor_id=current_user.id,
+        can_moderate=authorization_service.can_moderate_requirement_comments(
+            db,
+            user=current_user,
+        ),
     )
     return build_requirement_target_comment_response(
         comment,
-        user=current_user,
+        user=_get_target_comment_author(db, comment.author_id),
     )
 
 
@@ -146,6 +164,10 @@ def delete_target_comment(
         project_id=project_id,
         comment_id=comment_id,
         actor_id=current_user.id,
+        can_moderate=authorization_service.can_moderate_requirement_comments(
+            db,
+            user=current_user,
+        ),
     )
 
 
@@ -181,7 +203,7 @@ def resolve_target_comment(
     )
     return build_requirement_target_comment_response(
         comment,
-        user=current_user,
+        user=_get_target_comment_author(db, comment.author_id),
     )
 
 
@@ -217,5 +239,5 @@ def reopen_target_comment(
     )
     return build_requirement_target_comment_response(
         comment,
-        user=current_user,
+        user=_get_target_comment_author(db, comment.author_id),
     )

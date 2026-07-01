@@ -3,7 +3,7 @@
 from sqlalchemy.orm import Session
 
 from app.core import error_messages
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import ForbiddenError, NotFoundError
 from app.models.requirement import (
     RequirementComment,
 )
@@ -76,6 +76,8 @@ class RequirementCommentService(RequirementChildBaseService):
         project_id: int,
         requirement_id: int,
         comment_id: int,
+        actor_id: int,
+        can_moderate: bool = False,
     ) -> None:
         """要件コメントを物理削除する。
 
@@ -84,9 +86,12 @@ class RequirementCommentService(RequirementChildBaseService):
             project_id: 削除対象のプロジェクトID。
             requirement_id: 削除対象の要件ID。
             comment_id: 削除対象の要件コメントID。
+            actor_id: 操作ユーザーID。
+            can_moderate: 管理者として削除できる場合はTrue。
 
         Raises:
             NotFoundError: 要件コメントが存在しない、または要件に属さない場合。
+            ForbiddenError: 投稿者本人または管理者ではない場合。
         """
         comment = self._get_comment_in_requirement(
             db,
@@ -94,6 +99,9 @@ class RequirementCommentService(RequirementChildBaseService):
             requirement_id,
             comment_id,
         )
+        if not can_moderate and comment.user_id != actor_id:
+            raise ForbiddenError()
+
         self.comment_repository.delete(db, comment)
     def _get_comment_in_requirement(
         self,

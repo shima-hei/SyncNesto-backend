@@ -33,8 +33,10 @@ from app.schemas.requirement import (
     RequirementReviewRead,
     RequirementReviewUpdate,
 )
+from app.services.authorization import AuthorizationService
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["requirements"])
+authorization_service = AuthorizationService()
 
 
 @router.post(
@@ -423,7 +425,7 @@ def delete_requirement_comment(
     project_id: int,
     requirement_id: int,
     comment_id: int,
-    _: User = Depends(require_project_permission("requirement:comment")),
+    current_user: User = Depends(require_project_permission("requirement:comment")),
     db: Session = Depends(get_db),
 ) -> None:
     """要件コメントを物理削除する。
@@ -432,7 +434,7 @@ def delete_requirement_comment(
         project_id: 削除対象のプロジェクトID。
         requirement_id: 削除対象の要件ID。
         comment_id: 削除対象の要件コメントID。
-        _: 認可済みユーザー。
+        current_user: 認可済みユーザー。
         db: DBセッション。
     """
     shared.requirement_child_service.delete_comment(
@@ -440,6 +442,11 @@ def delete_requirement_comment(
         project_id=project_id,
         requirement_id=requirement_id,
         comment_id=comment_id,
+        actor_id=current_user.id,
+        can_moderate=authorization_service.can_moderate_requirement_comments(
+            db,
+            user=current_user,
+        ),
     )
 
 

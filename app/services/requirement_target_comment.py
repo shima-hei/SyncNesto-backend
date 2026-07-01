@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from app.core import error_messages
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import ForbiddenError, NotFoundError
 from app.models.requirement import (
     Requirement,
     RequirementDocument,
@@ -181,9 +181,15 @@ class RequirementTargetCommentService:
         comment_id: int,
         comment_in: RequirementTargetCommentUpdate,
         actor_id: int,
+        can_moderate: bool = False,
     ) -> RequirementTargetComment:
         """要件定義対象コメントを更新する。"""
         comment = self.get_comment(db, project_id=project_id, comment_id=comment_id)
+        self._ensure_comment_owner_or_moderator(
+            comment,
+            actor_id=actor_id,
+            can_moderate=can_moderate,
+        )
         raise_if_version_conflict(
             current_version=comment.version,
             requested_version=comment_in.version,
@@ -257,9 +263,15 @@ class RequirementTargetCommentService:
         project_id: int,
         comment_id: int,
         actor_id: int,
+        can_moderate: bool = False,
     ) -> None:
         """要件定義対象コメントを論理削除する。"""
         comment = self.get_comment(db, project_id=project_id, comment_id=comment_id)
+        self._ensure_comment_owner_or_moderator(
+            comment,
+            actor_id=actor_id,
+            can_moderate=can_moderate,
+        )
         before_value = self._build_comment_snapshot(comment)
         deleted_comment = self.repository.soft_delete(db, comment=comment)
         self._record_change_log(
@@ -288,6 +300,19 @@ class RequirementTargetCommentService:
             target_id=comment.target_id,
         )
         return comment
+
+    def _ensure_comment_owner_or_moderator(
+        self,
+        comment: RequirementTargetComment,
+        *,
+        actor_id: int,
+        can_moderate: bool,
+    ) -> None:
+        """投稿者本人またはモデレーター操作であることを確認する。"""
+        if can_moderate or comment.author_id == actor_id:
+            return
+
+        raise ForbiddenError()
 
     def _set_resolved(
         self,

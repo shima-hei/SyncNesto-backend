@@ -1729,6 +1729,80 @@ def test_update_target_comment_rejects_stale_version(
     assert response.json()["current"]["version"] == 2
 
 
+def test_update_target_comment_rejects_non_author(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_target_comment: Callable[..., RequirementTargetComment],
+    db: Session,
+) -> None:
+    """投稿者以外のmemberによるコメント更新を403で拒否する。"""
+    author = create_test_user(email="author@example.com")
+    other_user = create_test_user(email="other@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    comment = create_test_requirement_target_comment(
+        document=document,
+        author=author,
+        target_type="document",
+        target_id=document.id,
+        body="Original",
+    )
+    assign_project_role(user=author, project=project, role_key="member")
+    assign_project_role(user=other_user, project=project, role_key="member")
+    authorize_as(client, other_user)
+
+    response = client.patch(
+        f"/projects/{project.id}/comments/{comment.id}",
+        json={"body": "Updated by other", "version": comment.version},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "FORBIDDEN"
+    db.refresh(comment)
+    assert comment.body == "Original"
+
+
+def test_update_target_comment_allows_system_admin_for_non_author(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_target_comment: Callable[..., RequirementTargetComment],
+) -> None:
+    """system_adminは投稿者以外のコメントを更新できる。"""
+    author = create_test_user(
+        email="author@example.com",
+        name="Comment Author",
+    )
+    system_admin = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    comment = create_test_requirement_target_comment(
+        document=document,
+        author=author,
+        target_type="document",
+        target_id=document.id,
+        body="Original",
+    )
+    authorize_as(client, system_admin)
+
+    response = client.patch(
+        f"/projects/{project.id}/comments/{comment.id}",
+        json={"body": "Moderated", "version": comment.version},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["body"] == "Moderated"
+    assert response.json()["author"]["id"] == author.id
+    assert response.json()["author"]["name"] == "Comment Author"
+
+
 def test_resolve_and_reopen_target_comment(
     client: TestClient,
     create_test_user: Callable[..., User],
@@ -1809,6 +1883,69 @@ def test_delete_target_comment_soft_deletes(
         .one()
     )
     assert change_log.target_id == comment.id
+
+
+def test_delete_target_comment_rejects_non_author(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_target_comment: Callable[..., RequirementTargetComment],
+    db: Session,
+) -> None:
+    """投稿者以外のmemberによるコメント削除を403で拒否する。"""
+    author = create_test_user(email="author@example.com")
+    other_user = create_test_user(email="other@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    comment = create_test_requirement_target_comment(
+        document=document,
+        author=author,
+        target_type="document",
+        target_id=document.id,
+    )
+    assign_project_role(user=author, project=project, role_key="member")
+    assign_project_role(user=other_user, project=project, role_key="member")
+    authorize_as(client, other_user)
+
+    response = client.delete(f"/projects/{project.id}/comments/{comment.id}")
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "FORBIDDEN"
+    db.refresh(comment)
+    assert comment.deleted_at is None
+
+
+def test_delete_target_comment_allows_system_admin_for_non_author(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_target_comment: Callable[..., RequirementTargetComment],
+    db: Session,
+) -> None:
+    """system_adminは投稿者以外のコメントを削除できる。"""
+    author = create_test_user(email="author@example.com")
+    system_admin = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    comment = create_test_requirement_target_comment(
+        document=document,
+        author=author,
+        target_type="document",
+        target_id=document.id,
+    )
+    authorize_as(client, system_admin)
+
+    response = client.delete(f"/projects/{project.id}/comments/{comment.id}")
+
+    assert response.status_code == 204
+    db.refresh(comment)
+    assert comment.deleted_at is not None
 
 
 def test_create_requirement_allows_member(
@@ -2498,6 +2635,91 @@ def test_requirement_comment_create_list_delete_allows_member(
     assert list_response.json()[0]["id"] == comment_id
     assert list_response.json()[0]["user"]["name"] == "Requirement Commenter"
     assert delete_response.status_code == 204
+    assert db.get(RequirementComment, comment_id) is None
+
+
+def test_requirement_comment_delete_rejects_non_author(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """投稿者以外のmemberによる要件コメント削除を403で拒否する。"""
+    author = create_test_user(email="author@example.com")
+    other_user = create_test_user(email="other@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    requirement = Requirement(
+        document_id=document.id,
+        requirement_code="REQ-001",
+        requirement_type="functional",
+        title="Login",
+    )
+    db.add(requirement)
+    db.flush()
+    comment = RequirementComment(
+        requirement_id=requirement.id,
+        user_id=author.id,
+        comment="Author comment",
+    )
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    assign_project_role(user=author, project=project, role_key="member")
+    assign_project_role(user=other_user, project=project, role_key="member")
+    authorize_as(client, other_user)
+
+    response = client.delete(
+        f"/projects/{project.id}/requirements/{requirement.id}/comments/{comment.id}"
+    )
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "FORBIDDEN"
+    assert db.get(RequirementComment, comment.id) is not None
+
+
+def test_requirement_comment_delete_allows_system_admin_for_non_author(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """system_adminは投稿者以外の要件コメントを削除できる。"""
+    author = create_test_user(email="author@example.com")
+    system_admin = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    requirement = Requirement(
+        document_id=document.id,
+        requirement_code="REQ-001",
+        requirement_type="functional",
+        title="Login",
+    )
+    db.add(requirement)
+    db.flush()
+    comment = RequirementComment(
+        requirement_id=requirement.id,
+        user_id=author.id,
+        comment="Author comment",
+    )
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    comment_id = comment.id
+    authorize_as(client, system_admin)
+
+    response = client.delete(
+        f"/projects/{project.id}/requirements/{requirement.id}/comments/{comment_id}"
+    )
+
+    assert response.status_code == 204
+    db.expire_all()
     assert db.get(RequirementComment, comment_id) is None
 
 
