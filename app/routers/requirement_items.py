@@ -72,6 +72,9 @@ def list_requirements(
     requirement_type: str | None = Query(default=None),
     priority: str | None = Query(default=None),
     owner_id: int | None = Query(default=None),
+    sort: str | None = Query(default=None),
+    sort_by: str | None = Query(default=None),
+    sort_order: str | None = Query(default=None),
     _: User = Depends(require_project_permission("requirement:read")),
     db: Session = Depends(get_db),
 ) -> RequirementListResponse:
@@ -88,6 +91,9 @@ def list_requirements(
         requirement_type: 絞り込み対象の要件種別。
         priority: 絞り込み対象の優先度。
         owner_id: 絞り込み対象のオーナーID。
+        sort: ソート指定。
+        sort_by: ソート対象フィールド。
+        sort_order: ソート順。
         _: 認可済みユーザー。
         db: DBセッション。
 
@@ -106,6 +112,9 @@ def list_requirements(
         requirement_type=requirement_type,
         priority=priority,
         owner_id=owner_id,
+        sort=sort,
+        sort_by=sort_by,
+        sort_order=sort_order,
     )
     return build_requirement_list_response(
         requirements,

@@ -83,6 +83,7 @@ class RequirementDocumentExportCreate(BaseModel):
     format: str = "markdown"
     include_comments: bool = False
     include_change_logs: bool = False
+    section_ids: list[int] | None = None
 
 
 class RequirementDocumentExportRead(BaseModel):
@@ -368,6 +369,7 @@ class RequirementTargetCommentCreate(BaseModel):
 
     target_type: str
     target_id: int
+    target_anchor: dict | None = None
     parent_comment_id: int | None = None
     body: str
 
@@ -394,6 +396,7 @@ class RequirementTargetCommentRead(BaseModel):
     document_id: int
     target_type: str
     target_id: int
+    target_anchor: dict | None = None
     parent_comment_id: int | None = None
     body: str
     author_id: int

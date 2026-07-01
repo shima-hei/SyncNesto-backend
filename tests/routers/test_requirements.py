@@ -1,5 +1,6 @@
 """要件定義APIのテスト。"""
 
+import base64
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
@@ -374,7 +375,7 @@ def test_export_requirement_document_rejects_unsupported_format(
 
     response = client.post(
         f"/projects/{project.id}/requirement-documents/{document.id}/exports",
-        json={"format": "pdf"},
+        json={"format": "docx"},
     )
 
     assert response.status_code == 400
@@ -412,6 +413,94 @@ def test_export_requirement_document_returns_html(
     assert "<!doctype html>" in response.json()["content"]
     assert "<h1>HTML Export</h1>" in response.json()["content"]
     assert "<li>文書コード: RD-HTML</li>" in response.json()["content"]
+
+
+def test_export_requirement_document_returns_pdf_base64(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+) -> None:
+    """要件定義書をPDF出力できることを確認する。"""
+    user = create_test_user(email="viewer@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project, title="PDF Export")
+    assign_project_role(user=user, project=project, role_key="viewer")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/requirement-documents/{document.id}/exports",
+        json={"format": "pdf"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["format"] == "pdf"
+    pdf_bytes = base64.b64decode(response.json()["content"])
+    assert pdf_bytes.startswith(b"%PDF-1.4")
+    assert b"%%EOF" in pdf_bytes
+
+
+def test_export_requirement_document_filters_sections(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """指定されたセクションだけを要件定義書出力に含めることを確認する。"""
+    user = create_test_user(email="viewer@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    first_section = RequirementSection(
+        document_id=document.id,
+        title="対象セクション",
+        section_type="business",
+        sort_order=10,
+        status="draft",
+    )
+    second_section = RequirementSection(
+        document_id=document.id,
+        title="対象外セクション",
+        section_type="system",
+        sort_order=20,
+        status="draft",
+    )
+    db.add_all([first_section, second_section])
+    db.flush()
+    db.add_all(
+        [
+            Requirement(
+                document_id=document.id,
+                section_id=first_section.id,
+                requirement_code="REQ-IN",
+                requirement_type="functional",
+                title="出力対象",
+            ),
+            Requirement(
+                document_id=document.id,
+                section_id=second_section.id,
+                requirement_code="REQ-OUT",
+                requirement_type="functional",
+                title="出力対象外",
+            ),
+        ]
+    )
+    db.commit()
+    assign_project_role(user=user, project=project, role_key="viewer")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/requirement-documents/{document.id}/exports",
+        json={"format": "markdown", "section_ids": [first_section.id]},
+    )
+
+    assert response.status_code == 200
+    assert "対象セクション" in response.json()["content"]
+    assert "REQ-IN" in response.json()["content"]
+    assert "対象外セクション" not in response.json()["content"]
+    assert "REQ-OUT" not in response.json()["content"]
 
 
 def test_update_requirement_document_rejects_stale_version(
@@ -1461,6 +1550,7 @@ def test_create_target_comment_for_section_records_change_log(
         json={
             "target_type": "section",
             "target_id": section.id,
+            "target_anchor": {"field": "content", "label": "section-content:p1"},
             "body": "この章の説明を補足してください。",
         },
     )
@@ -1469,6 +1559,10 @@ def test_create_target_comment_for_section_records_change_log(
     assert response.json()["document_id"] == document.id
     assert response.json()["target_type"] == "section"
     assert response.json()["target_id"] == section.id
+    assert response.json()["target_anchor"] == {
+        "field": "content",
+        "label": "section-content:p1",
+    }
     assert response.json()["body"] == "この章の説明を補足してください。"
     assert response.json()["author_id"] == user.id
     assert response.json()["author"] == {
@@ -1489,6 +1583,10 @@ def test_create_target_comment_for_section_records_change_log(
     assert change_log.target_type == "comment"
     assert change_log.target_id == response.json()["id"]
     assert change_log.new_value is not None
+    assert change_log.new_value["target_anchor"] == {
+        "field": "content",
+        "label": "section-content:p1",
+    }
     assert change_log.new_value["body"] == "この章の説明を補足してください。"
 
 
@@ -1975,6 +2073,57 @@ def test_list_requirements_filters_by_document_status_priority_and_owner(
     assert response.status_code == 200
     assert response.json()["total"] == 1
     assert response.json()["items"][0]["requirement_code"] == "REQ-A"
+
+
+def test_list_requirements_sorts_before_pagination(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """要件一覧がページング前にDB側でソートされることを確認する。"""
+    user = create_test_user(email="viewer@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="viewer")
+    db.add_all(
+        [
+            Requirement(
+                document_id=document.id,
+                requirement_code="REQ-002",
+                requirement_type="functional",
+                title="Beta",
+            ),
+            Requirement(
+                document_id=document.id,
+                requirement_code="REQ-003",
+                requirement_type="functional",
+                title="Charlie",
+            ),
+            Requirement(
+                document_id=document.id,
+                requirement_code="REQ-001",
+                requirement_type="functional",
+                title="Alpha",
+            ),
+        ]
+    )
+    db.commit()
+    authorize_as(client, user)
+
+    response = client.get(
+        f"/projects/{project.id}/requirements"
+        f"?document_id={document.id}&page=1&page_size=2&sort=code_asc"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 3
+    assert [item["requirement_code"] for item in response.json()["items"]] == [
+        "REQ-001",
+        "REQ-002",
+    ]
 
 
 def test_update_requirement_creates_revision(

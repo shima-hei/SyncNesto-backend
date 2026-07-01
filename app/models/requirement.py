@@ -653,6 +653,14 @@ class RequirementTargetComment(Base):
         index=True,
         comment=db_comment("対象ID", "コメント対象のID"),
     )
+    target_anchor: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment=db_comment(
+            "対象アンカー",
+            "コメント対象内の段落・選択範囲・フィールドなどを示す識別子",
+        ),
+    )
     parent_comment_id: Mapped[int | None] = mapped_column(
         ForeignKey("requirement_target_comments.id"),
         nullable=True,

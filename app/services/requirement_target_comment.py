@@ -49,6 +49,7 @@ REQUIREMENT_TARGET_COMMENT_CONFLICT_CURRENT_FIELDS = (
     "document_id",
     "target_type",
     "target_id",
+    "target_anchor",
     "parent_comment_id",
     "body",
     "author_id",

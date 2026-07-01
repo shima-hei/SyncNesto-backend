@@ -29,6 +29,7 @@ class RequirementTargetCommentRepository:
             document_id=document_id,
             target_type=comment_in.target_type,
             target_id=comment_in.target_id,
+            target_anchor=comment_in.target_anchor,
             parent_comment_id=comment_in.parent_comment_id,
             body=comment_in.body,
             author_id=author_id,

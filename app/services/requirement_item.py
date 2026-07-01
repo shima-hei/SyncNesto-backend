@@ -205,6 +205,9 @@ class RequirementService:
         section_id: int | None = None,
         priority: str | None = None,
         owner_id: int | None = None,
+        sort: str | None = None,
+        sort_by: str | None = None,
+        sort_order: str | None = None,
     ) -> tuple[list[Requirement], int]:
         """プロジェクト内の要件一覧をページング付きで取得する。
 
@@ -220,6 +223,9 @@ class RequirementService:
             section_id: 絞り込み対象の要件定義セクションID。
             priority: 絞り込み対象の優先度。
             owner_id: 絞り込み対象のオーナーID。
+            sort: ソート指定。
+            sort_by: ソート対象フィールド。
+            sort_order: ソート順。
 
         Returns:
             要件一覧と総件数。
@@ -259,6 +265,9 @@ class RequirementService:
             section_id=section_id,
             priority=priority,
             owner_id=owner_id,
+            sort=sort,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
 
     def get_requirement(

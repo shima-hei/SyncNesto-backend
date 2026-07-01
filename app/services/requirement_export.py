@@ -1,9 +1,11 @@
 """要件定義書出力サービスを定義するモジュール。"""
 
+import base64
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime
 from html import escape
+from textwrap import wrap
 
 from sqlalchemy.orm import Session
 
@@ -108,7 +110,7 @@ class RequirementExportService:
             BadRequestError: 未対応の出力形式が指定された場合。
             NotFoundError: 要件定義書が存在しない、またはプロジェクトに属さない場合。
         """
-        if export_in.format not in {"markdown", "html"}:
+        if export_in.format not in {"markdown", "html", "pdf"}:
             raise BadRequestError(error_messages.UNSUPPORTED_REQUIREMENT_EXPORT_FORMAT)
 
         document = self._get_document_in_project(
@@ -121,29 +123,161 @@ class RequirementExportService:
             document=document,
             include_comments=export_in.include_comments,
             include_change_logs=export_in.include_change_logs,
+            section_ids=export_in.section_ids,
         )
-        content = (
-            self._build_html(markdown_content)
-            if export_in.format == "html"
-            else markdown_content
-        )
+        content = self._build_export_content(markdown_content, export_in.format)
+        change_log_new_value = {
+            "format": export_in.format,
+            "include_comments": export_in.include_comments,
+            "include_change_logs": export_in.include_change_logs,
+        }
+        if export_in.section_ids is not None:
+            change_log_new_value["section_ids"] = export_in.section_ids
         self.change_log_service.record(
             db,
             document_id=document.id,
             target_type=RequirementChangeLogTargetType.DOCUMENT,
             target_id=document.id,
             action=RequirementChangeLogAction.EXPORTED,
-            new_value={
-                "format": export_in.format,
-                "include_comments": export_in.include_comments,
-                "include_change_logs": export_in.include_change_logs,
-            },
+            new_value=change_log_new_value,
             changed_by=actor_id,
         )
         return RequirementDocumentExportResult(
             format=export_in.format,
             content=content,
         )
+
+    def _build_export_content(self, markdown_content: str, export_format: str) -> str:
+        """指定形式の出力本文を生成する。"""
+        if export_format == "html":
+            return self._build_html(markdown_content)
+        if export_format == "pdf":
+            return self._build_pdf_base64(markdown_content)
+        return markdown_content
+
+    def _build_pdf_base64(self, markdown_content: str) -> str:
+        """Markdown本文から最小構成のPDFを生成しbase64文字列で返す。"""
+        pdf_bytes = self._build_pdf_bytes(markdown_content)
+        return base64.b64encode(pdf_bytes).decode("ascii")
+
+    def _build_pdf_bytes(self, markdown_content: str) -> bytes:
+        """Markdown本文を簡易PDFバイト列へ変換する。"""
+        lines = self._build_pdf_text_lines(markdown_content)
+        pages = [lines[index : index + 48] for index in range(0, len(lines), 48)]
+        if not pages:
+            pages = [[]]
+
+        objects: list[bytes] = []
+        page_object_numbers: list[int] = []
+        for _ in pages:
+            page_object_numbers.append(len(objects) + 5)
+            objects.append(b"")
+            objects.append(b"")
+
+        objects.insert(
+            0,
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+        )
+        page_refs = b" ".join(
+            f"{number} 0 R".encode("ascii") for number in page_object_numbers
+        )
+        objects.insert(
+            1,
+            b"<< /Type /Pages /Kids ["
+            + page_refs
+            + b"] /Count "
+            + str(len(page_object_numbers)).encode("ascii")
+            + b" >>",
+        )
+        objects.insert(
+            2,
+            b"<< /Type /Font /Subtype /Type0 /BaseFont /HeiseiKakuGo-W5 "
+            b"/Encoding /UniJIS-UCS2-H /DescendantFonts [4 0 R] >>",
+        )
+        objects.insert(
+            3,
+            b"<< /Type /Font /Subtype /CIDFontType0 /BaseFont /HeiseiKakuGo-W5 "
+            b"/CIDSystemInfo << /Registry (Adobe) /Ordering (Japan1) "
+            b"/Supplement 6 >> >>",
+        )
+
+        for index, page_lines in enumerate(pages):
+            page_number = 5 + index * 2
+            content_number = page_number + 1
+            objects[page_number - 1] = (
+                b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+                b"/Resources << /Font << /F1 3 0 R >> >> /Contents "
+                + f"{content_number} 0 R".encode("ascii")
+                + b" >>"
+            )
+            content = self._build_pdf_content_stream(page_lines)
+            objects[content_number - 1] = (
+                b"<< /Length "
+                + str(len(content)).encode("ascii")
+                + b" >>\nstream\n"
+                + content
+                + b"\nendstream"
+            )
+
+        return self._serialize_pdf_objects(objects)
+
+    def _build_pdf_text_lines(self, markdown_content: str) -> list[str]:
+        """PDF表示用のテキスト行を作成する。"""
+        lines: list[str] = []
+        for raw_line in markdown_content.splitlines():
+            line = raw_line.strip()
+            if not line:
+                lines.append("")
+                continue
+            line = line.lstrip("#").strip()
+            if line.startswith("- "):
+                line = f"・{line[2:]}"
+            lines.extend(wrap(line, width=72) or [""])
+        return lines
+
+    def _build_pdf_content_stream(self, lines: list[str]) -> bytes:
+        """PDFページの本文streamを作成する。"""
+        stream_lines = ["BT", "/F1 10 Tf", "50 790 Td", "14 TL"]
+        for line in lines:
+            encoded = "FEFF" + line.encode("utf-16-be").hex().upper()
+            stream_lines.append(f"<{encoded}> Tj")
+            stream_lines.append("T*")
+        stream_lines.append("ET")
+        return "\n".join(stream_lines).encode("ascii")
+
+    def _serialize_pdf_objects(self, objects: list[bytes]) -> bytes:
+        """PDFオブジェクトをxref付きで直列化する。"""
+        chunks = [b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n"]
+        offsets = [0]
+        for index, payload in enumerate(objects, start=1):
+            offsets.append(sum(len(chunk) for chunk in chunks))
+            chunks.append(
+                f"{index} 0 obj\n".encode("ascii")
+                + payload
+                + b"\nendobj\n"
+            )
+        xref_offset = sum(len(chunk) for chunk in chunks)
+        xref_lines = [
+            b"xref\n",
+            f"0 {len(objects) + 1}\n".encode("ascii"),
+            b"0000000000 65535 f \n",
+        ]
+        xref_lines.extend(
+            f"{offset:010d} 00000 n \n".encode("ascii") for offset in offsets[1:]
+        )
+        chunks.extend(
+            [
+                *xref_lines,
+                b"trailer\n",
+                b"<< /Size "
+                + str(len(objects) + 1).encode("ascii")
+                + b" /Root 1 0 R >>\n",
+                b"startxref\n",
+                str(xref_offset).encode("ascii") + b"\n",
+                b"%%EOF\n",
+            ]
+        )
+        return b"".join(chunks)
 
     def _build_html(self, markdown_content: str) -> str:
         """Markdown本文を簡易HTMLへ変換する。"""
@@ -227,6 +361,7 @@ class RequirementExportService:
         document: RequirementDocument,
         include_comments: bool,
         include_change_logs: bool,
+        section_ids: list[int] | None,
     ) -> str:
         """要件定義書のMarkdown本文を生成する。"""
         sections = self.section_repository.list_by_document(db, document.id)
@@ -242,6 +377,18 @@ class RequirementExportService:
             if include_change_logs
             else []
         )
+        if section_ids is not None:
+            sections, requirements, open_issues, comments, change_logs = (
+                self._filter_export_targets(
+                    document=document,
+                    sections=sections,
+                    requirements=requirements,
+                    open_issues=open_issues,
+                    comments=comments,
+                    change_logs=change_logs,
+                    section_ids=section_ids,
+                )
+            )
 
         requirements_by_section = self._group_requirements_by_section(requirements)
         lines: list[str] = [
@@ -285,6 +432,93 @@ class RequirementExportService:
             lines.extend(self._build_change_log_lines(change_logs))
 
         return "\n".join(lines).rstrip() + "\n"
+
+    def _filter_export_targets(
+        self,
+        *,
+        document: RequirementDocument,
+        sections: list[RequirementSection],
+        requirements: list[Requirement],
+        open_issues: list[RequirementOpenIssue],
+        comments: list[RequirementTargetComment],
+        change_logs: list[RequirementChangeLog],
+        section_ids: list[int],
+    ) -> tuple[
+        list[RequirementSection],
+        list[Requirement],
+        list[RequirementOpenIssue],
+        list[RequirementTargetComment],
+        list[RequirementChangeLog],
+    ]:
+        """セクション指定出力の対象データへ絞り込む。"""
+        requested_ids = set(section_ids)
+        sections_by_id = {section.id: section for section in sections}
+        if requested_ids.difference(sections_by_id):
+            raise NotFoundError(error_messages.REQUIREMENT_SECTION_NOT_FOUND)
+
+        selected_sections = [
+            section for section in sections if section.id in requested_ids
+        ]
+        selected_requirements = [
+            requirement
+            for requirement in requirements
+            if requirement.section_id in requested_ids
+        ]
+        selected_requirement_ids = {
+            requirement.id for requirement in selected_requirements
+        }
+        selected_open_issues = [
+            issue
+            for issue in open_issues
+            if issue.related_requirement_id in selected_requirement_ids
+        ]
+        selected_comments = [
+            comment
+            for comment in comments
+            if (
+                comment.target_type == "section"
+                and comment.target_id in requested_ids
+            )
+            or (
+                comment.target_type == "requirement"
+                and comment.target_id in selected_requirement_ids
+            )
+        ]
+        selected_change_logs = [
+            change_log
+            for change_log in change_logs
+            if self._is_change_log_in_export_selection(
+                change_log,
+                document=document,
+                section_ids=requested_ids,
+                requirement_ids=selected_requirement_ids,
+            )
+        ]
+        return (
+            selected_sections,
+            selected_requirements,
+            selected_open_issues,
+            selected_comments,
+            selected_change_logs,
+        )
+
+    def _is_change_log_in_export_selection(
+        self,
+        change_log: RequirementChangeLog,
+        *,
+        document: RequirementDocument,
+        section_ids: set[int],
+        requirement_ids: set[int],
+    ) -> bool:
+        """変更履歴がセクション指定出力の対象か判定する。"""
+        if change_log.target_type == RequirementChangeLogTargetType.SECTION:
+            return change_log.target_id in section_ids
+        if change_log.target_type == RequirementChangeLogTargetType.REQUIREMENT_ITEM:
+            return change_log.target_id in requirement_ids
+        return (
+            change_log.target_type == RequirementChangeLogTargetType.DOCUMENT
+            and change_log.target_id == document.id
+        )
 
     def _group_requirements_by_section(
         self,

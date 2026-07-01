@@ -1,6 +1,7 @@
 """要件定義Repositoryを定義するモジュール。"""
 
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
@@ -116,6 +117,9 @@ class RequirementRepository:
         section_id: int | None = None,
         priority: str | None = None,
         owner_id: int | None = None,
+        sort: str | None = None,
+        sort_by: str | None = None,
+        sort_order: str | None = None,
     ) -> tuple[list[Requirement], int]:
         """指定要件定義書群の要件一覧をページング付きで取得する。"""
         query = db.query(Requirement).filter(
@@ -143,13 +147,58 @@ class RequirementRepository:
             query = query.filter(Requirement.owner_id == owner_id)
 
         total = query.count()
+        order_by = self._build_order_by(
+            sort=sort,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
         requirements = (
-            query.order_by(Requirement.id)
+            query.order_by(*order_by)
             .offset((page - 1) * page_size)
             .limit(page_size)
             .all()
         )
         return requirements, total
+
+    def _build_order_by(
+        self,
+        *,
+        sort: str | None,
+        sort_by: str | None,
+        sort_order: str | None,
+    ) -> list[Any]:
+        """要件一覧のソート条件を作成する。"""
+        sort_map: dict[str, list[Any]] = {
+            "updated_desc": [Requirement.updated_at.desc(), Requirement.id.desc()],
+            "updated_asc": [Requirement.updated_at.asc(), Requirement.id.asc()],
+            "updated_at_desc": [Requirement.updated_at.desc(), Requirement.id.desc()],
+            "updated_at_asc": [Requirement.updated_at.asc(), Requirement.id.asc()],
+            "code_asc": [Requirement.requirement_code.asc(), Requirement.id.asc()],
+            "code_desc": [Requirement.requirement_code.desc(), Requirement.id.desc()],
+            "requirement_code_asc": [
+                Requirement.requirement_code.asc(),
+                Requirement.id.asc(),
+            ],
+            "requirement_code_desc": [
+                Requirement.requirement_code.desc(),
+                Requirement.id.desc(),
+            ],
+            "title_asc": [Requirement.title.asc(), Requirement.id.asc()],
+            "title_desc": [Requirement.title.desc(), Requirement.id.desc()],
+            "priority_asc": [Requirement.priority.asc(), Requirement.id.asc()],
+            "priority_desc": [Requirement.priority.desc(), Requirement.id.desc()],
+            "status_asc": [Requirement.status.asc(), Requirement.id.asc()],
+            "status_desc": [Requirement.status.desc(), Requirement.id.desc()],
+        }
+        if sort:
+            return sort_map.get(sort, sort_map["updated_desc"])
+        if sort_by:
+            normalized_order = "asc" if sort_order == "asc" else "desc"
+            return sort_map.get(
+                f"{sort_by}_{normalized_order}",
+                sort_map["updated_desc"],
+            )
+        return sort_map["updated_desc"]
 
     def update(
         self,

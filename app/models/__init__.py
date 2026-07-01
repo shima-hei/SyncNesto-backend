@@ -1,6 +1,7 @@
 """SQLAlchemy models."""
 
 from app.models.audit_log import AuditLog
+from app.models.draft import Draft
 from app.models.login_attempt import LoginAttempt
 from app.models.project import Project, ProjectMember
 from app.models.rbac import Permission, Role, RolePermission, UserRole
@@ -36,6 +37,7 @@ __all__ = [
     "AuditLog",
     "Board",
     "BoardColumn",
+    "Draft",
     "LoginAttempt",
     "Milestone",
     "Permission",
