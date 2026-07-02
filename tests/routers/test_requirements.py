@@ -2547,7 +2547,7 @@ def test_requirement_relation_create_list_delete_allows_member(
     db: Session,
 ) -> None:
     """memberが要件関連を作成、取得、削除できることを確認する。"""
-    user = create_test_user(email="member@example.com")
+    user = create_test_user(email="member@example.com", name="Relation Creator")
     project = create_test_project(name="Project")
     document = create_test_requirement_document(project=project)
     assign_project_role(user=user, project=project, role_key="member")
@@ -2592,8 +2592,25 @@ def test_requirement_relation_create_list_delete_allows_member(
     assert create_response.json()["source_requirement_id"] == source_requirement.id
     assert create_response.json()["target_id"] == str(target_requirement.id)
     assert create_response.json()["relation_type"] == "depends_on"
+    assert create_response.json()["target_summary"] == {
+        "id": str(target_requirement.id),
+        "code": "REQ-TARGET",
+        "title": "Target",
+    }
+    assert create_response.json()["created_by_user"] == {
+        "id": user.id,
+        "name": "Relation Creator",
+        "email": "member@example.com",
+        "avatar_url": None,
+    }
     assert list_response.status_code == 200
     assert list_response.json()[0]["id"] == relation_id
+    assert list_response.json()[0]["target_summary"] == {
+        "id": str(target_requirement.id),
+        "code": "REQ-TARGET",
+        "title": "Target",
+    }
+    assert list_response.json()[0]["created_by_user"]["name"] == "Relation Creator"
     assert delete_response.status_code == 204
     assert db.get(RequirementRelation, relation_id) is None
 

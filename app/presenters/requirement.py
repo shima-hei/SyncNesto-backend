@@ -41,6 +41,7 @@ from app.schemas.requirement import (
     RequirementOpenIssueRead,
     RequirementRead,
     RequirementRelationRead,
+    RequirementRelationTargetSummaryRead,
     RequirementReviewRead,
     RequirementRevisionRead,
     RequirementSummaryRead,
@@ -366,30 +367,73 @@ def build_requirement_link_responses(
 
 def build_requirement_relation_response(
     relation: RequirementRelation,
+    users_by_id: dict[int, ChangeLogUserRead] | None = None,
+    target_summaries_by_key: dict[
+        tuple[str, str],
+        RequirementRelationTargetSummaryRead,
+    ]
+    | None = None,
 ) -> RequirementRelationRead:
     """要件関連レスポンスを組み立てる。
 
     Args:
         relation: レスポンスへ変換する要件関連。
+        users_by_id: 作成者として返すユーザー概要。
+        target_summaries_by_key: 関連先表示情報。
 
     Returns:
         要件関連読み取りレスポンス。
     """
-    return RequirementRelationRead.model_validate(relation)
+    return RequirementRelationRead.model_validate(relation).model_copy(
+        update={
+            "created_by_user": (
+                users_by_id.get(relation.created_by)
+                if relation.created_by and users_by_id
+                else None
+            ),
+            "target_summary": (
+                target_summaries_by_key.get(
+                    (relation.target_type, relation.target_id),
+                )
+                if target_summaries_by_key
+                else None
+            ),
+        }
+    )
 
 
 def build_requirement_relation_responses(
     relations: list[RequirementRelation],
+    users_by_id: dict[int, ChangeLogUserRead] | None = None,
+    target_summaries_by_key: dict[
+        tuple[str, str],
+        RequirementRelationTargetSummaryRead,
+    ]
+    | None = None,
 ) -> list[RequirementRelationRead]:
     """要件関連レスポンス一覧を組み立てる。
 
     Args:
         relations: レスポンスへ変換する要件関連一覧。
+        users_by_id: 作成者として返すユーザー概要。
+        target_summaries_by_key: 関連先表示情報。
 
     Returns:
         要件関連読み取りレスポンス一覧。
     """
-    return [build_requirement_relation_response(relation) for relation in relations]
+    return [
+        build_requirement_relation_response(
+            relation,
+            users_by_id=users_by_id,
+            target_summaries_by_key=target_summaries_by_key,
+        )
+        for relation in relations
+    ]
+
+
+def build_change_log_user_response(user: User) -> ChangeLogUserRead:
+    """変更履歴系レスポンスのユーザー概要を組み立てる。"""
+    return _build_change_log_user_response(user)
 
 
 def build_requirement_review_response(

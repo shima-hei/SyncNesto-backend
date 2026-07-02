@@ -7,6 +7,7 @@ from app.core.auth import require_project_permission
 from app.db.session import get_db
 from app.models.user import User
 from app.presenters.requirement import (
+    build_change_log_user_response,
     build_requirement_comment_response,
     build_requirement_comment_responses,
     build_requirement_detail_response,
@@ -18,6 +19,7 @@ from app.presenters.requirement import (
     build_requirement_review_response,
     build_requirement_review_responses,
 )
+from app.repositories.user import UserRepository
 from app.routers import requirements_shared as shared
 from app.schemas.requirement import (
     RequirementCommentCreate,
@@ -35,9 +37,14 @@ from app.schemas.requirement import (
     RequirementReviewUpdate,
 )
 from app.services.authorization import AuthorizationService
+from app.services.requirement_relation_target_summary import (
+    RequirementRelationTargetSummaryService,
+)
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["requirements"])
 authorization_service = AuthorizationService()
+user_repository = UserRepository()
+relation_target_summary_service = RequirementRelationTargetSummaryService()
 
 
 @router.post(
@@ -315,7 +322,15 @@ def create_requirement_relation(
         relation_in=relation_in,
         actor_id=current_user.id,
     )
-    return build_requirement_relation_response(relation)
+    target_summaries_by_key = relation_target_summary_service.resolve(
+        db,
+        [relation],
+    )
+    return build_requirement_relation_response(
+        relation,
+        users_by_id={current_user.id: build_change_log_user_response(current_user)},
+        target_summaries_by_key=target_summaries_by_key,
+    )
 
 
 @router.get(
@@ -344,7 +359,26 @@ def list_requirement_relations(
         project_id=project_id,
         requirement_id=requirement_id,
     )
-    return build_requirement_relation_responses(relations)
+    users = user_repository.list_by_ids(
+        db,
+        list(
+            dict.fromkeys(
+                relation.created_by
+                for relation in relations
+                if relation.created_by is not None
+            )
+        ),
+    )
+    users_by_id = {user.id: build_change_log_user_response(user) for user in users}
+    target_summaries_by_key = relation_target_summary_service.resolve(
+        db,
+        relations,
+    )
+    return build_requirement_relation_responses(
+        relations,
+        users_by_id=users_by_id,
+        target_summaries_by_key=target_summaries_by_key,
+    )
 
 
 @router.delete(

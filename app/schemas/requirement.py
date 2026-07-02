@@ -493,6 +493,14 @@ class RequirementRelationCreate(BaseModel):
     description: str | None = None
 
 
+class RequirementRelationTargetSummaryRead(BaseModel):
+    """要件関連の関連先表示に使う軽量schema。"""
+
+    id: str
+    code: str | None = None
+    title: str
+
+
 class RequirementRelationRead(BaseModel):
     """要件関連読み取り時に返すschema。"""
 
@@ -504,6 +512,8 @@ class RequirementRelationRead(BaseModel):
     relation_type: str
     description: str | None = None
     created_by: int | None = None
+    created_by_user: ChangeLogUserRead | None = None
+    target_summary: RequirementRelationTargetSummaryRead | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

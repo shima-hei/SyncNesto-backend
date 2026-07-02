@@ -51,6 +51,25 @@ class RequirementSectionRepository:
             .first()
         )
 
+    def list_by_ids(
+        self,
+        db: Session,
+        section_ids: list[int],
+    ) -> list[RequirementSection]:
+        """id一覧に一致する要件定義セクション一覧を取得する。"""
+        if not section_ids:
+            return []
+
+        return (
+            db.query(RequirementSection)
+            .filter(
+                RequirementSection.id.in_(section_ids),
+                RequirementSection.deleted_at.is_(None),
+            )
+            .order_by(RequirementSection.id)
+            .all()
+        )
+
     def list_by_document(
         self,
         db: Session,

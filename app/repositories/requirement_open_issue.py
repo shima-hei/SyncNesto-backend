@@ -55,6 +55,25 @@ class RequirementOpenIssueRepository:
             .first()
         )
 
+    def list_by_ids(
+        self,
+        db: Session,
+        issue_ids: list[int],
+    ) -> list[RequirementOpenIssue]:
+        """id一覧に一致する未決事項一覧を取得する。"""
+        if not issue_ids:
+            return []
+
+        return (
+            db.query(RequirementOpenIssue)
+            .filter(
+                RequirementOpenIssue.id.in_(issue_ids),
+                RequirementOpenIssue.deleted_at.is_(None),
+            )
+            .order_by(RequirementOpenIssue.id)
+            .all()
+        )
+
     def get_by_document_issue_code(
         self,
         db: Session,

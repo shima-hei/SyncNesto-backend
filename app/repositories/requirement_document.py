@@ -62,6 +62,25 @@ class RequirementDocumentRepository:
             .first()
         )
 
+    def list_by_ids(
+        self,
+        db: Session,
+        document_ids: list[int],
+    ) -> list[RequirementDocument]:
+        """id一覧に一致する要件定義書一覧を取得する。"""
+        if not document_ids:
+            return []
+
+        return (
+            db.query(RequirementDocument)
+            .filter(
+                RequirementDocument.id.in_(document_ids),
+                RequirementDocument.deleted_at.is_(None),
+            )
+            .order_by(RequirementDocument.id)
+            .all()
+        )
+
     def get_by_project_document_code(
         self,
         db: Session,
