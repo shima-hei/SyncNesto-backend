@@ -1,6 +1,5 @@
 """要件定義Repositoryを定義するモジュール。"""
 
-
 from sqlalchemy.orm import Session
 
 from app.models.requirement import (
@@ -16,6 +15,7 @@ from app.schemas.requirement import (
     RequirementDetailCreate,
     RequirementDetailUpdate,
     RequirementLinkCreate,
+    RequirementLinkUpdate,
     RequirementRelationCreate,
     RequirementReviewCreate,
     RequirementReviewUpdate,
@@ -80,6 +80,7 @@ class RequirementRevisionRepository:
         )
         return list(reversed(revisions))
 
+
 class RequirementRelationRepository:
     """RequirementRelationテーブルへのデータアクセス処理を提供する。"""
 
@@ -136,6 +137,7 @@ class RequirementRelationRepository:
         """要件関連を物理削除する。"""
         db.delete(relation)
         db.commit()
+
 
 class RequirementDetailRepository:
     """RequirementDetailテーブルへのデータアクセス処理を提供する。"""
@@ -200,6 +202,7 @@ class RequirementDetailRepository:
         db.delete(detail)
         db.commit()
 
+
 class RequirementLinkRepository:
     """RequirementLinkテーブルへのデータアクセス処理を提供する。"""
 
@@ -215,6 +218,8 @@ class RequirementLinkRepository:
             requirement_id=requirement_id,
             linked_type=link_in.linked_type,
             linked_id=link_in.linked_id,
+            linked_url=link_in.linked_url,
+            status=link_in.status,
         )
         db.add(link)
         db.commit()
@@ -238,10 +243,31 @@ class RequirementLinkRepository:
         """idに一致する要件リンクを取得する。"""
         return db.query(RequirementLink).filter(RequirementLink.id == link_id).first()
 
+    def update(
+        self,
+        db: Session,
+        link: RequirementLink,
+        link_in: RequirementLinkUpdate,
+    ) -> RequirementLink:
+        """要件リンクを更新する。"""
+        if link_in.linked_type is not None:
+            link.linked_type = link_in.linked_type
+        if link_in.linked_id is not None:
+            link.linked_id = link_in.linked_id
+        if "linked_url" in link_in.model_fields_set:
+            link.linked_url = link_in.linked_url
+        if link_in.status is not None:
+            link.status = link_in.status
+
+        db.commit()
+        db.refresh(link)
+        return link
+
     def delete(self, db: Session, link: RequirementLink) -> None:
         """要件リンクを物理削除する。"""
         db.delete(link)
         db.commit()
+
 
 class RequirementCommentRepository:
     """RequirementCommentテーブルへのデータアクセス処理を提供する。"""
@@ -306,6 +332,7 @@ class RequirementCommentRepository:
         """要件コメントを物理削除する。"""
         db.delete(comment)
         db.commit()
+
 
 class RequirementReviewRepository:
     """RequirementReviewテーブルへのデータアクセス処理を提供する。"""

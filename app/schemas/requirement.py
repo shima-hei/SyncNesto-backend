@@ -457,6 +457,17 @@ class RequirementLinkCreate(BaseModel):
 
     linked_type: str
     linked_id: str
+    linked_url: str | None = None
+    status: str = "unknown"
+
+
+class RequirementLinkUpdate(BaseModel):
+    """要件リンク更新リクエストで受け取るschema。"""
+
+    linked_type: str | None = None
+    linked_id: str | None = None
+    linked_url: str | None = None
+    status: str | None = None
 
 
 class RequirementLinkRead(BaseModel):
@@ -466,6 +477,8 @@ class RequirementLinkRead(BaseModel):
     requirement_id: int
     linked_type: str
     linked_id: str
+    linked_url: str | None = None
+    status: str
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -27,6 +27,7 @@ from app.schemas.requirement import (
     RequirementDetailUpdate,
     RequirementLinkCreate,
     RequirementLinkRead,
+    RequirementLinkUpdate,
     RequirementRelationCreate,
     RequirementRelationRead,
     RequirementReviewCreate,
@@ -228,6 +229,30 @@ def list_requirement_links(
         requirement_id=requirement_id,
     )
     return build_requirement_link_responses(links)
+
+
+@router.patch(
+    "/requirements/{requirement_id}/links/{link_id}",
+    response_model=RequirementLinkRead,
+)
+def update_requirement_link(
+    project_id: int,
+    requirement_id: int,
+    link_id: int,
+    link_in: RequirementLinkUpdate,
+    current_user: User = Depends(require_project_permission("requirement:link")),
+    db: Session = Depends(get_db),
+) -> RequirementLinkRead:
+    """要件リンクを更新する。"""
+    link = shared.requirement_child_service.update_link(
+        db,
+        project_id=project_id,
+        requirement_id=requirement_id,
+        link_id=link_id,
+        link_in=link_in,
+        actor_id=current_user.id,
+    )
+    return build_requirement_link_response(link)
 
 
 @router.delete(

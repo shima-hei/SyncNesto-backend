@@ -17,6 +17,7 @@ from app.models.requirement import (
     RequirementTargetComment,
 )
 from app.models.user import User
+from app.presenters.user import get_user_type
 from app.schemas.change_log import (
     ChangeLogUserRead,
     ChangeLogValue,
@@ -106,7 +107,7 @@ def build_requirement_document_response(
             email=user.email,
             name=user.name,
             avatar_url=storage_service.generate_presigned_url(user.avatar_key),
-            user_type=user.user_type,
+            user_type=get_user_type(user),
             is_active=user.is_active,
         )
 
@@ -224,10 +225,7 @@ def build_requirement_approval_list_response(
         要件定義承認一覧レスポンス。
     """
     return RequirementApprovalListResponse(
-        items=[
-            build_requirement_approval_response(approval)
-            for approval in approvals
-        ],
+        items=[build_requirement_approval_response(approval) for approval in approvals],
         total=total,
         page=page,
         page_size=page_size,
@@ -497,9 +495,7 @@ def build_requirement_comment_response(
     """
     return RequirementCommentRead.model_validate(comment).model_copy(
         update={
-            "user": _build_change_log_user_response(user)
-            if user is not None
-            else None
+            "user": _build_change_log_user_response(user) if user is not None else None
         }
     )
 

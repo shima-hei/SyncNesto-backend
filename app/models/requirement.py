@@ -891,6 +891,20 @@ class RequirementLink(Base):
         nullable=False,
         comment=db_comment("リンク先ID", "紐づけ先リソースの識別子"),
     )
+    linked_url: Mapped[str | None] = mapped_column(
+        String(2048),
+        nullable=True,
+        comment=db_comment("成果物URL", "成果物本体や参照先を開くためのURL"),
+    )
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="unknown",
+        comment=db_comment(
+            "成果物状態",
+            "unknown/not_started/in_progress/completed/verifiedなどの成果物状態",
+        ),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

@@ -80,6 +80,7 @@ class RequirementChildBaseService:
         )
         self.change_log_service = change_log_service or RequirementChangeLogService()
         self.user_repository = user_repository or UserRepository()
+
     def _ensure_requirement_in_project(
         self,
         db: Session,
@@ -104,6 +105,7 @@ class RequirementChildBaseService:
             project_id=project_id,
             requirement_id=requirement_id,
         )
+
     def _record_child_change_log(
         self,
         db: Session,
@@ -127,6 +129,7 @@ class RequirementChildBaseService:
             new_value=new_value,
             changed_by=changed_by,
         )
+
     def _build_detail_snapshot(
         self,
         detail: RequirementDetail,
@@ -138,6 +141,7 @@ class RequirementChildBaseService:
             "detail_type": detail.detail_type,
             "detail_json": detail.detail_json,
         }
+
     def _build_link_snapshot(
         self,
         link: RequirementLink,
@@ -148,7 +152,10 @@ class RequirementChildBaseService:
             "requirement_id": link.requirement_id,
             "linked_type": link.linked_type,
             "linked_id": link.linked_id,
+            "linked_url": link.linked_url,
+            "status": link.status,
         }
+
     def _build_relation_snapshot(
         self,
         relation: RequirementRelation,
@@ -164,6 +171,7 @@ class RequirementChildBaseService:
             "description": relation.description,
             "created_by": relation.created_by,
         }
+
     def _build_review_snapshot(
         self,
         review: RequirementReview,

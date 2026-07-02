@@ -1036,9 +1036,7 @@ def test_list_requirement_change_logs_allows_viewer(
     db.commit()
     authorize_as(client, user)
 
-    response = client.get(
-        f"/projects/{project.id}/change-logs?target_type=open_issue"
-    )
+    response = client.get(f"/projects/{project.id}/change-logs?target_type=open_issue")
 
     assert response.status_code == 200
     assert response.json()["total"] == 1
@@ -1678,8 +1676,7 @@ def test_list_target_comments_allows_viewer(
     authorize_as(client, viewer)
 
     response = client.get(
-        f"/projects/{project.id}/comments"
-        f"?target_type=document&target_id={document.id}"
+        f"/projects/{project.id}/comments?target_type=document&target_id={document.id}"
     )
 
     assert response.status_code == 200
@@ -2499,11 +2496,24 @@ def test_requirement_link_create_list_delete_allows_member(
 
     create_response = client.post(
         f"/projects/{project.id}/requirements/{requirement.id}/links",
-        json={"linked_type": "api", "linked_id": "POST /auth/login"},
+        json={
+            "linked_type": "api",
+            "linked_id": "POST /auth/login",
+            "linked_url": "https://example.com/api/auth-login",
+            "status": "completed",
+        },
     )
     link_id = create_response.json()["id"]
     list_response = client.get(
         f"/projects/{project.id}/requirements/{requirement.id}/links"
+    )
+    update_response = client.patch(
+        f"/projects/{project.id}/requirements/{requirement.id}/links/{link_id}",
+        json={
+            "linked_id": "POST /auth/login updated",
+            "linked_url": "https://example.com/api/auth-login-updated",
+            "status": "verified",
+        },
     )
     delete_response = client.delete(
         f"/projects/{project.id}/requirements/{requirement.id}/links/{link_id}"
@@ -2512,8 +2522,18 @@ def test_requirement_link_create_list_delete_allows_member(
     assert create_response.status_code == 201
     assert create_response.json()["linked_type"] == "api"
     assert create_response.json()["linked_id"] == "POST /auth/login"
+    assert create_response.json()["linked_url"] == "https://example.com/api/auth-login"
+    assert create_response.json()["status"] == "completed"
     assert list_response.status_code == 200
     assert list_response.json()[0]["id"] == link_id
+    assert list_response.json()[0]["status"] == "completed"
+    assert update_response.status_code == 200
+    assert update_response.json()["linked_id"] == "POST /auth/login updated"
+    assert (
+        update_response.json()["linked_url"]
+        == "https://example.com/api/auth-login-updated"
+    )
+    assert update_response.json()["status"] == "verified"
     assert delete_response.status_code == 204
     assert db.get(RequirementLink, link_id) is None
 
@@ -2845,6 +2865,8 @@ def test_read_requirement_summary_returns_related_resources_with_latest_limits(
             requirement_id=requirement.id,
             linked_type="api",
             linked_id="POST /auth/login",
+            linked_url="https://example.com/api/auth-login",
+            status="verified",
         )
     )
     db.add(
@@ -2884,6 +2906,10 @@ def test_read_requirement_summary_returns_related_resources_with_latest_limits(
         "screen_name": "ログイン画面"
     }
     assert response.json()["links"][0]["linked_id"] == "POST /auth/login"
+    assert response.json()["links"][0]["linked_url"] == (
+        "https://example.com/api/auth-login"
+    )
+    assert response.json()["links"][0]["status"] == "verified"
     assert response.json()["reviews"][0]["reviewer_id"] == reviewer.id
     assert len(response.json()["comments"]) == 20
     assert response.json()["comments"][0]["comment"] == "comment-1"

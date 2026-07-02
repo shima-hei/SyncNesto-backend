@@ -9,6 +9,7 @@ from app.models.requirement import (
 )
 from app.schemas.requirement import (
     RequirementLinkCreate,
+    RequirementLinkUpdate,
 )
 from app.services.requirement_change_log import (
     RequirementChangeLogAction,
@@ -64,6 +65,38 @@ class RequirementLinkService(RequirementChildBaseService):
             changed_by=actor_id,
         )
         return link
+
+    def update_link(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        requirement_id: int,
+        link_id: int,
+        link_in: RequirementLinkUpdate,
+        actor_id: int | None = None,
+    ) -> RequirementLink:
+        """要件リンクを更新する。"""
+        link = self._get_link_in_requirement(db, project_id, requirement_id, link_id)
+        requirement = self._ensure_requirement_in_project(
+            db,
+            project_id,
+            requirement_id,
+        )
+        before_value = self._build_link_snapshot(link)
+        updated_link = self.link_repository.update(db, link, link_in)
+        self._record_child_change_log(
+            db,
+            requirement=requirement,
+            target_type=RequirementChangeLogTargetType.LINK,
+            target_id=updated_link.id,
+            action=RequirementChangeLogAction.UPDATED,
+            old_value=before_value,
+            new_value=self._build_link_snapshot(updated_link),
+            changed_by=actor_id,
+        )
+        return updated_link
+
     def list_links(
         self,
         db: Session,
@@ -86,6 +119,7 @@ class RequirementLinkService(RequirementChildBaseService):
         """
         self._ensure_requirement_in_project(db, project_id, requirement_id)
         return self.link_repository.list_by_requirement(db, requirement_id)
+
     def delete_link(
         self,
         db: Session,
@@ -124,6 +158,7 @@ class RequirementLinkService(RequirementChildBaseService):
             old_value=before_value,
             changed_by=actor_id,
         )
+
     def _get_link_in_requirement(
         self,
         db: Session,

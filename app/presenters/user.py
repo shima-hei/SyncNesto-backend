@@ -1,7 +1,7 @@
 """ユーザー関連レスポンスのPresenterを定義するモジュール。"""
 
 from app.models.rbac import Role
-from app.models.user import User
+from app.models.user import User, UserType
 from app.schemas.user import (
     CurrentUserRead,
     RoleRead,
@@ -11,6 +11,11 @@ from app.schemas.user import (
     UserSummary,
 )
 from app.services.storage import StorageService
+
+
+def get_user_type(user: User) -> UserType:
+    """DB上のユーザー区分文字列をschema用Enumへ変換する。"""
+    return UserType(user.user_type)
 
 
 def build_role_reads(roles: list[Role]) -> list[RoleRead]:
@@ -40,7 +45,7 @@ def build_user_summary(user: User, storage_service: StorageService) -> UserSumma
         email=user.email,
         name=user.name,
         avatar_url=storage_service.generate_presigned_url(user.avatar_key),
-        user_type=user.user_type,
+        user_type=get_user_type(user),
         is_active=user.is_active,
     )
 
@@ -68,7 +73,7 @@ def build_user_response(
         department=user.department,
         position=user.position,
         avatar_url=storage_service.generate_presigned_url(user.avatar_key),
-        user_type=user.user_type,
+        user_type=get_user_type(user),
         is_active=user.is_active,
         last_login_at=user.last_login_at,
         created_by=user.created_by,
@@ -119,7 +124,7 @@ def build_user_list_item(
         department=user.department,
         position=user.position,
         avatar_url=storage_service.generate_presigned_url(user.avatar_key),
-        user_type=user.user_type,
+        user_type=get_user_type(user),
         is_active=user.is_active,
         last_login_at=user.last_login_at,
         system_roles=build_role_reads(system_roles),
