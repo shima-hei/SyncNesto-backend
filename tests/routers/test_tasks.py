@@ -26,6 +26,8 @@ def test_create_task_returns_task_for_project_member(
     project = create_test_project(project_code="TASK", name="Task Project")
     assign_project_role(user=user, project=project, role_key="member")
     authorize_as(client, user)
+    start_date = date.today() + timedelta(days=1)
+    due_date = start_date + timedelta(days=9)
 
     response = client.post(
         f"/projects/{project.id}/tasks",
@@ -34,8 +36,8 @@ def test_create_task_returns_task_for_project_member(
             "title": "ログインAPI実装",
             "task_type": "backend",
             "priority": "high",
-            "start_date": "2026-07-01",
-            "due_date": "2026-07-10",
+            "start_date": start_date.isoformat(),
+            "due_date": due_date.isoformat(),
         },
     )
 

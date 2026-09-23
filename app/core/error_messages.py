@@ -31,9 +31,7 @@ LAST_PROJECT_ADMIN_REQUIRED = "At least one project admin is required"
 
 USER_NOT_FOUND = "User not found"
 
-REQUIREMENT_DOCUMENT_CODE_ALREADY_EXISTS = (
-    "Requirement document code already exists"
-)
+REQUIREMENT_DOCUMENT_CODE_ALREADY_EXISTS = "Requirement document code already exists"
 REQUIREMENT_DOCUMENT_NOT_FOUND = "Requirement document not found"
 REQUIREMENT_APPROVAL_NOT_FOUND = "Requirement approval not found"
 REQUIREMENT_APPROVAL_ALREADY_DECIDED = "Requirement approval already decided"
@@ -68,3 +66,8 @@ TASK_DONE_PROGRESS_INVALID = "Done task progress must be 100"
 MILESTONE_NOT_FOUND = "Milestone not found"
 BOARD_NOT_FOUND = "Board not found"
 BOARD_COLUMN_NOT_FOUND = "Board column not found"
+TEST_DESIGN_LINK_IMMUTABLE = (
+    "既存の紐付け先は変更できません。新しい紐付けを作成してください"
+)
+TEST_DESIGN_INVALID_ID = "設計内のIDまたは関連が競合しています"
+TEST_DESIGN_SOURCE_INACTIVE = "生成元が削除または無効化されているため更新できません"

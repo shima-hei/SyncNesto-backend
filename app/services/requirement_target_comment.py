@@ -1,7 +1,5 @@
 """要件定義対象コメントサービスを定義するモジュール。"""
 
-from dataclasses import dataclass
-
 from sqlalchemy.orm import Session
 
 from app.core import error_messages
@@ -33,16 +31,11 @@ from app.services.requirement_change_log import (
     RequirementChangeLogService,
     RequirementChangeLogTargetType,
 )
-
-
-class RequirementCommentTargetType:
-    """要件定義対象コメントの対象種別定数。"""
-
-    DOCUMENT = "document"
-    OPEN_ISSUE = "open_issue"
-    REQUIREMENT_ITEM = "requirement_item"
-    SECTION = "section"
-
+from app.services.requirement_comment_anchor import (
+    CommentTarget,
+    RequirementCommentAnchorValidator,
+    RequirementCommentTargetType,
+)
 
 REQUIREMENT_TARGET_COMMENT_CONFLICT_CURRENT_FIELDS = (
     "id",
@@ -60,15 +53,6 @@ REQUIREMENT_TARGET_COMMENT_CONFLICT_CURRENT_FIELDS = (
 )
 
 
-@dataclass(frozen=True)
-class CommentTarget:
-    """コメント対象の解決結果。"""
-
-    document_id: int
-    target_type: str
-    target_id: int
-
-
 class RequirementTargetCommentService:
     """要件定義対象コメントに関するビジネスロジックを提供する。"""
 
@@ -79,6 +63,7 @@ class RequirementTargetCommentService:
         section_repository: RequirementSectionRepository | None = None,
         requirement_repository: RequirementRepository | None = None,
         open_issue_repository: RequirementOpenIssueRepository | None = None,
+        anchor_validator: RequirementCommentAnchorValidator | None = None,
         change_log_service: RequirementChangeLogService | None = None,
         user_repository: UserRepository | None = None,
     ) -> None:
@@ -90,6 +75,7 @@ class RequirementTargetCommentService:
             section_repository: 要件定義セクションRepository。
             requirement_repository: 要件Repository。
             open_issue_repository: 未決事項Repository。
+            anchor_validator: 要件詳細コメントのアンカー検証サービス。
             change_log_service: 要件定義変更履歴サービス。
             user_repository: ユーザーRepository。
         """
@@ -102,6 +88,7 @@ class RequirementTargetCommentService:
         self.open_issue_repository = (
             open_issue_repository or RequirementOpenIssueRepository()
         )
+        self.anchor_validator = anchor_validator or RequirementCommentAnchorValidator()
         self.change_log_service = change_log_service or RequirementChangeLogService()
         self.user_repository = user_repository or UserRepository()
 
@@ -129,6 +116,12 @@ class RequirementTargetCommentService:
             project_id=project_id,
             target_type=comment_in.target_type,
             target_id=comment_in.target_id,
+        )
+        self.anchor_validator.validate(
+            db,
+            project_id=project_id,
+            target=target,
+            target_anchor=comment_in.target_anchor,
         )
         if comment_in.parent_comment_id is not None:
             self._get_parent_comment_for_target(

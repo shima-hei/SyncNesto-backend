@@ -60,6 +60,25 @@ class RequirementTaskRelationRepository:
             .all()
         )
 
+    def get_by_requirement_and_task(
+        self,
+        db: Session,
+        *,
+        requirement_id: int,
+        task_id: int | None,
+    ) -> RequirementTaskRelation | None:
+        """要件IDとタスクIDに一致する要件タスク関連を取得する。"""
+        if task_id is None:
+            return None
+        return (
+            db.query(RequirementTaskRelation)
+            .filter(
+                RequirementTaskRelation.requirement_id == requirement_id,
+                RequirementTaskRelation.task_id == task_id,
+            )
+            .first()
+        )
+
     def list_tasks_by_requirement(
         self,
         db: Session,

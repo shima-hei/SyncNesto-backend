@@ -23,6 +23,7 @@ from app.models.requirement import (
     RequirementSection,
     RequirementTargetComment,
 )
+from app.models.task import RequirementTaskRelation, Task
 from app.models.user import User
 from tests.fakes.storage import FakeStorageService
 from tests.helpers.auth import authorize_as
@@ -1586,6 +1587,184 @@ def test_create_target_comment_for_section_records_change_log(
         "label": "section-content:p1",
     }
     assert change_log.new_value["body"] == "この章の説明を補足してください。"
+
+
+def test_create_target_comment_accepts_requirement_detail_anchor(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement: Callable[..., Requirement],
+    db: Session,
+) -> None:
+    """対象要件に属する実現内容アンカーへコメントできることを確認する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    requirement = create_test_requirement(document=document)
+    detail = RequirementDetail(
+        requirement_id=requirement.id,
+        detail_type="screen_operation",
+        detail_json={"screen_name": "ログイン画面"},
+    )
+    db.add(detail)
+    db.commit()
+    db.refresh(detail)
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/comments",
+        json={
+            "target_type": "requirement_item",
+            "target_id": requirement.id,
+            "target_anchor": {
+                "kind": "requirement_detail",
+                "detail_id": detail.id,
+                "label": "画面・操作: ログイン画面",
+            },
+            "body": "この画面に説明を追加してください。",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["target_anchor"]["detail_id"] == detail.id
+
+
+def test_create_target_comment_rejects_requirement_link_anchor_from_other_requirement(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement: Callable[..., Requirement],
+    db: Session,
+) -> None:
+    """別要件の関連成果物アンカーを404で拒否する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    requirement = create_test_requirement(document=document)
+    other_requirement = create_test_requirement(document=document)
+    link = RequirementLink(
+        requirement_id=other_requirement.id,
+        linked_type="api",
+        linked_id="POST /auth/login",
+        status="completed",
+    )
+    db.add(link)
+    db.commit()
+    db.refresh(link)
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/comments",
+        json={
+            "target_type": "requirement_item",
+            "target_id": requirement.id,
+            "target_anchor": {
+                "kind": "requirement_link",
+                "link_id": link.id,
+                "label": "関連成果物: POST /auth/login",
+            },
+            "body": "確認してください。",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "message": "Requirement comment target not found",
+        "code": "NOT_FOUND",
+    }
+
+
+def test_create_target_comment_rejects_unlinked_requirement_task_anchor(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement: Callable[..., Requirement],
+    create_test_task: Callable[..., Task],
+) -> None:
+    """対象要件に紐づかないタスクアンカーを404で拒否する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    requirement = create_test_requirement(document=document)
+    task = create_test_task(project=project, task_code="TASK-001")
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/comments",
+        json={
+            "target_type": "requirement_item",
+            "target_id": requirement.id,
+            "target_anchor": {
+                "kind": "requirement_task",
+                "task_id": task.id,
+                "label": "関連タスク: TASK-001",
+            },
+            "body": "確認してください。",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "message": "Requirement comment target not found",
+        "code": "NOT_FOUND",
+    }
+
+
+def test_create_target_comment_accepts_requirement_task_anchor(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement: Callable[..., Requirement],
+    create_test_task: Callable[..., Task],
+    db: Session,
+) -> None:
+    """対象要件に紐づくタスクアンカーへコメントできることを確認する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    requirement = create_test_requirement(document=document)
+    task = create_test_task(project=project, task_code="TASK-001")
+    relation = RequirementTaskRelation(
+        requirement_id=requirement.id,
+        task_id=task.id,
+        relation_type="implements",
+        created_by=user.id,
+    )
+    db.add(relation)
+    db.commit()
+    db.refresh(relation)
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/comments",
+        json={
+            "target_type": "requirement_item",
+            "target_id": requirement.id,
+            "target_anchor": {
+                "kind": "requirement_task",
+                "relation_id": relation.id,
+                "task_id": task.id,
+                "label": "関連タスク: TASK-001",
+            },
+            "body": "このタスクで確認してください。",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["target_anchor"]["relation_id"] == relation.id
+    assert response.json()["target_anchor"]["task_id"] == task.id
 
 
 def test_create_target_comment_rejects_viewer(

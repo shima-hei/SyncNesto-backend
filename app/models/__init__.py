@@ -31,9 +31,37 @@ from app.models.task import (
     TaskComment,
     TaskDependency,
 )
+from app.models.test_design import (
+    ExpectedValue,
+    Factor,
+    FactorLevel,
+    PatternTable,
+    TestCase,
+    TestDesign,
+    TestDesignColumn,
+    TestDesignLayout,
+    TestItem,
+    TestItemPattern,
+    TestPattern,
+    TestPatternExpectedValue,
+    TestPatternValue,
+)
 from app.models.user import User
 
 __all__ = [
+    "Factor",
+    "FactorLevel",
+    "PatternTable",
+    "TestCase",
+    "TestDesign",
+    "TestDesignColumn",
+    "TestDesignLayout",
+    "TestItem",
+    "TestItemPattern",
+    "TestPattern",
+    "TestPatternValue",
+    "ExpectedValue",
+    "TestPatternExpectedValue",
     "AuditLog",
     "Board",
     "BoardColumn",
