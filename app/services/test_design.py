@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.core import error_messages
 from app.core.exceptions import BadRequestError, NotFoundError
-from app.models.test_design import TestCase, TestDesign
+from app.models.test_design import TestCase, TestDesign, TestExecution
 from app.repositories.project import ProjectRepository
+from app.repositories.test_collaboration import TestCollaborationRepository
 from app.repositories.test_design import TestDesignRepository
 from app.schemas.test_design import (
     TestCaseRead,
@@ -182,10 +183,12 @@ class TestDesignService:
     def delete(
         self, db: Session, project_id: int, design_id: int, version: int, actor_id: int
     ) -> None:
-        """設計書とケースを明示的に削除する。"""
+        """設計書を一覧から除外し、ケースと議論の履歴は保持する。"""
         design = self.get(db, project_id, design_id, lock=True)
         self.check_version(db, design, version)
-        db.delete(design)
+        design.deleted_at = datetime.now(timezone.utc)
+        design.updated_by = actor_id
+        design.version += 1
         db.commit()
         self.audit(db, design, actor_id, "deleted")
 
@@ -279,6 +282,19 @@ class TestDesignService:
         )
         case.executed_by = actor_id
         case.executed_at = datetime.now(timezone.utc)
+        history = TestCollaborationRepository().executions(db, case.id)
+        db.add(
+            TestExecution(
+                case_id=case.id,
+                run_number=history[0].run_number + 1 if history else 1,
+                status=data.status,
+                actual_result=data.actual_result,
+                notes=data.notes,
+                source=case.source,
+                executed_by=actor_id,
+                executed_at=case.executed_at,
+            )
+        )
         case.version += 1
         db.commit()
         self.audit(db, design, actor_id, "case_updated")

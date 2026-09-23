@@ -41,6 +41,7 @@ class TestDesign(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class DesignEntity:
@@ -58,6 +59,7 @@ class PatternTable(DesignEntity, Base):
 
     __tablename__ = "test_pattern_tables"
     name: Mapped[str] = mapped_column(String(200))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class TableEntity:
@@ -87,6 +89,7 @@ class TestItem(DesignEntity, Base):
     pattern_table_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("test_pattern_tables.id", ondelete="SET NULL"), index=True
     )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Factor(TableEntity, DesignEntity, Base):
@@ -95,6 +98,7 @@ class Factor(TableEntity, DesignEntity, Base):
     __tablename__ = "test_factors"
     __table_args__ = (UniqueConstraint("design_id", "id"),)
     name: Mapped[str] = mapped_column(String(200))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class FactorLevel(DesignEntity, Base):
@@ -111,6 +115,7 @@ class FactorLevel(DesignEntity, Base):
     )
     factor_id: Mapped[UUID] = mapped_column(Uuid)
     name: Mapped[str] = mapped_column(String(200))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class TestPattern(TableEntity, DesignEntity, Base):
@@ -122,6 +127,7 @@ class TestPattern(TableEntity, DesignEntity, Base):
     description: Mapped[str] = mapped_column(Text, default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class TestPatternValue(DesignEntity, Base):
@@ -160,6 +166,7 @@ class ExpectedValue(TableEntity, DesignEntity, Base):
     __tablename__ = "test_expected_values"
     __table_args__ = (UniqueConstraint("design_id", "id"),)
     name: Mapped[str] = mapped_column(Text)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class TestPatternExpectedValue(DesignEntity, Base):
@@ -247,6 +254,102 @@ class TestCase(DesignEntity, Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
 
 
+class RequirementTestItem(Base):
+    """要件とテスト項目の安定IDによる多対多関連。"""
+
+    __tablename__ = "requirement_test_items"
+    __table_args__ = (UniqueConstraint("requirement_id", "item_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    requirement_id: Mapped[int] = mapped_column(
+        ForeignKey("requirements.id"), index=True
+    )
+    item_id: Mapped[UUID] = mapped_column(ForeignKey("test_items.id"), index=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class TestDesignComment(Base):
+    """安定IDの設計対象に紐づくスレッドコメント。"""
+
+    __tablename__ = "test_design_comments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    design_id: Mapped[int] = mapped_column(ForeignKey("test_designs.id"), index=True)
+    target_type: Mapped[str] = mapped_column(String(40), index=True)
+    target_id: Mapped[UUID | None] = mapped_column(Uuid, index=True)
+    field: Mapped[str | None] = mapped_column(String(100))
+    target_snapshot: Mapped[dict] = mapped_column(JSONB, default=dict)
+    parent_comment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("test_design_comments.id"), index=True
+    )
+    body: Mapped[str] = mapped_column(Text)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    is_resolved: Mapped[bool] = mapped_column(Boolean, default=False)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TestDesignCommentChange(Base):
+    """コメント編集・解決・削除の変更履歴。"""
+
+    __tablename__ = "test_design_comment_changes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    comment_id: Mapped[int] = mapped_column(
+        ForeignKey("test_design_comments.id"), index=True
+    )
+    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    action: Mapped[str] = mapped_column(String(30))
+    old_value: Mapped[dict | None] = mapped_column(JSONB)
+    new_value: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class TestExecution(Base):
+    """ケースの各実行結果と当時の設計スナップショット。"""
+
+    __tablename__ = "test_executions"
+    __table_args__ = (UniqueConstraint("case_id", "run_number"),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    case_id: Mapped[UUID] = mapped_column(ForeignKey("test_cases.id"), index=True)
+    run_number: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(30))
+    actual_result: Mapped[str] = mapped_column(Text, default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[dict] = mapped_column(JSONB)
+    executed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    executed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class TestEvidence(Base):
+    """一回のテスト実行に属する非公開ファイルのメタデータ。"""
+
+    __tablename__ = "test_evidence"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    execution_id: Mapped[UUID] = mapped_column(
+        ForeignKey("test_executions.id"), index=True
+    )
+    storage_key: Mapped[str] = mapped_column(String(500), unique=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(100))
+    byte_size: Mapped[int] = mapped_column(Integer)
+    uploaded_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 for _model in (
     TestDesign,
     PatternTable,
@@ -261,6 +364,11 @@ for _model in (
     TestCase,
     ExpectedValue,
     TestPatternExpectedValue,
+    RequirementTestItem,
+    TestDesignComment,
+    TestDesignCommentChange,
+    TestExecution,
+    TestEvidence,
 ):
     cast(Table, _model.__table__).comment = db_comment(
         _model.__name__, _model.__doc__ or ""
