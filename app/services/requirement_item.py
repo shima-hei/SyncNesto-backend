@@ -11,15 +11,12 @@ from app.models.requirement import (
     RequirementRevision,
     RequirementSection,
 )
-from app.repositories.requirement import (
-    RequirementDocumentRepository,
-    RequirementRepository,
-    RequirementRevisionRepository,
-    RequirementSectionRepository,
-)
+from app.repositories.requirement_child import RequirementRevisionRepository
+from app.repositories.requirement_document import RequirementDocumentRepository
+from app.repositories.requirement_item import RequirementRepository
+from app.repositories.requirement_section import RequirementSectionRepository
 from app.schemas.requirement import (
     RequirementCreate,
-    RequirementRead,
     RequirementUpdate,
 )
 from app.services.change_log_formatter import (
@@ -27,6 +24,7 @@ from app.services.change_log_formatter import (
     build_update_change_log_entry,
 )
 from app.services.conflict import (
+    build_conflict_current,
     raise_duplicate_after_rollback,
     raise_if_version_conflict,
 )
@@ -54,6 +52,29 @@ REQUIREMENT_UPDATABLE_FIELDS = {
     "approved_by",
     "approved_at",
 }
+REQUIREMENT_CONFLICT_CURRENT_FIELDS = (
+    "section_id",
+    "requirement_code",
+    "requirement_type",
+    "category",
+    "title",
+    "description",
+    "rationale",
+    "acceptance_criteria",
+    "priority",
+    "status",
+    "source",
+    "owner_id",
+    "approved_by",
+    "approved_at",
+    "id",
+    "document_id",
+    "version",
+    "created_by",
+    "updated_by",
+    "created_at",
+    "updated_at",
+)
 
 
 class RequirementService:
@@ -184,6 +205,9 @@ class RequirementService:
         section_id: int | None = None,
         priority: str | None = None,
         owner_id: int | None = None,
+        sort: str | None = None,
+        sort_by: str | None = None,
+        sort_order: str | None = None,
     ) -> tuple[list[Requirement], int]:
         """プロジェクト内の要件一覧をページング付きで取得する。
 
@@ -199,6 +223,9 @@ class RequirementService:
             section_id: 絞り込み対象の要件定義セクションID。
             priority: 絞り込み対象の優先度。
             owner_id: 絞り込み対象のオーナーID。
+            sort: ソート指定。
+            sort_by: ソート対象フィールド。
+            sort_order: ソート順。
 
         Returns:
             要件一覧と総件数。
@@ -238,6 +265,9 @@ class RequirementService:
             section_id=section_id,
             priority=priority,
             owner_id=owner_id,
+            sort=sort,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
 
     def get_requirement(
@@ -305,7 +335,10 @@ class RequirementService:
         raise_if_version_conflict(
             current_version=requirement.version,
             requested_version=requirement_in.version,
-            current=RequirementRead.model_validate(requirement).model_dump(),
+            current=build_conflict_current(
+                requirement,
+                REQUIREMENT_CONFLICT_CURRENT_FIELDS,
+            ),
         )
 
         if (

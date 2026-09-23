@@ -1,5 +1,6 @@
 """競合・重複エラー処理の共通ヘルパー。"""
 
+from collections.abc import Iterable, Mapping
 from typing import NoReturn
 
 from sqlalchemy.orm import Session
@@ -25,6 +26,28 @@ def raise_if_version_conflict(
     """
     if current_version != requested_version:
         raise VersionConflictError(current=current)
+
+
+def build_conflict_current(
+    resource: object,
+    fields: Iterable[str],
+    *,
+    extra: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    """バージョン競合時に返す現行リソース情報を組み立てる。
+
+    Args:
+        resource: 現行値を持つSQLAlchemyモデルなどのオブジェクト。
+        fields: currentに含める属性名一覧。
+        extra: モデル属性以外に追加する値。
+
+    Returns:
+        VERSION_CONFLICTレスポンスのcurrentに入れる辞書。
+    """
+    current = {field: getattr(resource, field) for field in fields}
+    if extra is not None:
+        current.update(extra)
+    return current
 
 
 def raise_duplicate_after_rollback(

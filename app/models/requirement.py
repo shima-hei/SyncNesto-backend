@@ -653,6 +653,14 @@ class RequirementTargetComment(Base):
         index=True,
         comment=db_comment("対象ID", "コメント対象のID"),
     )
+    target_anchor: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment=db_comment(
+            "対象アンカー",
+            "コメント対象内の段落・選択範囲・フィールドなどを示す識別子",
+        ),
+    )
     parent_comment_id: Mapped[int | None] = mapped_column(
         ForeignKey("requirement_target_comments.id"),
         nullable=True,
@@ -882,6 +890,20 @@ class RequirementLink(Base):
         String(255),
         nullable=False,
         comment=db_comment("リンク先ID", "紐づけ先リソースの識別子"),
+    )
+    linked_url: Mapped[str | None] = mapped_column(
+        String(2048),
+        nullable=True,
+        comment=db_comment("成果物URL", "成果物本体や参照先を開くためのURL"),
+    )
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="unknown",
+        comment=db_comment(
+            "成果物状態",
+            "unknown/not_started/in_progress/completed/verifiedなどの成果物状態",
+        ),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

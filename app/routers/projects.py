@@ -11,12 +11,16 @@ from app.core.auth import (
 from app.db.session import get_db
 from app.models.project import Project
 from app.models.user import User
-from app.presenters.project import build_project_member_response
-from app.presenters.user import build_user_summary
+from app.presenters.project import (
+    build_current_project_role_response,
+    build_project_list_response,
+    build_project_member_response,
+    build_project_member_responses,
+    build_project_member_user_list_response,
+)
 from app.schemas.project import (
     CurrentProjectRoleRead,
     ProjectCreate,
-    ProjectListItem,
     ProjectListResponse,
     ProjectMemberCreate,
     ProjectMemberRead,
@@ -24,7 +28,7 @@ from app.schemas.project import (
     ProjectRead,
     ProjectUpdate,
 )
-from app.schemas.user import RoleRead, UserSummaryListResponse
+from app.schemas.user import UserSummaryListResponse
 from app.services.project import ProjectMemberService, ProjectService
 from app.services.storage import StorageService
 
@@ -90,8 +94,8 @@ def list_projects(
         q=q,
         status=status,
     )
-    return ProjectListResponse(
-        items=[ProjectListItem.model_validate(project) for project in projects],
+    return build_project_list_response(
+        projects,
         total=total,
         page=page,
         page_size=page_size,
@@ -143,9 +147,9 @@ def read_current_project_role(
         project_id=project_id,
         current_user=current_user,
     )
-    return CurrentProjectRoleRead(
+    return build_current_project_role_response(
         project_id=project_id,
-        role=RoleRead.model_validate(role) if role is not None else None,
+        role=role,
         is_system_admin=is_system_admin,
     )
 
@@ -178,8 +182,43 @@ def list_project_member_users(
         q=q,
         limit=limit,
     )
-    return UserSummaryListResponse(
-        items=[build_user_summary(user, storage_service) for user in users],
+    return build_project_member_user_list_response(
+        users,
+        storage_service,
+    )
+
+
+@router.get(
+    "/{project_id}/member-candidates",
+    response_model=UserSummaryListResponse,
+)
+def list_project_member_candidates(
+    project_id: int,
+    q: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+    _: User = Depends(require_project_permission("project:invite_member")),
+    db: Session = Depends(get_db),
+) -> UserSummaryListResponse:
+    """プロジェクトへ追加可能なユーザー候補一覧を取得する。
+
+    Args:
+        project_id: プロジェクトID。
+        q: 検索キーワード。
+        limit: 最大取得件数。
+        db: DBセッション。
+
+    Returns:
+        プロジェクト未所属の有効ユーザー一覧。
+    """
+    users = project_member_service.list_member_candidates(
+        db,
+        project_id=project_id,
+        q=q,
+        limit=limit,
+    )
+    return build_project_member_user_list_response(
+        users,
+        storage_service,
     )
 
 
@@ -283,10 +322,7 @@ def list_project_members(
     """
     members = project_member_service.list_members(db, project_id)
     roles_by_id = project_member_service.list_member_roles_by_role_id(db, members)
-    return [
-        build_project_member_response(member, roles_by_id[member.role_id])
-        for member in members
-    ]
+    return build_project_member_responses(members, roles_by_id)
 
 
 @router.patch(

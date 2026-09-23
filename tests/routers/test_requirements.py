@@ -1,5 +1,6 @@
 """要件定義APIのテスト。"""
 
+import base64
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
@@ -22,6 +23,7 @@ from app.models.requirement import (
     RequirementSection,
     RequirementTargetComment,
 )
+from app.models.task import RequirementTaskRelation, Task
 from app.models.user import User
 from tests.fakes.storage import FakeStorageService
 from tests.helpers.auth import authorize_as
@@ -66,6 +68,7 @@ def test_read_requirement_document_returns_assignee_users(
         "email": "author@example.com",
         "name": "Author",
         "avatar_url": "https://example.com/users/author.png?signature=test",
+        "user_type": "internal",
         "is_active": True,
     }
     assert response.json()["reviewer"] == {
@@ -73,6 +76,7 @@ def test_read_requirement_document_returns_assignee_users(
         "email": "reviewer@example.com",
         "name": "Reviewer",
         "avatar_url": None,
+        "user_type": "internal",
         "is_active": True,
     }
     assert response.json()["approver"] == {
@@ -80,6 +84,7 @@ def test_read_requirement_document_returns_assignee_users(
         "email": "approver@example.com",
         "name": "Approver",
         "avatar_url": "https://example.com/users/approver.png?signature=test",
+        "user_type": "internal",
         "is_active": True,
     }
 
@@ -114,6 +119,7 @@ def test_list_requirement_documents_returns_assignee_users(
         "email": "author@example.com",
         "name": "Author",
         "avatar_url": "https://example.com/default-avatar.png?signature=test",
+        "user_type": "internal",
         "is_active": True,
     }
     assert response.json()["items"][0]["reviewer"] is None
@@ -370,7 +376,7 @@ def test_export_requirement_document_rejects_unsupported_format(
 
     response = client.post(
         f"/projects/{project.id}/requirement-documents/{document.id}/exports",
-        json={"format": "pdf"},
+        json={"format": "docx"},
     )
 
     assert response.status_code == 400
@@ -408,6 +414,94 @@ def test_export_requirement_document_returns_html(
     assert "<!doctype html>" in response.json()["content"]
     assert "<h1>HTML Export</h1>" in response.json()["content"]
     assert "<li>文書コード: RD-HTML</li>" in response.json()["content"]
+
+
+def test_export_requirement_document_returns_pdf_base64(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+) -> None:
+    """要件定義書をPDF出力できることを確認する。"""
+    user = create_test_user(email="viewer@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project, title="PDF Export")
+    assign_project_role(user=user, project=project, role_key="viewer")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/requirement-documents/{document.id}/exports",
+        json={"format": "pdf"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["format"] == "pdf"
+    pdf_bytes = base64.b64decode(response.json()["content"])
+    assert pdf_bytes.startswith(b"%PDF-1.4")
+    assert b"%%EOF" in pdf_bytes
+
+
+def test_export_requirement_document_filters_sections(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """指定されたセクションだけを要件定義書出力に含めることを確認する。"""
+    user = create_test_user(email="viewer@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    first_section = RequirementSection(
+        document_id=document.id,
+        title="対象セクション",
+        section_type="business",
+        sort_order=10,
+        status="draft",
+    )
+    second_section = RequirementSection(
+        document_id=document.id,
+        title="対象外セクション",
+        section_type="system",
+        sort_order=20,
+        status="draft",
+    )
+    db.add_all([first_section, second_section])
+    db.flush()
+    db.add_all(
+        [
+            Requirement(
+                document_id=document.id,
+                section_id=first_section.id,
+                requirement_code="REQ-IN",
+                requirement_type="functional",
+                title="出力対象",
+            ),
+            Requirement(
+                document_id=document.id,
+                section_id=second_section.id,
+                requirement_code="REQ-OUT",
+                requirement_type="functional",
+                title="出力対象外",
+            ),
+        ]
+    )
+    db.commit()
+    assign_project_role(user=user, project=project, role_key="viewer")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/requirement-documents/{document.id}/exports",
+        json={"format": "markdown", "section_ids": [first_section.id]},
+    )
+
+    assert response.status_code == 200
+    assert "対象セクション" in response.json()["content"]
+    assert "REQ-IN" in response.json()["content"]
+    assert "対象外セクション" not in response.json()["content"]
+    assert "REQ-OUT" not in response.json()["content"]
 
 
 def test_update_requirement_document_rejects_stale_version(
@@ -647,6 +741,7 @@ def test_create_open_issue_allows_member_and_records_change_log(
     assert change_log.target_type == "open_issue"
     assert change_log.action == "created"
     assert change_log.changed_by == user.id
+    assert change_log.new_value is not None
     assert change_log.new_value["issue_code"] == "ISSUE-001"
 
 
@@ -902,6 +997,7 @@ def test_promote_open_issue_to_requirement(
     )
     assert promoted_log.target_type == "open_issue"
     assert promoted_log.target_id == issue.id
+    assert promoted_log.new_value is not None
     assert promoted_log.new_value["requirement_code"] == "REQ-001"
 
 
@@ -941,9 +1037,7 @@ def test_list_requirement_change_logs_allows_viewer(
     db.commit()
     authorize_as(client, user)
 
-    response = client.get(
-        f"/projects/{project.id}/change-logs?target_type=open_issue"
-    )
+    response = client.get(f"/projects/{project.id}/change-logs?target_type=open_issue")
 
     assert response.status_code == 200
     assert response.json()["total"] == 1
@@ -1455,6 +1549,7 @@ def test_create_target_comment_for_section_records_change_log(
         json={
             "target_type": "section",
             "target_id": section.id,
+            "target_anchor": {"field": "content", "label": "section-content:p1"},
             "body": "この章の説明を補足してください。",
         },
     )
@@ -1463,6 +1558,10 @@ def test_create_target_comment_for_section_records_change_log(
     assert response.json()["document_id"] == document.id
     assert response.json()["target_type"] == "section"
     assert response.json()["target_id"] == section.id
+    assert response.json()["target_anchor"] == {
+        "field": "content",
+        "label": "section-content:p1",
+    }
     assert response.json()["body"] == "この章の説明を補足してください。"
     assert response.json()["author_id"] == user.id
     assert response.json()["author"] == {
@@ -1482,7 +1581,190 @@ def test_create_target_comment_for_section_records_change_log(
     assert change_log.document_id == document.id
     assert change_log.target_type == "comment"
     assert change_log.target_id == response.json()["id"]
+    assert change_log.new_value is not None
+    assert change_log.new_value["target_anchor"] == {
+        "field": "content",
+        "label": "section-content:p1",
+    }
     assert change_log.new_value["body"] == "この章の説明を補足してください。"
+
+
+def test_create_target_comment_accepts_requirement_detail_anchor(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement: Callable[..., Requirement],
+    db: Session,
+) -> None:
+    """対象要件に属する実現内容アンカーへコメントできることを確認する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    requirement = create_test_requirement(document=document)
+    detail = RequirementDetail(
+        requirement_id=requirement.id,
+        detail_type="screen_operation",
+        detail_json={"screen_name": "ログイン画面"},
+    )
+    db.add(detail)
+    db.commit()
+    db.refresh(detail)
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/comments",
+        json={
+            "target_type": "requirement_item",
+            "target_id": requirement.id,
+            "target_anchor": {
+                "kind": "requirement_detail",
+                "detail_id": detail.id,
+                "label": "画面・操作: ログイン画面",
+            },
+            "body": "この画面に説明を追加してください。",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["target_anchor"]["detail_id"] == detail.id
+
+
+def test_create_target_comment_rejects_requirement_link_anchor_from_other_requirement(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement: Callable[..., Requirement],
+    db: Session,
+) -> None:
+    """別要件の関連成果物アンカーを404で拒否する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    requirement = create_test_requirement(document=document)
+    other_requirement = create_test_requirement(document=document)
+    link = RequirementLink(
+        requirement_id=other_requirement.id,
+        linked_type="api",
+        linked_id="POST /auth/login",
+        status="completed",
+    )
+    db.add(link)
+    db.commit()
+    db.refresh(link)
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/comments",
+        json={
+            "target_type": "requirement_item",
+            "target_id": requirement.id,
+            "target_anchor": {
+                "kind": "requirement_link",
+                "link_id": link.id,
+                "label": "関連成果物: POST /auth/login",
+            },
+            "body": "確認してください。",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "message": "Requirement comment target not found",
+        "code": "NOT_FOUND",
+    }
+
+
+def test_create_target_comment_rejects_unlinked_requirement_task_anchor(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement: Callable[..., Requirement],
+    create_test_task: Callable[..., Task],
+) -> None:
+    """対象要件に紐づかないタスクアンカーを404で拒否する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    requirement = create_test_requirement(document=document)
+    task = create_test_task(project=project, task_code="TASK-001")
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/comments",
+        json={
+            "target_type": "requirement_item",
+            "target_id": requirement.id,
+            "target_anchor": {
+                "kind": "requirement_task",
+                "task_id": task.id,
+                "label": "関連タスク: TASK-001",
+            },
+            "body": "確認してください。",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "message": "Requirement comment target not found",
+        "code": "NOT_FOUND",
+    }
+
+
+def test_create_target_comment_accepts_requirement_task_anchor(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement: Callable[..., Requirement],
+    create_test_task: Callable[..., Task],
+    db: Session,
+) -> None:
+    """対象要件に紐づくタスクアンカーへコメントできることを確認する。"""
+    user = create_test_user(email="member@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    requirement = create_test_requirement(document=document)
+    task = create_test_task(project=project, task_code="TASK-001")
+    relation = RequirementTaskRelation(
+        requirement_id=requirement.id,
+        task_id=task.id,
+        relation_type="implements",
+        created_by=user.id,
+    )
+    db.add(relation)
+    db.commit()
+    db.refresh(relation)
+    assign_project_role(user=user, project=project, role_key="member")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/comments",
+        json={
+            "target_type": "requirement_item",
+            "target_id": requirement.id,
+            "target_anchor": {
+                "kind": "requirement_task",
+                "relation_id": relation.id,
+                "task_id": task.id,
+                "label": "関連タスク: TASK-001",
+            },
+            "body": "このタスクで確認してください。",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["target_anchor"]["relation_id"] == relation.id
+    assert response.json()["target_anchor"]["task_id"] == task.id
 
 
 def test_create_target_comment_rejects_viewer(
@@ -1573,8 +1855,7 @@ def test_list_target_comments_allows_viewer(
     authorize_as(client, viewer)
 
     response = client.get(
-        f"/projects/{project.id}/comments"
-        f"?target_type=document&target_id={document.id}"
+        f"/projects/{project.id}/comments?target_type=document&target_id={document.id}"
     )
 
     assert response.status_code == 200
@@ -1622,6 +1903,80 @@ def test_update_target_comment_rejects_stale_version(
     assert response.json()["current"]["id"] == comment.id
     assert response.json()["current"]["body"] == "Latest"
     assert response.json()["current"]["version"] == 2
+
+
+def test_update_target_comment_rejects_non_author(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_target_comment: Callable[..., RequirementTargetComment],
+    db: Session,
+) -> None:
+    """投稿者以外のmemberによるコメント更新を403で拒否する。"""
+    author = create_test_user(email="author@example.com")
+    other_user = create_test_user(email="other@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    comment = create_test_requirement_target_comment(
+        document=document,
+        author=author,
+        target_type="document",
+        target_id=document.id,
+        body="Original",
+    )
+    assign_project_role(user=author, project=project, role_key="member")
+    assign_project_role(user=other_user, project=project, role_key="member")
+    authorize_as(client, other_user)
+
+    response = client.patch(
+        f"/projects/{project.id}/comments/{comment.id}",
+        json={"body": "Updated by other", "version": comment.version},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "FORBIDDEN"
+    db.refresh(comment)
+    assert comment.body == "Original"
+
+
+def test_update_target_comment_allows_system_admin_for_non_author(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_target_comment: Callable[..., RequirementTargetComment],
+) -> None:
+    """system_adminは投稿者以外のコメントを更新できる。"""
+    author = create_test_user(
+        email="author@example.com",
+        name="Comment Author",
+    )
+    system_admin = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    comment = create_test_requirement_target_comment(
+        document=document,
+        author=author,
+        target_type="document",
+        target_id=document.id,
+        body="Original",
+    )
+    authorize_as(client, system_admin)
+
+    response = client.patch(
+        f"/projects/{project.id}/comments/{comment.id}",
+        json={"body": "Moderated", "version": comment.version},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["body"] == "Moderated"
+    assert response.json()["author"]["id"] == author.id
+    assert response.json()["author"]["name"] == "Comment Author"
 
 
 def test_resolve_and_reopen_target_comment(
@@ -1704,6 +2059,69 @@ def test_delete_target_comment_soft_deletes(
         .one()
     )
     assert change_log.target_id == comment.id
+
+
+def test_delete_target_comment_rejects_non_author(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_target_comment: Callable[..., RequirementTargetComment],
+    db: Session,
+) -> None:
+    """投稿者以外のmemberによるコメント削除を403で拒否する。"""
+    author = create_test_user(email="author@example.com")
+    other_user = create_test_user(email="other@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    comment = create_test_requirement_target_comment(
+        document=document,
+        author=author,
+        target_type="document",
+        target_id=document.id,
+    )
+    assign_project_role(user=author, project=project, role_key="member")
+    assign_project_role(user=other_user, project=project, role_key="member")
+    authorize_as(client, other_user)
+
+    response = client.delete(f"/projects/{project.id}/comments/{comment.id}")
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "FORBIDDEN"
+    db.refresh(comment)
+    assert comment.deleted_at is None
+
+
+def test_delete_target_comment_allows_system_admin_for_non_author(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement_target_comment: Callable[..., RequirementTargetComment],
+    db: Session,
+) -> None:
+    """system_adminは投稿者以外のコメントを削除できる。"""
+    author = create_test_user(email="author@example.com")
+    system_admin = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    comment = create_test_requirement_target_comment(
+        document=document,
+        author=author,
+        target_type="document",
+        target_id=document.id,
+    )
+    authorize_as(client, system_admin)
+
+    response = client.delete(f"/projects/{project.id}/comments/{comment.id}")
+
+    assert response.status_code == 204
+    db.refresh(comment)
+    assert comment.deleted_at is not None
 
 
 def test_create_requirement_allows_member(
@@ -1970,6 +2388,57 @@ def test_list_requirements_filters_by_document_status_priority_and_owner(
     assert response.json()["items"][0]["requirement_code"] == "REQ-A"
 
 
+def test_list_requirements_sorts_before_pagination(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """要件一覧がページング前にDB側でソートされることを確認する。"""
+    user = create_test_user(email="viewer@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="viewer")
+    db.add_all(
+        [
+            Requirement(
+                document_id=document.id,
+                requirement_code="REQ-002",
+                requirement_type="functional",
+                title="Beta",
+            ),
+            Requirement(
+                document_id=document.id,
+                requirement_code="REQ-003",
+                requirement_type="functional",
+                title="Charlie",
+            ),
+            Requirement(
+                document_id=document.id,
+                requirement_code="REQ-001",
+                requirement_type="functional",
+                title="Alpha",
+            ),
+        ]
+    )
+    db.commit()
+    authorize_as(client, user)
+
+    response = client.get(
+        f"/projects/{project.id}/requirements"
+        f"?document_id={document.id}&page=1&page_size=2&sort=code_asc"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 3
+    assert [item["requirement_code"] for item in response.json()["items"]] == [
+        "REQ-001",
+        "REQ-002",
+    ]
+
+
 def test_update_requirement_creates_revision(
     client: TestClient,
     create_test_user: Callable[..., User],
@@ -2015,6 +2484,8 @@ def test_update_requirement_creates_revision(
     assert revisions[0].changed_by == user.id
     assert revisions[0].change_summary == "タイトル変更"
     assert revisions[0].reason == "表現調整"
+    assert revisions[0].before_value is not None
+    assert revisions[0].after_value is not None
     assert revisions[0].before_value["title"] == "Before"
     assert revisions[0].after_value["title"] == "After"
 
@@ -2204,11 +2675,24 @@ def test_requirement_link_create_list_delete_allows_member(
 
     create_response = client.post(
         f"/projects/{project.id}/requirements/{requirement.id}/links",
-        json={"linked_type": "api", "linked_id": "POST /auth/login"},
+        json={
+            "linked_type": "api",
+            "linked_id": "POST /auth/login",
+            "linked_url": "https://example.com/api/auth-login",
+            "status": "completed",
+        },
     )
     link_id = create_response.json()["id"]
     list_response = client.get(
         f"/projects/{project.id}/requirements/{requirement.id}/links"
+    )
+    update_response = client.patch(
+        f"/projects/{project.id}/requirements/{requirement.id}/links/{link_id}",
+        json={
+            "linked_id": "POST /auth/login updated",
+            "linked_url": "https://example.com/api/auth-login-updated",
+            "status": "verified",
+        },
     )
     delete_response = client.delete(
         f"/projects/{project.id}/requirements/{requirement.id}/links/{link_id}"
@@ -2217,8 +2701,18 @@ def test_requirement_link_create_list_delete_allows_member(
     assert create_response.status_code == 201
     assert create_response.json()["linked_type"] == "api"
     assert create_response.json()["linked_id"] == "POST /auth/login"
+    assert create_response.json()["linked_url"] == "https://example.com/api/auth-login"
+    assert create_response.json()["status"] == "completed"
     assert list_response.status_code == 200
     assert list_response.json()[0]["id"] == link_id
+    assert list_response.json()[0]["status"] == "completed"
+    assert update_response.status_code == 200
+    assert update_response.json()["linked_id"] == "POST /auth/login updated"
+    assert (
+        update_response.json()["linked_url"]
+        == "https://example.com/api/auth-login-updated"
+    )
+    assert update_response.json()["status"] == "verified"
     assert delete_response.status_code == 204
     assert db.get(RequirementLink, link_id) is None
 
@@ -2232,7 +2726,7 @@ def test_requirement_relation_create_list_delete_allows_member(
     db: Session,
 ) -> None:
     """memberが要件関連を作成、取得、削除できることを確認する。"""
-    user = create_test_user(email="member@example.com")
+    user = create_test_user(email="member@example.com", name="Relation Creator")
     project = create_test_project(name="Project")
     document = create_test_requirement_document(project=project)
     assign_project_role(user=user, project=project, role_key="member")
@@ -2277,8 +2771,25 @@ def test_requirement_relation_create_list_delete_allows_member(
     assert create_response.json()["source_requirement_id"] == source_requirement.id
     assert create_response.json()["target_id"] == str(target_requirement.id)
     assert create_response.json()["relation_type"] == "depends_on"
+    assert create_response.json()["target_summary"] == {
+        "id": str(target_requirement.id),
+        "code": "REQ-TARGET",
+        "title": "Target",
+    }
+    assert create_response.json()["created_by_user"] == {
+        "id": user.id,
+        "name": "Relation Creator",
+        "email": "member@example.com",
+        "avatar_url": None,
+    }
     assert list_response.status_code == 200
     assert list_response.json()[0]["id"] == relation_id
+    assert list_response.json()[0]["target_summary"] == {
+        "id": str(target_requirement.id),
+        "code": "REQ-TARGET",
+        "title": "Target",
+    }
+    assert list_response.json()[0]["created_by_user"]["name"] == "Relation Creator"
     assert delete_response.status_code == 204
     assert db.get(RequirementRelation, relation_id) is None
 
@@ -2340,6 +2851,91 @@ def test_requirement_comment_create_list_delete_allows_member(
     assert list_response.json()[0]["id"] == comment_id
     assert list_response.json()[0]["user"]["name"] == "Requirement Commenter"
     assert delete_response.status_code == 204
+    assert db.get(RequirementComment, comment_id) is None
+
+
+def test_requirement_comment_delete_rejects_non_author(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """投稿者以外のmemberによる要件コメント削除を403で拒否する。"""
+    author = create_test_user(email="author@example.com")
+    other_user = create_test_user(email="other@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    requirement = Requirement(
+        document_id=document.id,
+        requirement_code="REQ-001",
+        requirement_type="functional",
+        title="Login",
+    )
+    db.add(requirement)
+    db.flush()
+    comment = RequirementComment(
+        requirement_id=requirement.id,
+        user_id=author.id,
+        comment="Author comment",
+    )
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    assign_project_role(user=author, project=project, role_key="member")
+    assign_project_role(user=other_user, project=project, role_key="member")
+    authorize_as(client, other_user)
+
+    response = client.delete(
+        f"/projects/{project.id}/requirements/{requirement.id}/comments/{comment.id}"
+    )
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "FORBIDDEN"
+    assert db.get(RequirementComment, comment.id) is not None
+
+
+def test_requirement_comment_delete_allows_system_admin_for_non_author(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """system_adminは投稿者以外の要件コメントを削除できる。"""
+    author = create_test_user(email="author@example.com")
+    system_admin = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    requirement = Requirement(
+        document_id=document.id,
+        requirement_code="REQ-001",
+        requirement_type="functional",
+        title="Login",
+    )
+    db.add(requirement)
+    db.flush()
+    comment = RequirementComment(
+        requirement_id=requirement.id,
+        user_id=author.id,
+        comment="Author comment",
+    )
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    comment_id = comment.id
+    authorize_as(client, system_admin)
+
+    response = client.delete(
+        f"/projects/{project.id}/requirements/{requirement.id}/comments/{comment_id}"
+    )
+
+    assert response.status_code == 204
+    db.expire_all()
     assert db.get(RequirementComment, comment_id) is None
 
 
@@ -2465,6 +3061,8 @@ def test_read_requirement_summary_returns_related_resources_with_latest_limits(
             requirement_id=requirement.id,
             linked_type="api",
             linked_id="POST /auth/login",
+            linked_url="https://example.com/api/auth-login",
+            status="verified",
         )
     )
     db.add(
@@ -2504,6 +3102,10 @@ def test_read_requirement_summary_returns_related_resources_with_latest_limits(
         "screen_name": "ログイン画面"
     }
     assert response.json()["links"][0]["linked_id"] == "POST /auth/login"
+    assert response.json()["links"][0]["linked_url"] == (
+        "https://example.com/api/auth-login"
+    )
+    assert response.json()["links"][0]["status"] == "verified"
     assert response.json()["reviews"][0]["reviewer_id"] == reviewer.id
     assert len(response.json()["comments"]) == 20
     assert response.json()["comments"][0]["comment"] == "comment-1"

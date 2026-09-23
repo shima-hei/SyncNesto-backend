@@ -41,6 +41,7 @@ class UserRepository:
             hashed_password=hashed_password,
             department=user_in.department,
             position=user_in.position,
+            user_type=user_in.user_type.value,
             avatar_key=settings.default_avatar_key,
             is_active=user_in.is_active,
             created_by=actor_id,
@@ -188,6 +189,8 @@ class UserRepository:
             user.department = user_in.department
         if "position" in user_in.model_fields_set:
             user.position = user_in.position
+        if user_in.user_type is not None:
+            user.user_type = user_in.user_type.value
         if user_in.is_active is not None:
             user.is_active = user_in.is_active
         if actor_id is not None:

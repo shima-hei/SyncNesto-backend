@@ -8,6 +8,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field
 
+from app.models.user import UserType
+
 
 class UserBase(BaseModel):
     """
@@ -27,6 +29,7 @@ class UserCreate(UserBase):
     password: str
     department: str | None = None
     position: str | None = None
+    user_type: UserType = UserType.INTERNAL
     is_active: bool = True
     system_role_keys: list[str] = Field(default_factory=list)
 
@@ -40,6 +43,7 @@ class UserUpdate(BaseModel):
     password: str | None = None
     department: str | None = None
     position: str | None = None
+    user_type: UserType | None = None
     is_active: bool | None = None
     system_role_keys: list[str] | None = None
 
@@ -68,6 +72,7 @@ class UserSummary(UserBase):
 
     id: int
     avatar_url: str | None = None
+    user_type: UserType
     is_active: bool
 
 
@@ -85,6 +90,7 @@ class UserRead(UserBase):
     department: str | None = None
     position: str | None = None
     avatar_url: str | None = None
+    user_type: UserType
     is_active: bool
     last_login_at: datetime | None = None
     created_by: int | None = None
@@ -101,6 +107,7 @@ class UserListItem(UserBase):
     department: str | None = None
     position: str | None = None
     avatar_url: str | None = None
+    user_type: UserType
     is_active: bool
     last_login_at: datetime | None = None
     system_roles: list[RoleRead] = Field(default_factory=list)

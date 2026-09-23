@@ -2,7 +2,11 @@
 
 from sqlalchemy.orm import Session
 
-from app.models.requirement import RequirementDocument
+from app.models.requirement import (
+    RequirementComment,
+    RequirementDocument,
+    RequirementTargetComment,
+)
 from app.models.user import User
 from app.presenters.requirement import collect_requirement_document_user_ids
 from app.services.requirement import (
@@ -46,5 +50,41 @@ def get_requirement_document_users_by_id(
         ユーザーIDをキーにしたユーザー辞書。
     """
     user_ids = collect_requirement_document_user_ids(documents)
+    users = user_service.list_users_by_ids(db, user_ids)
+    return {user.id: user for user in users}
+
+
+def get_requirement_comment_users_by_id(
+    db: Session,
+    comments: list[RequirementComment],
+) -> dict[int, User]:
+    """要件コメントレスポンスに必要な投稿者ユーザーを取得する。
+
+    Args:
+        db: DBセッション。
+        comments: 投稿者ユーザーを解決する要件コメント一覧。
+
+    Returns:
+        ユーザーIDをキーにしたユーザー辞書。
+    """
+    user_ids = [comment.user_id for comment in comments]
+    users = user_service.list_users_by_ids(db, user_ids)
+    return {user.id: user for user in users}
+
+
+def get_requirement_target_comment_users_by_id(
+    db: Session,
+    comments: list[RequirementTargetComment],
+) -> dict[int, User]:
+    """要件定義対象コメントレスポンスに必要な投稿者ユーザーを取得する。
+
+    Args:
+        db: DBセッション。
+        comments: 投稿者ユーザーを解決する要件定義対象コメント一覧。
+
+    Returns:
+        ユーザーIDをキーにしたユーザー辞書。
+    """
+    user_ids = [comment.author_id for comment in comments]
     users = user_service.list_users_by_ids(db, user_ids)
     return {user.id: user for user in users}

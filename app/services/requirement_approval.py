@@ -5,13 +5,11 @@ from sqlalchemy.orm import Session
 from app.core import error_messages
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.models.requirement import RequirementApproval, RequirementDocument
-from app.repositories.requirement import (
-    RequirementApprovalRepository,
-    RequirementDocumentRepository,
-    RequirementOpenIssueRepository,
-    RequirementRepository,
-    RequirementSectionRepository,
-)
+from app.repositories.requirement_approval import RequirementApprovalRepository
+from app.repositories.requirement_document import RequirementDocumentRepository
+from app.repositories.requirement_item import RequirementRepository
+from app.repositories.requirement_open_issue import RequirementOpenIssueRepository
+from app.repositories.requirement_section import RequirementSectionRepository
 from app.schemas.requirement import (
     RequirementApprovalDecisionCreate,
     RequirementApprovalRequestCreate,

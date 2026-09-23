@@ -1,11 +1,9 @@
 """要件定義対象コメントサービスを定義するモジュール。"""
 
-from dataclasses import dataclass
-
 from sqlalchemy.orm import Session
 
 from app.core import error_messages
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import ForbiddenError, NotFoundError
 from app.models.requirement import (
     Requirement,
     RequirementDocument,
@@ -13,46 +11,46 @@ from app.models.requirement import (
     RequirementSection,
     RequirementTargetComment,
 )
-from app.repositories.requirement import (
-    RequirementDocumentRepository,
-    RequirementOpenIssueRepository,
-    RequirementRepository,
-    RequirementSectionRepository,
+from app.repositories.requirement_document import RequirementDocumentRepository
+from app.repositories.requirement_item import RequirementRepository
+from app.repositories.requirement_open_issue import RequirementOpenIssueRepository
+from app.repositories.requirement_section import RequirementSectionRepository
+from app.repositories.requirement_target_comment import (
     RequirementTargetCommentRepository,
 )
 from app.repositories.user import UserRepository
-from app.schemas.change_log import ChangeLogUserRead
 from app.schemas.requirement import (
     RequirementTargetCommentCreate,
     RequirementTargetCommentRead,
     RequirementTargetCommentStateUpdate,
     RequirementTargetCommentUpdate,
 )
-from app.services.conflict import raise_if_version_conflict
+from app.services.conflict import build_conflict_current, raise_if_version_conflict
 from app.services.requirement_change_log import (
     RequirementChangeLogAction,
     RequirementChangeLogService,
     RequirementChangeLogTargetType,
 )
-from app.services.response_user import build_response_users_by_id
+from app.services.requirement_comment_anchor import (
+    CommentTarget,
+    RequirementCommentAnchorValidator,
+    RequirementCommentTargetType,
+)
 
-
-class RequirementCommentTargetType:
-    """要件定義対象コメントの対象種別定数。"""
-
-    DOCUMENT = "document"
-    OPEN_ISSUE = "open_issue"
-    REQUIREMENT_ITEM = "requirement_item"
-    SECTION = "section"
-
-
-@dataclass(frozen=True)
-class CommentTarget:
-    """コメント対象の解決結果。"""
-
-    document_id: int
-    target_type: str
-    target_id: int
+REQUIREMENT_TARGET_COMMENT_CONFLICT_CURRENT_FIELDS = (
+    "id",
+    "document_id",
+    "target_type",
+    "target_id",
+    "target_anchor",
+    "parent_comment_id",
+    "body",
+    "author_id",
+    "is_resolved",
+    "version",
+    "created_at",
+    "updated_at",
+)
 
 
 class RequirementTargetCommentService:
@@ -65,6 +63,7 @@ class RequirementTargetCommentService:
         section_repository: RequirementSectionRepository | None = None,
         requirement_repository: RequirementRepository | None = None,
         open_issue_repository: RequirementOpenIssueRepository | None = None,
+        anchor_validator: RequirementCommentAnchorValidator | None = None,
         change_log_service: RequirementChangeLogService | None = None,
         user_repository: UserRepository | None = None,
     ) -> None:
@@ -76,6 +75,7 @@ class RequirementTargetCommentService:
             section_repository: 要件定義セクションRepository。
             requirement_repository: 要件Repository。
             open_issue_repository: 未決事項Repository。
+            anchor_validator: 要件詳細コメントのアンカー検証サービス。
             change_log_service: 要件定義変更履歴サービス。
             user_repository: ユーザーRepository。
         """
@@ -88,6 +88,7 @@ class RequirementTargetCommentService:
         self.open_issue_repository = (
             open_issue_repository or RequirementOpenIssueRepository()
         )
+        self.anchor_validator = anchor_validator or RequirementCommentAnchorValidator()
         self.change_log_service = change_log_service or RequirementChangeLogService()
         self.user_repository = user_repository or UserRepository()
 
@@ -115,6 +116,12 @@ class RequirementTargetCommentService:
             project_id=project_id,
             target_type=comment_in.target_type,
             target_id=comment_in.target_id,
+        )
+        self.anchor_validator.validate(
+            db,
+            project_id=project_id,
+            target=target,
+            target_anchor=comment_in.target_anchor,
         )
         if comment_in.parent_comment_id is not None:
             self._get_parent_comment_for_target(
@@ -159,47 +166,6 @@ class RequirementTargetCommentService:
             target_id=target.target_id,
         )
 
-    def list_comment_reads(
-        self,
-        db: Session,
-        *,
-        project_id: int,
-        target_type: str,
-        target_id: int,
-    ) -> list[RequirementTargetCommentRead]:
-        """対象に紐づくコメント一覧レスポンスを取得する。"""
-        comments = self.list_comments(
-            db,
-            project_id=project_id,
-            target_type=target_type,
-            target_id=target_id,
-        )
-        return self.build_comment_reads(db, comments)
-
-    def build_comment_read(
-        self,
-        db: Session,
-        comment: RequirementTargetComment,
-    ) -> RequirementTargetCommentRead:
-        """要件定義対象コメントレスポンスを作成する。"""
-        return self.build_comment_reads(db, [comment])[0]
-
-    def build_comment_reads(
-        self,
-        db: Session,
-        comments: list[RequirementTargetComment],
-    ) -> list[RequirementTargetCommentRead]:
-        """要件定義対象コメントモデル一覧からレスポンス一覧を作成する。"""
-        users_by_id = build_response_users_by_id(
-            db,
-            self.user_repository,
-            [comment.author_id for comment in comments],
-        )
-        return [
-            self._build_target_comment_read(comment, users_by_id=users_by_id)
-            for comment in comments
-        ]
-
     def update_comment(
         self,
         db: Session,
@@ -208,13 +174,23 @@ class RequirementTargetCommentService:
         comment_id: int,
         comment_in: RequirementTargetCommentUpdate,
         actor_id: int,
+        can_moderate: bool = False,
     ) -> RequirementTargetComment:
         """要件定義対象コメントを更新する。"""
         comment = self.get_comment(db, project_id=project_id, comment_id=comment_id)
+        self._ensure_comment_owner_or_moderator(
+            comment,
+            actor_id=actor_id,
+            can_moderate=can_moderate,
+        )
         raise_if_version_conflict(
             current_version=comment.version,
             requested_version=comment_in.version,
-            current=RequirementTargetCommentRead.model_validate(comment).model_dump(),
+            current=build_conflict_current(
+                comment,
+                REQUIREMENT_TARGET_COMMENT_CONFLICT_CURRENT_FIELDS,
+                extra={"author": None},
+            ),
         )
         before_value = self._build_comment_snapshot(comment)
         updated_comment = self.repository.update(
@@ -280,9 +256,15 @@ class RequirementTargetCommentService:
         project_id: int,
         comment_id: int,
         actor_id: int,
+        can_moderate: bool = False,
     ) -> None:
         """要件定義対象コメントを論理削除する。"""
         comment = self.get_comment(db, project_id=project_id, comment_id=comment_id)
+        self._ensure_comment_owner_or_moderator(
+            comment,
+            actor_id=actor_id,
+            can_moderate=can_moderate,
+        )
         before_value = self._build_comment_snapshot(comment)
         deleted_comment = self.repository.soft_delete(db, comment=comment)
         self._record_change_log(
@@ -312,6 +294,19 @@ class RequirementTargetCommentService:
         )
         return comment
 
+    def _ensure_comment_owner_or_moderator(
+        self,
+        comment: RequirementTargetComment,
+        *,
+        actor_id: int,
+        can_moderate: bool,
+    ) -> None:
+        """投稿者本人またはモデレーター操作であることを確認する。"""
+        if can_moderate or comment.author_id == actor_id:
+            return
+
+        raise ForbiddenError()
+
     def _set_resolved(
         self,
         db: Session,
@@ -328,7 +323,11 @@ class RequirementTargetCommentService:
         raise_if_version_conflict(
             current_version=comment.version,
             requested_version=state_in.version,
-            current=RequirementTargetCommentRead.model_validate(comment).model_dump(),
+            current=build_conflict_current(
+                comment,
+                REQUIREMENT_TARGET_COMMENT_CONFLICT_CURRENT_FIELDS,
+                extra={"author": None},
+            ),
         )
         before_value = self._build_comment_snapshot(comment)
         updated_comment = self.repository.set_resolved(
@@ -503,15 +502,4 @@ class RequirementTargetCommentService:
         return RequirementTargetCommentRead.model_validate(comment).model_dump(
             mode="json",
             exclude={"author"},
-        )
-
-    def _build_target_comment_read(
-        self,
-        comment: RequirementTargetComment,
-        *,
-        users_by_id: dict[int, ChangeLogUserRead],
-    ) -> RequirementTargetCommentRead:
-        """要件定義対象コメントレスポンスを作成する。"""
-        return RequirementTargetCommentRead.model_validate(comment).model_copy(
-            update={"author": users_by_id.get(comment.author_id)},
         )

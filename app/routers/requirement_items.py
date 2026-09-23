@@ -5,16 +5,19 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import require_project_permission
 from app.db.session import get_db
-from app.models.requirement import Requirement
 from app.models.user import User
+from app.presenters.requirement import (
+    build_requirement_comment_responses,
+    build_requirement_list_response,
+    build_requirement_response,
+    build_requirement_revision_responses,
+    build_requirement_summary_response,
+)
 from app.routers import requirements_shared as shared
 from app.schemas.requirement import (
     RequirementCreate,
-    RequirementDetailRead,
-    RequirementLinkRead,
     RequirementListResponse,
     RequirementRead,
-    RequirementReviewRead,
     RequirementRevisionRead,
     RequirementSummaryRead,
     RequirementUpdate,
@@ -33,7 +36,7 @@ def create_requirement(
     requirement_in: RequirementCreate,
     current_user: User = Depends(require_project_permission("requirement:create")),
     db: Session = Depends(get_db),
-) -> Requirement:
+) -> RequirementRead:
     """要件を作成する。
 
     Args:
@@ -45,12 +48,13 @@ def create_requirement(
     Returns:
         作成された要件。
     """
-    return shared.requirement_service.create_requirement(
+    requirement = shared.requirement_service.create_requirement(
         db,
         project_id=project_id,
         requirement_in=requirement_in,
         actor_id=current_user.id,
     )
+    return build_requirement_response(requirement)
 
 
 @router.get(
@@ -68,6 +72,9 @@ def list_requirements(
     requirement_type: str | None = Query(default=None),
     priority: str | None = Query(default=None),
     owner_id: int | None = Query(default=None),
+    sort: str | None = Query(default=None),
+    sort_by: str | None = Query(default=None),
+    sort_order: str | None = Query(default=None),
     _: User = Depends(require_project_permission("requirement:read")),
     db: Session = Depends(get_db),
 ) -> RequirementListResponse:
@@ -84,6 +91,9 @@ def list_requirements(
         requirement_type: 絞り込み対象の要件種別。
         priority: 絞り込み対象の優先度。
         owner_id: 絞り込み対象のオーナーID。
+        sort: ソート指定。
+        sort_by: ソート対象フィールド。
+        sort_order: ソート順。
         _: 認可済みユーザー。
         db: DBセッション。
 
@@ -102,11 +112,12 @@ def list_requirements(
         requirement_type=requirement_type,
         priority=priority,
         owner_id=owner_id,
+        sort=sort,
+        sort_by=sort_by,
+        sort_order=sort_order,
     )
-    return RequirementListResponse(
-        items=[
-            RequirementRead.model_validate(requirement) for requirement in requirements
-        ],
+    return build_requirement_list_response(
+        requirements,
         total=total,
         page=page,
         page_size=page_size,
@@ -122,7 +133,7 @@ def read_requirement(
     requirement_id: int,
     _: User = Depends(require_project_permission("requirement:read")),
     db: Session = Depends(get_db),
-) -> Requirement:
+) -> RequirementRead:
     """要件を取得する。
 
     Args:
@@ -134,11 +145,12 @@ def read_requirement(
     Returns:
         取得した要件。
     """
-    return shared.requirement_service.get_requirement(
+    requirement = shared.requirement_service.get_requirement(
         db,
         project_id=project_id,
         requirement_id=requirement_id,
     )
+    return build_requirement_response(requirement)
 
 
 @router.get(
@@ -167,25 +179,19 @@ def read_requirement_summary(
         project_id=project_id,
         requirement_id=requirement_id,
     )
-    return RequirementSummaryRead(
-        requirement=RequirementRead.model_validate(summary["requirement"]),
-        details=[
-            RequirementDetailRead.model_validate(detail)
-            for detail in summary["details"]
-        ],
-        links=[RequirementLinkRead.model_validate(link) for link in summary["links"]],
-        comments=shared.requirement_child_service.build_comment_reads(
-            db,
+    return build_requirement_summary_response(
+        requirement=summary["requirement"],
+        details=summary["details"],
+        links=summary["links"],
+        comments=build_requirement_comment_responses(
             summary["comments"],
+            users_by_id=shared.get_requirement_comment_users_by_id(
+                db,
+                summary["comments"],
+            ),
         ),
-        reviews=[
-            RequirementReviewRead.model_validate(review)
-            for review in summary["reviews"]
-        ],
-        revisions=[
-            RequirementRevisionRead.model_validate(revision)
-            for revision in summary["revisions"]
-        ],
+        reviews=summary["reviews"],
+        revisions=summary["revisions"],
     )
 
 
@@ -199,7 +205,7 @@ def update_requirement(
     requirement_in: RequirementUpdate,
     current_user: User = Depends(require_project_permission("requirement:update")),
     db: Session = Depends(get_db),
-) -> Requirement:
+) -> RequirementRead:
     """要件を更新する。
 
     Args:
@@ -212,13 +218,14 @@ def update_requirement(
     Returns:
         更新された要件。
     """
-    return shared.requirement_service.update_requirement(
+    requirement = shared.requirement_service.update_requirement(
         db,
         project_id=project_id,
         requirement_id=requirement_id,
         requirement_in=requirement_in,
         actor_id=current_user.id,
     )
+    return build_requirement_response(requirement)
 
 
 @router.delete(
@@ -273,4 +280,4 @@ def list_requirement_revisions(
         project_id=project_id,
         requirement_id=requirement_id,
     )
-    return [RequirementRevisionRead.model_validate(revision) for revision in revisions]
+    return build_requirement_revision_responses(revisions)

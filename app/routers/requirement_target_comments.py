@@ -6,6 +6,10 @@ from sqlalchemy.orm import Session
 from app.core.auth import require_project_permission
 from app.db.session import get_db
 from app.models.user import User
+from app.presenters.requirement import (
+    build_requirement_target_comment_response,
+    build_requirement_target_comment_responses,
+)
 from app.routers import requirements_shared as shared
 from app.schemas.requirement import (
     RequirementTargetCommentCreate,
@@ -13,8 +17,19 @@ from app.schemas.requirement import (
     RequirementTargetCommentStateUpdate,
     RequirementTargetCommentUpdate,
 )
+from app.services.authorization import AuthorizationService
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["requirements"])
+authorization_service = AuthorizationService()
+
+
+def _get_target_comment_author(
+    db: Session,
+    author_id: int,
+) -> User | None:
+    """コメント投稿者を取得する。"""
+    users = shared.user_service.list_users_by_ids(db, [author_id])
+    return users[0] if users else None
 
 
 @router.post(
@@ -45,7 +60,10 @@ def create_target_comment(
         comment_in=comment_in,
         author_id=current_user.id,
     )
-    return shared.target_comment_service.build_comment_read(db, comment)
+    return build_requirement_target_comment_response(
+        comment,
+        user=_get_target_comment_author(db, comment.author_id),
+    )
 
 
 @router.get(
@@ -71,11 +89,15 @@ def list_target_comments(
     Returns:
         要件定義対象コメント一覧。
     """
-    return shared.target_comment_service.list_comment_reads(
+    comments = shared.target_comment_service.list_comments(
         db,
         project_id=project_id,
         target_type=target_type,
         target_id=target_id,
+    )
+    return build_requirement_target_comment_responses(
+        comments,
+        users_by_id=shared.get_requirement_target_comment_users_by_id(db, comments),
     )
 
 
@@ -108,8 +130,15 @@ def update_target_comment(
         comment_id=comment_id,
         comment_in=comment_in,
         actor_id=current_user.id,
+        can_moderate=authorization_service.can_moderate_requirement_comments(
+            db,
+            user=current_user,
+        ),
     )
-    return shared.target_comment_service.build_comment_read(db, comment)
+    return build_requirement_target_comment_response(
+        comment,
+        user=_get_target_comment_author(db, comment.author_id),
+    )
 
 
 @router.delete(
@@ -135,6 +164,10 @@ def delete_target_comment(
         project_id=project_id,
         comment_id=comment_id,
         actor_id=current_user.id,
+        can_moderate=authorization_service.can_moderate_requirement_comments(
+            db,
+            user=current_user,
+        ),
     )
 
 
@@ -168,7 +201,10 @@ def resolve_target_comment(
         state_in=state_in,
         actor_id=current_user.id,
     )
-    return shared.target_comment_service.build_comment_read(db, comment)
+    return build_requirement_target_comment_response(
+        comment,
+        user=_get_target_comment_author(db, comment.author_id),
+    )
 
 
 @router.post(
@@ -201,4 +237,7 @@ def reopen_target_comment(
         state_in=state_in,
         actor_id=current_user.id,
     )
-    return shared.target_comment_service.build_comment_read(db, comment)
+    return build_requirement_target_comment_response(
+        comment,
+        user=_get_target_comment_author(db, comment.author_id),
+    )

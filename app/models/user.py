@@ -3,6 +3,7 @@ DB model : UserテーブルのSQLAlchemyモデルを定義するモジュール
 """
 
 from datetime import datetime
+from enum import StrEnum
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -10,6 +11,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.config import settings
 from app.db.base import Base
 from app.models.comments import db_comment
+
+
+class UserType(StrEnum):
+    """ユーザー区分を表すEnum。"""
+
+    INTERNAL = "internal"
+    GUEST = "guest"
 
 
 class User(Base):
@@ -51,6 +59,16 @@ class User(Base):
         String(255),
         nullable=True,
         comment=db_comment("役職", "ユーザーの役職"),
+    )
+    user_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=UserType.INTERNAL.value,
+        server_default=UserType.INTERNAL.value,
+        comment=db_comment(
+            "ユーザー区分",
+            "社内ユーザーまたはゲストユーザーなどの横断的なユーザー区分",
+        ),
     )
     avatar_key: Mapped[str | None] = mapped_column(
         String(1000),

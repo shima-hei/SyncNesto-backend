@@ -51,6 +51,7 @@ def test_create_user_returns_created_user(
         "version": 1,
         "department": None,
         "position": None,
+        "user_type": "internal",
         "avatar_url": "https://example.com/default-avatar.png?signature=test",
         "is_active": True,
         "last_login_at": None,
@@ -128,6 +129,7 @@ def test_create_user_stores_profile_fields_and_audit_users(
     user = db.query(User).filter(User.email == "profile@example.com").one()
     assert user.department == "QA"
     assert user.position == "Tester"
+    assert user.user_type == "internal"
     assert user.avatar_key == settings.default_avatar_key
     assert user.is_active is False
     assert user.created_by == admin_user.id
@@ -159,6 +161,63 @@ def test_create_user_assigns_system_roles(
     assert response.json()["system_roles"] == [
         {"key": "system_admin", "name": "システム管理者"},
     ]
+
+
+def test_create_user_accepts_guest_user_type(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """作成APIがguestユーザー区分を保存して返すことを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    authorize_as(client, admin_user)
+
+    response = client.post(
+        "/users",
+        json={
+            "email": "guest@example.com",
+            "name": "Guest User",
+            "password": "password123",
+            "user_type": "guest",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["user_type"] == "guest"
+    user = db.query(User).filter(User.email == "guest@example.com").one()
+    assert user.user_type == "guest"
+
+
+def test_create_user_rejects_guest_system_admin(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+) -> None:
+    """guestへのsystem_admin付与を拒否する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    authorize_as(client, admin_user)
+
+    response = client.post(
+        "/users",
+        json={
+            "email": "guest-admin@example.com",
+            "name": "Guest Admin",
+            "password": "password123",
+            "user_type": "guest",
+            "system_role_keys": ["system_admin"],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "message": "Guest users cannot have system_admin role",
+        "code": "BAD_REQUEST",
+    }
 
 
 def test_create_user_records_audit_log(
@@ -420,6 +479,7 @@ def test_list_users_uses_lightweight_items(
     item = response.json()["items"][0]
     assert "version" not in item
     assert "last_login_at" in item
+    assert "user_type" in item
     assert "system_roles" in item
     assert "created_by" not in item
     assert "updated_by" not in item
@@ -510,6 +570,7 @@ def test_read_user_returns_user_for_system_admin(
         "version": 1,
         "department": None,
         "position": None,
+        "user_type": "internal",
         "avatar_url": "https://example.com/default-avatar.png?signature=test",
         "is_active": True,
         "last_login_at": None,
@@ -574,6 +635,7 @@ def test_update_user_updates_user_for_system_admin(
         "version": target_user.version + 1,
         "department": "QA",
         "position": "Lead",
+        "user_type": "internal",
         "avatar_url": "https://example.com/default-avatar.png?signature=test",
         "is_active": False,
         "last_login_at": None,
@@ -634,6 +696,66 @@ def test_update_user_replaces_system_roles(
     assert response.json()["system_roles"] == [
         {"key": "system_admin", "name": "システム管理者"},
     ]
+
+
+def test_update_user_updates_user_type(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """更新APIがユーザー区分を変更できることを確認する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    target_user = create_test_user(email="target@example.com")
+    authorize_as(client, admin_user)
+
+    response = client.patch(
+        f"/users/{target_user.id}",
+        json={
+            "version": target_user.version,
+            "user_type": "guest",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["user_type"] == "guest"
+    db.refresh(target_user)
+    assert target_user.user_type == "guest"
+
+
+def test_update_user_rejects_guest_system_admin(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+) -> None:
+    """system_adminを持つユーザーをguestへ変更する操作を拒否する。"""
+    admin_user = create_test_user(
+        email="admin@example.com",
+        system_role="system_admin",
+    )
+    target_user = create_test_user(
+        email="target@example.com",
+        system_role="system_admin",
+    )
+    authorize_as(client, admin_user)
+
+    response = client.patch(
+        f"/users/{target_user.id}",
+        json={
+            "version": target_user.version,
+            "user_type": "guest",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "message": "Guest users cannot have system_admin role",
+        "code": "BAD_REQUEST",
+    }
+    db.refresh(target_user)
+    assert target_user.user_type == "internal"
 
 
 def test_update_user_replaces_system_roles_revokes_target_sessions(
@@ -783,6 +905,7 @@ def test_update_user_rejects_stale_version_with_current_user(
             "version": 2,
             "department": None,
             "position": None,
+            "user_type": "internal",
             "avatar_url": None,
             "is_active": True,
             "last_login_at": None,

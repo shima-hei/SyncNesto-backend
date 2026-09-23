@@ -6,6 +6,20 @@ from sqlalchemy.orm import Session
 from app.core.auth import require_project_permission
 from app.db.session import get_db
 from app.models.user import User
+from app.presenters.requirement import (
+    build_change_log_user_response,
+    build_requirement_comment_response,
+    build_requirement_comment_responses,
+    build_requirement_detail_response,
+    build_requirement_detail_responses,
+    build_requirement_link_response,
+    build_requirement_link_responses,
+    build_requirement_relation_response,
+    build_requirement_relation_responses,
+    build_requirement_review_response,
+    build_requirement_review_responses,
+)
+from app.repositories.user import UserRepository
 from app.routers import requirements_shared as shared
 from app.schemas.requirement import (
     RequirementCommentCreate,
@@ -15,14 +29,22 @@ from app.schemas.requirement import (
     RequirementDetailUpdate,
     RequirementLinkCreate,
     RequirementLinkRead,
+    RequirementLinkUpdate,
     RequirementRelationCreate,
     RequirementRelationRead,
     RequirementReviewCreate,
     RequirementReviewRead,
     RequirementReviewUpdate,
 )
+from app.services.authorization import AuthorizationService
+from app.services.requirement_relation_target_summary import (
+    RequirementRelationTargetSummaryService,
+)
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["requirements"])
+authorization_service = AuthorizationService()
+user_repository = UserRepository()
+relation_target_summary_service = RequirementRelationTargetSummaryService()
 
 
 @router.post(
@@ -56,7 +78,7 @@ def create_requirement_detail(
         detail_in=detail_in,
         actor_id=current_user.id,
     )
-    return RequirementDetailRead.model_validate(detail)
+    return build_requirement_detail_response(detail)
 
 
 @router.get(
@@ -85,7 +107,7 @@ def list_requirement_details(
         project_id=project_id,
         requirement_id=requirement_id,
     )
-    return [RequirementDetailRead.model_validate(detail) for detail in details]
+    return build_requirement_detail_responses(details)
 
 
 @router.patch(
@@ -121,7 +143,7 @@ def update_requirement_detail(
         detail_in=detail_in,
         actor_id=current_user.id,
     )
-    return RequirementDetailRead.model_validate(detail)
+    return build_requirement_detail_response(detail)
 
 
 @router.delete(
@@ -184,7 +206,7 @@ def create_requirement_link(
         link_in=link_in,
         actor_id=current_user.id,
     )
-    return RequirementLinkRead.model_validate(link)
+    return build_requirement_link_response(link)
 
 
 @router.get(
@@ -213,7 +235,31 @@ def list_requirement_links(
         project_id=project_id,
         requirement_id=requirement_id,
     )
-    return [RequirementLinkRead.model_validate(link) for link in links]
+    return build_requirement_link_responses(links)
+
+
+@router.patch(
+    "/requirements/{requirement_id}/links/{link_id}",
+    response_model=RequirementLinkRead,
+)
+def update_requirement_link(
+    project_id: int,
+    requirement_id: int,
+    link_id: int,
+    link_in: RequirementLinkUpdate,
+    current_user: User = Depends(require_project_permission("requirement:link")),
+    db: Session = Depends(get_db),
+) -> RequirementLinkRead:
+    """要件リンクを更新する。"""
+    link = shared.requirement_child_service.update_link(
+        db,
+        project_id=project_id,
+        requirement_id=requirement_id,
+        link_id=link_id,
+        link_in=link_in,
+        actor_id=current_user.id,
+    )
+    return build_requirement_link_response(link)
 
 
 @router.delete(
@@ -276,7 +322,15 @@ def create_requirement_relation(
         relation_in=relation_in,
         actor_id=current_user.id,
     )
-    return RequirementRelationRead.model_validate(relation)
+    target_summaries_by_key = relation_target_summary_service.resolve(
+        db,
+        [relation],
+    )
+    return build_requirement_relation_response(
+        relation,
+        users_by_id={current_user.id: build_change_log_user_response(current_user)},
+        target_summaries_by_key=target_summaries_by_key,
+    )
 
 
 @router.get(
@@ -305,9 +359,26 @@ def list_requirement_relations(
         project_id=project_id,
         requirement_id=requirement_id,
     )
-    return [
-        RequirementRelationRead.model_validate(relation) for relation in relations
-    ]
+    users = user_repository.list_by_ids(
+        db,
+        list(
+            dict.fromkeys(
+                relation.created_by
+                for relation in relations
+                if relation.created_by is not None
+            )
+        ),
+    )
+    users_by_id = {user.id: build_change_log_user_response(user) for user in users}
+    target_summaries_by_key = relation_target_summary_service.resolve(
+        db,
+        relations,
+    )
+    return build_requirement_relation_responses(
+        relations,
+        users_by_id=users_by_id,
+        target_summaries_by_key=target_summaries_by_key,
+    )
 
 
 @router.delete(
@@ -370,7 +441,7 @@ def create_requirement_comment(
         user_id=current_user.id,
         comment_in=comment_in,
     )
-    return shared.requirement_child_service.build_comment_read(db, comment)
+    return build_requirement_comment_response(comment, user=current_user)
 
 
 @router.get(
@@ -394,10 +465,14 @@ def list_requirement_comments(
     Returns:
         要件コメント一覧。
     """
-    return shared.requirement_child_service.list_comment_reads(
+    comments = shared.requirement_child_service.list_comments(
         db,
         project_id=project_id,
         requirement_id=requirement_id,
+    )
+    return build_requirement_comment_responses(
+        comments,
+        users_by_id=shared.get_requirement_comment_users_by_id(db, comments),
     )
 
 
@@ -409,7 +484,7 @@ def delete_requirement_comment(
     project_id: int,
     requirement_id: int,
     comment_id: int,
-    _: User = Depends(require_project_permission("requirement:comment")),
+    current_user: User = Depends(require_project_permission("requirement:comment")),
     db: Session = Depends(get_db),
 ) -> None:
     """要件コメントを物理削除する。
@@ -418,7 +493,7 @@ def delete_requirement_comment(
         project_id: 削除対象のプロジェクトID。
         requirement_id: 削除対象の要件ID。
         comment_id: 削除対象の要件コメントID。
-        _: 認可済みユーザー。
+        current_user: 認可済みユーザー。
         db: DBセッション。
     """
     shared.requirement_child_service.delete_comment(
@@ -426,6 +501,11 @@ def delete_requirement_comment(
         project_id=project_id,
         requirement_id=requirement_id,
         comment_id=comment_id,
+        actor_id=current_user.id,
+        can_moderate=authorization_service.can_moderate_requirement_comments(
+            db,
+            user=current_user,
+        ),
     )
 
 
@@ -460,7 +540,7 @@ def create_requirement_review(
         review_in=review_in,
         actor_id=current_user.id,
     )
-    return RequirementReviewRead.model_validate(review)
+    return build_requirement_review_response(review)
 
 
 @router.get(
@@ -489,7 +569,7 @@ def list_requirement_reviews(
         project_id=project_id,
         requirement_id=requirement_id,
     )
-    return [RequirementReviewRead.model_validate(review) for review in reviews]
+    return build_requirement_review_responses(reviews)
 
 
 @router.patch(
@@ -525,7 +605,7 @@ def update_requirement_review(
         review_in=review_in,
         actor_id=current_user.id,
     )
-    return RequirementReviewRead.model_validate(review)
+    return build_requirement_review_response(review)
 
 
 @router.delete(

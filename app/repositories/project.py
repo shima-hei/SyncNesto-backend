@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models.project import Project, ProjectMember
@@ -360,6 +360,67 @@ class ProjectMemberRepository:
             )
 
         return query.order_by(User.id).limit(limit).all()
+
+    def list_member_candidates(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        q: str | None = None,
+        limit: int = 20,
+    ) -> list[User]:
+        """プロジェクト未所属の有効ユーザー候補一覧を取得する。
+
+        Args:
+            db: DBセッション。
+            project_id: プロジェクトID。
+            q: 検索キーワード。
+            limit: 最大取得件数。
+
+        Returns:
+            プロジェクトへ追加可能なユーザー一覧。
+        """
+        member_user_ids = select(ProjectMember.user_id).filter(
+            ProjectMember.project_id == project_id,
+            ProjectMember.deleted_at.is_(None),
+        )
+        query = db.query(User).filter(
+            User.deleted_at.is_(None),
+            User.is_active.is_(True),
+            User.id.notin_(member_user_ids),
+        )
+        if q:
+            like_pattern = f"%{q}%"
+            query = query.filter(
+                or_(
+                    User.email.ilike(like_pattern),
+                    User.name.ilike(like_pattern),
+                )
+            )
+
+        return query.order_by(User.id).limit(limit).all()
+
+    def count_project_admins(self, db: Session, *, project_id: int) -> int:
+        """プロジェクト管理者の人数を取得する。
+
+        Args:
+            db: DBセッション。
+            project_id: プロジェクトID。
+
+        Returns:
+            対象プロジェクトのproject_admin人数。
+        """
+        return (
+            db.query(ProjectMember.id)
+            .join(Role, ProjectMember.role_id == Role.id)
+            .filter(
+                ProjectMember.project_id == project_id,
+                ProjectMember.deleted_at.is_(None),
+                Role.key == "project_admin",
+                Role.scope == "project",
+            )
+            .count()
+        )
 
     def get_by_project_user(
         self,

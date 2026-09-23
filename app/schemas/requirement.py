@@ -83,6 +83,7 @@ class RequirementDocumentExportCreate(BaseModel):
     format: str = "markdown"
     include_comments: bool = False
     include_change_logs: bool = False
+    section_ids: list[int] | None = None
 
 
 class RequirementDocumentExportRead(BaseModel):
@@ -368,6 +369,7 @@ class RequirementTargetCommentCreate(BaseModel):
 
     target_type: str
     target_id: int
+    target_anchor: dict | None = None
     parent_comment_id: int | None = None
     body: str
 
@@ -394,6 +396,7 @@ class RequirementTargetCommentRead(BaseModel):
     document_id: int
     target_type: str
     target_id: int
+    target_anchor: dict | None = None
     parent_comment_id: int | None = None
     body: str
     author_id: int
@@ -454,6 +457,17 @@ class RequirementLinkCreate(BaseModel):
 
     linked_type: str
     linked_id: str
+    linked_url: str | None = None
+    status: str = "unknown"
+
+
+class RequirementLinkUpdate(BaseModel):
+    """要件リンク更新リクエストで受け取るschema。"""
+
+    linked_type: str | None = None
+    linked_id: str | None = None
+    linked_url: str | None = None
+    status: str | None = None
 
 
 class RequirementLinkRead(BaseModel):
@@ -463,6 +477,8 @@ class RequirementLinkRead(BaseModel):
     requirement_id: int
     linked_type: str
     linked_id: str
+    linked_url: str | None = None
+    status: str
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -477,6 +493,14 @@ class RequirementRelationCreate(BaseModel):
     description: str | None = None
 
 
+class RequirementRelationTargetSummaryRead(BaseModel):
+    """要件関連の関連先表示に使う軽量schema。"""
+
+    id: str
+    code: str | None = None
+    title: str
+
+
 class RequirementRelationRead(BaseModel):
     """要件関連読み取り時に返すschema。"""
 
@@ -488,6 +512,8 @@ class RequirementRelationRead(BaseModel):
     relation_type: str
     description: str | None = None
     created_by: int | None = None
+    created_by_user: ChangeLogUserRead | None = None
+    target_summary: RequirementRelationTargetSummaryRead | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

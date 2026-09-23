@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import require_system_permission
 from app.db.session import get_db
 from app.models.user import User
-from app.presenters.user import build_user_list_item, build_user_response
+from app.presenters.user import build_user_list_response, build_user_response
 from app.schemas.user import (
     UserCreate,
     UserListResponse,
@@ -81,15 +81,10 @@ def list_users(
         db,
         [user.id for user in users],
     )
-    return UserListResponse(
-        items=[
-            build_user_list_item(
-                user,
-                roles_by_user_id.get(user.id, []),
-                storage_service,
-            )
-            for user in users
-        ],
+    return build_user_list_response(
+        users,
+        roles_by_user_id=roles_by_user_id,
+        storage_service=storage_service,
         total=total,
         page=page,
         page_size=page_size,

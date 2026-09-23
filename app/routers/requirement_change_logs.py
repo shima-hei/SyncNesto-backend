@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import require_project_permission
 from app.db.session import get_db
 from app.models.user import User
+from app.presenters.requirement import build_requirement_change_log_list_response
 from app.routers import requirements_shared as shared
 from app.schemas.requirement import RequirementChangeLogListResponse
 
@@ -64,8 +65,13 @@ def list_requirement_change_logs(
         changed_at_from=changed_at_from,
         changed_at_to=changed_at_to,
     )
-    return RequirementChangeLogListResponse(
-        items=shared.change_log_service.build_change_log_reads(db, change_logs),
+    users_by_id = shared.change_log_service.get_change_log_users_by_id(
+        db,
+        change_logs,
+    )
+    return build_requirement_change_log_list_response(
+        change_logs,
+        users_by_id=users_by_id,
         total=total,
         page=page,
         page_size=page_size,
