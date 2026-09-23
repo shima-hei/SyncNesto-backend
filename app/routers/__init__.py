@@ -9,6 +9,7 @@ from app.routers import (
     projects,
     requirements,
     tasks,
+    test_collaboration,
     test_designs,
     users,
 )
@@ -27,4 +28,5 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(requirements.router)
     app.include_router(tasks.router)
     app.include_router(test_designs.router)
+    app.include_router(test_collaboration.router)
     app.include_router(users.router)
