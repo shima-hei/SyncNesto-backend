@@ -28,14 +28,17 @@ from app.schemas.project import (
     ProjectRead,
     ProjectUpdate,
 )
+from app.schemas.project_overview import ProjectActivityListRead, ProjectOverviewRead
 from app.schemas.user import UserSummaryListResponse
 from app.services.project import ProjectMemberService, ProjectService
+from app.services.project_overview import ProjectOverviewService
 from app.services.storage import StorageService
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 project_service = ProjectService()
 project_member_service = ProjectMemberService()
 storage_service = StorageService()
+overview_service = ProjectOverviewService()
 
 
 @router.post(
@@ -100,6 +103,28 @@ def list_projects(
         page=page,
         page_size=page_size,
     )
+
+
+@router.get("/{project_id}/overview", response_model=ProjectOverviewRead)
+def read_project_overview(
+    project_id: int,
+    current_user: User = Depends(require_project_permission("project:read")),
+    db: Session = Depends(get_db),
+) -> ProjectOverviewRead:
+    """プロジェクトの現在値と優先対応、直近の履歴を返す。"""
+    return overview_service.read(db, project_id, current_user)
+
+
+@router.get("/{project_id}/activities", response_model=ProjectActivityListRead)
+def list_project_activities(
+    project_id: int,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    current_user: User = Depends(require_project_permission("project:read")),
+    db: Session = Depends(get_db),
+) -> ProjectActivityListRead:
+    """プロジェクト横断の変更履歴を日時順に返す。"""
+    return overview_service.activities(db, project_id, current_user, page, page_size)
 
 
 @router.get(
