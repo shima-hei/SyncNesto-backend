@@ -96,7 +96,7 @@ PUTは`name`、`description`、`version`、`items`、`factors`、`levels`、`pat
 
 `expected_selections`は同一組み合わせに複数の期待値を設定可能。同一(pattern_id, expected_value_id)の重複は禁止。ケースsourceは単一期待値では従来の`expected_value`、複数では`expected_values`配列を返す。表示側は両方に対応する。選択順のみの変更でstaleにしない。
 
-ケース状態は`not_run` / `passed` / `failed` / `blocked` / `not_applicable`（対象外）。更新APIは実行結果・備考も受け取るため、一覧で状態だけを変更するときも既存の`actual_result`と`notes`を送信する。ケース更新時に認証ユーザーを`executed_by`、更新時刻を`executed_at`へ自動記録する。既存ケースは両方nullで、対象外も同じ記録方式を使う。各ケース更新は`TestExecution`を新規作成し、その時点の状態、実際の結果、備考、実行者、実行日時を保持する。Evidenceはその実行UUIDに属する独立データであり、source内の設計スナップショットに格納しない。
+ケース状態は`not_run` / `in_progress`（実施中） / `passed` / `failed` / `blocked` / `not_applicable`（対象外）。更新APIは実行結果・備考も受け取るため、一覧で状態だけを変更するときも既存の`actual_result`と`notes`を送信する。ケース更新時に認証ユーザーを`executed_by`、更新時刻を`executed_at`へ自動記録する。既存ケースは両方nullで、対象外も同じ記録方式を使う。各ケース更新は`TestExecution`を新規作成し、その時点の状態、実際の結果、備考、実行者、実行日時を保持する。Evidenceはその実行UUIDに属する独立データであり、source内の設計スナップショットに格納しない。
 
 互換用の生成リクエストは`{"version": 設計書version}`。同じ紐付けから何度生成してもケースは重複しない。無効パターンは対象外。項目内容・選択水準の名前・説明・任意列情報を`source`へ保存する。通常の画面操作では設計保存時に自動同期する。
 
@@ -106,7 +106,7 @@ PUTは`name`、`description`、`version`、`items`、`factors`、`levels`、`pat
 - `stale`: 生成元が削除・無効、または現在の設計内容がスナップショットと異なるか。
 - `source`: 最新の設計保存時点の内容。生成元を削除した場合は最後の内容。
 - `acknowledged_source`: 影響ありで生成元が有効なケースに限り、最後に確認済みとなった設計内容を返す。影響のないケースと、旧値を復元できない既存ケースではnull。通常のケース一覧でスナップショットを重複転送しない。
-- `status`: `not_run` / `passed` / `failed` / `blocked` / `not_applicable`。
+- `status`: `not_run` / `in_progress` / `passed` / `failed` / `blocked` / `not_applicable`。
 - `actual_result`、`notes`: ケースごとの実行記録。
 - `executed_by`、`executed_by_name`、`executed_at`: 最後に結果を保存した認証ユーザーと日時。設計変更確認の`refresh`では更新しない。
 
@@ -124,6 +124,20 @@ PUTは`name`、`description`、`version`、`items`、`factors`、`levels`、`pat
 
 結果保存で作成した実行履歴は`GET /projects/{project_id}/test-designs/{design_id}/cases/{case_id}/executions`で新しい順に取得する。実行ごとの証跡は`/executions/{execution_id}/evidence`で一覧・multipartアップロードし、`/{evidence_id}/download`から短期の署名付きURLを取得、`DELETE /{evidence_id}`で論理削除する。許可形式はPNG、JPEG、WebP、PDF、UTF-8テキスト、JSON、ZIP。1ファイル20MB・1実行20件まで。ファイル本体は非公開S3に保存し、DBは用途が実行証跡であることと所属実行、名前、MIME、容量、保存キー、投稿者、日時を保持する。アップロード・閲覧・削除はケースと実行が要求プロジェクトの設計書に属することを検証する。過去実行の証跡は新しい実行へ引き継がない。
 
+## 不具合連携と進捗集計
+
+不具合は既存Taskの`task_type=bug`で表す。要件定義の未決事項とは別リソース。`test_case_issues`でTestCaseとTaskを多対多で結び、`origin_execution_id`には発見時の実行履歴を任意で保存する。関連を解除してもTaskと実行履歴は削除しない。同一プロジェクトの不具合Taskのみ関連でき、関連ケースが残る間はTaskの種別を変更できない。
+
+- `GET /projects/{project_id}/test-designs/{design_id}/issues`: 設計書内の全関連。`test_case:read`と`task:read`。
+- `GET/POST /projects/{project_id}/test-designs/{design_id}/cases/{case_id}/issues`: ケースの関連一覧と追加。POST本文は`{task_id, origin_execution_id?}`。追加は`test_case:execute`と`task:read`。
+- `DELETE /projects/{project_id}/test-designs/{design_id}/cases/{case_id}/issues/{link_id}`: 関連のみ解除。`test_case:execute`と`task:read`。
+- `GET /projects/{project_id}/tasks/{task_id}/test-cases`: 不具合Taskから関連ケースを逆引き。`task:read`と`test_case:read`。
+- `GET /projects/{project_id}/test-designs/{design_id}/progress?target_feature=...`: 最新状態の集計。`test_case:read`と`task:read`。
+
+集計対象は設計書の有効なケースのみ。`total`は全有効ケース、`progress_numerator`は`passed+failed`、`progress_denominator`は`total-not_applicable`。`ng_numerator`は`failed`、`ng_denominator`は`passed+failed`。分母0の率は画面で「－」と表示する。`issue_count`は対象ケースに関連する重複を除いた有効な不具合Task数、`failed_without_issue`は不具合Taskが一件もないNGケース数。過去のTestExecutionは加算しない。`target_feature`で対象画面・機能単位へ絞り込める。
+
+実行証跡の既存multipart APIはクリップボード画像から生成したFileも受け付ける。エビデンス一覧では`uploaded_by_name`を追加して投稿者を表示する。画像プレビューは既存ダウンロードAPIの短期署名付きURLを利用する。
+
 ## 制限と将来拡張
 
 設計書あたり項目10,000件、因子100件、水準10,000件、パターン10,000件、選択水準100,000件、紐付け20,000件、任意列100列。セル本文は20,000文字。幅60〜1,200px、行高28〜300px。
@@ -134,6 +148,6 @@ PUTは`name`、`description`、`version`、`items`、`factors`、`levels`、`pat
 
 ## 適用・検証
 
-最新Alembic revision: `3c4d5e6f7081`（親: `2b3c4d5e6f70`）。`uv run alembic upgrade head`で適用する。`test_plan:comment` permissionと既存ロールへの付与もmigrationで行う。
+最新Alembic revision: `4d5e6f708192`（親: `3c4d5e6f7081`）。`uv run alembic upgrade head`で適用する。`test_plan:comment` permissionと既存ロールへの付与は親migrationで行う。
 
 `uv run pytest tests/routers/test_test_designs.py`で実DBへのmigration、認可、別設計参照、競合、ケース保持を検証する。OpenAPI変更後はfrontendの`OPENAPI_TARGET=... npm run api:generate`で再生成する。

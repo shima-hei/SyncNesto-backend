@@ -126,6 +126,7 @@ class TestEvidenceRead(BaseModel):
     content_type: str
     byte_size: int
     uploaded_by: int
+    uploaded_by_name: str | None = None
     uploaded_at: datetime
 
 

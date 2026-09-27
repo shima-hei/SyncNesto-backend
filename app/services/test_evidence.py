@@ -95,9 +95,13 @@ class TestEvidenceService:
     ) -> list[TestEvidenceRead]:
         """指定実行の証跡一覧を返す。"""
         self._case_execution(db, project_id, design_id, case_id, execution_id)
+        rows = self.repository.evidence(db, execution_id)
+        names = self.repository.user_names(db, {row.uploaded_by for row in rows})
         return [
-            TestEvidenceRead.model_validate(row)
-            for row in self.repository.evidence(db, execution_id)
+            TestEvidenceRead.model_validate(row).model_copy(
+                update={"uploaded_by_name": names.get(row.uploaded_by)}
+            )
+            for row in rows
         ]
 
     def _validate_file(
@@ -173,7 +177,10 @@ class TestEvidenceService:
             db.rollback()
             self.storage.delete_object(key)
             raise
-        return TestEvidenceRead.model_validate(evidence)
+        names = self.repository.user_names(db, {actor_id})
+        return TestEvidenceRead.model_validate(evidence).model_copy(
+            update={"uploaded_by_name": names.get(actor_id)}
+        )
 
     def get_evidence(
         self,

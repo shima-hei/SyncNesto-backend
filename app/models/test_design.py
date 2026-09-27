@@ -331,6 +331,23 @@ class TestExecution(Base):
     )
 
 
+class TestCaseIssue(Base):
+    """ケースと不具合タスクの多対多関連。起票元の実行も保持する。"""
+
+    __tablename__ = "test_case_issues"
+    __table_args__ = (UniqueConstraint("case_id", "task_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    case_id: Mapped[UUID] = mapped_column(ForeignKey("test_cases.id"), index=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"), index=True)
+    origin_execution_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("test_executions.id"), index=True
+    )
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class TestEvidence(Base):
     """一回のテスト実行に属する非公開ファイルのメタデータ。"""
 
@@ -368,6 +385,7 @@ for _model in (
     TestDesignComment,
     TestDesignCommentChange,
     TestExecution,
+    TestCaseIssue,
     TestEvidence,
 ):
     cast(Table, _model.__table__).comment = db_comment(

@@ -310,7 +310,9 @@ class TestCaseUpdate(BaseModel):
     """ケースごとの結果とメモ。"""
 
     version: int = Field(ge=1)
-    status: Literal["not_run", "passed", "failed", "blocked", "not_applicable"]
+    status: Literal[
+        "not_run", "in_progress", "passed", "failed", "blocked", "not_applicable"
+    ]
     actual_result: CellText = ""
     notes: CellText = ""
 

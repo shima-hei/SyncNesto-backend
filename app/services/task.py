@@ -3,6 +3,7 @@
 from datetime import date
 from typing import Any, TypedDict
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,7 @@ from app.models.task import (
     Task,
     TaskDependency,
 )
+from app.models.test_design import TestCaseIssue
 from app.models.user import User
 from app.repositories.project import ProjectRepository
 from app.repositories.task_change_log import TaskChangeLogRepository
@@ -118,6 +120,7 @@ TASK_PRIORITY_LABELS = {
     "low": "低",
 }
 TASK_TYPE_LABELS = {
+    "bug": "不具合",
     "frontend": "フロントエンド",
     "backend": "バックエンド",
     "database": "データベース",
@@ -423,6 +426,20 @@ class TaskService:
             requested_version=task_in.version,
             current=current,
         )
+        if (
+            task.task_type == "bug"
+            and task_in.task_type is not None
+            and task_in.task_type != "bug"
+            and db.scalar(
+                select(TestCaseIssue.id)
+                .where(TestCaseIssue.task_id == task.id)
+                .limit(1)
+            )
+            is not None
+        ):
+            raise BadRequestError(
+                "関連テストケースがある不具合タスクは種別を変更できません"
+            )
         if "task_code" in task_in.model_fields_set:
             normalized_task_code = self._normalize_task_code(task_in.task_code)
             if normalized_task_code is None:
