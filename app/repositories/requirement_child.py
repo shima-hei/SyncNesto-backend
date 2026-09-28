@@ -2,6 +2,7 @@
 
 from sqlalchemy.orm import Session
 
+from app.models.comment_mention import CommentMention
 from app.models.requirement import (
     RequirementComment,
     RequirementDetail,
@@ -279,9 +280,11 @@ class RequirementCommentRepository:
         requirement_id: int,
         user_id: int,
         comment_in: RequirementCommentCreate,
+        mention_targets: list[CommentMention] | None = None,
     ) -> RequirementComment:
         """要件コメントを作成する。"""
         comment = RequirementComment(
+            mention_targets=mention_targets or [],
             requirement_id=requirement_id,
             user_id=user_id,
             comment=comment_in.comment,

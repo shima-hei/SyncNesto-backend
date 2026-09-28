@@ -15,6 +15,7 @@ from app.schemas.task import (
     TaskCommentStateUpdate,
     TaskCommentUpdate,
 )
+from app.services.comment_mention import CommentMentionService
 from app.services.conflict import build_conflict_current, raise_if_version_conflict
 
 TASK_COMMENT_CONFLICT_CURRENT_FIELDS = (
@@ -69,19 +70,32 @@ class TaskCommentService:
         """タスクコメントを作成する。"""
         task = self._get_task(db, task_id)
         self._validate_parent_comment(db, task_id, comment_in.parent_comment_id)
+        mention_service = CommentMentionService()
+        prepared = mention_service.prepare(
+            db,
+            project_id=task.project_id,
+            permission="task:read",
+            body=comment_in.body,
+            mentions=comment_in.mentions,
+        )
         comment = self.comment_repository.create(
             db,
             task_id=task_id,
             parent_comment_id=comment_in.parent_comment_id,
             body=comment_in.body,
             actor_id=actor_id,
+            mention_targets=mention_service.targets(prepared),
         )
         self._record_comment_change(
             db,
             task=task,
             comment=comment,
             action=TaskCommentAction.CREATED,
-            new_value={"task_id": task_id, "body": comment.body},
+            new_value={
+                "task_id": task_id,
+                "body": comment.body,
+                "mentions": comment.mentions,
+            },
             changed_by=actor_id,
         )
         return comment
@@ -122,6 +136,17 @@ class TaskCommentService:
         task = self._get_task(db, comment.task_id)
         self._raise_if_comment_version_conflict(comment, comment_in.version)
         old_body = comment.body
+        old_mentions = comment.mentions
+        mention_service = CommentMentionService()
+        prepared = mention_service.prepare(
+            db,
+            project_id=task.project_id,
+            permission="task:read",
+            body=comment_in.body,
+            mentions=comment_in.mentions,
+            previous=old_mentions,
+        )
+        mention_service.replace(comment, prepared)
         comment = self.comment_repository.update_body(
             db,
             comment=comment,
@@ -134,8 +159,12 @@ class TaskCommentService:
             comment=comment,
             action=TaskCommentAction.UPDATED,
             field_name="body",
-            old_value={"task_id": task.id, "body": old_body},
-            new_value={"task_id": task.id, "body": comment.body},
+            old_value={"task_id": task.id, "body": old_body, "mentions": old_mentions},
+            new_value={
+                "task_id": task.id,
+                "body": comment.body,
+                "mentions": comment.mentions,
+            },
             changed_by=actor_id,
         )
         return comment
@@ -150,6 +179,7 @@ class TaskCommentService:
         """タスクコメントを論理削除する。"""
         comment = self.get_comment(db, comment_id)
         task = self._get_task(db, comment.task_id)
+        comment.mention_targets = []
         self.comment_repository.soft_delete(
             db,
             comment=comment,
@@ -266,7 +296,7 @@ class TaskCommentService:
             current=build_conflict_current(
                 comment,
                 TASK_COMMENT_CONFLICT_CURRENT_FIELDS,
-                extra={"created_by_user": None},
+                extra={"created_by_user": None, "mentions": comment.mentions},
             ),
         )
 

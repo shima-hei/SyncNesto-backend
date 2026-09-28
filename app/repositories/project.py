@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.project import Project, ProjectMember
 from app.models.rbac import Role
 from app.models.user import User
+from app.repositories.comment_mention import CommentMentionRepository
 from app.schemas.project import ProjectCreate, ProjectUpdate
 
 
@@ -329,6 +330,7 @@ class ProjectMemberRepository:
         project_id: int,
         q: str | None = None,
         limit: int = 20,
+        mention_permission: str | None = None,
     ) -> list[User]:
         """プロジェクトに所属するユーザー一覧を取得する。
 
@@ -350,6 +352,10 @@ class ProjectMemberRepository:
                 User.deleted_at.is_(None),
             )
         )
+        if mention_permission is not None:
+            query = CommentMentionRepository().eligible_users(
+                db, project_id, mention_permission
+            )
         if q:
             like_pattern = f"%{q}%"
             query = query.filter(

@@ -71,3 +71,8 @@ TEST_DESIGN_LINK_IMMUTABLE = (
 )
 TEST_DESIGN_INVALID_ID = "設計内のIDまたは関連が競合しています"
 TEST_DESIGN_SOURCE_INACTIVE = "生成元が削除または無効化されているため更新できません"
+
+COMMENT_MENTION_INVALID = "メンションの位置または表示名が本文と一致しません。"
+COMMENT_MENTION_USER_UNAVAILABLE = (
+    "このコメントでメンションできないユーザーが含まれています。"
+)

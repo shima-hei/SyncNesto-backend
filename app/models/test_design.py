@@ -21,6 +21,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.models.comment_mention import MentionedComment
 from app.models.comments import db_comment
 
 
@@ -270,7 +271,7 @@ class RequirementTestItem(Base):
     )
 
 
-class TestDesignComment(Base):
+class TestDesignComment(MentionedComment, Base):
     """安定IDの設計対象に紐づくスレッドコメント。"""
 
     __tablename__ = "test_design_comments"

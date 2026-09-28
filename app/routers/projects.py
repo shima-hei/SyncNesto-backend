@@ -18,6 +18,7 @@ from app.presenters.project import (
     build_project_member_responses,
     build_project_member_user_list_response,
 )
+from app.schemas.comment_mention import MentionPermission
 from app.schemas.project import (
     CurrentProjectRoleRead,
     ProjectCreate,
@@ -187,6 +188,7 @@ def list_project_member_users(
     project_id: int,
     q: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
+    mention_permission: MentionPermission | None = Query(default=None),
     _: User = Depends(require_project_permission("project:read")),
     db: Session = Depends(get_db),
 ) -> UserSummaryListResponse:
@@ -206,6 +208,7 @@ def list_project_member_users(
         project_id=project_id,
         q=q,
         limit=limit,
+        mention_permission=mention_permission,
     )
     return build_project_member_user_list_response(
         users,

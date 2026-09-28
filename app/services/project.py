@@ -392,6 +392,7 @@ class ProjectMemberService:
         project_id: int,
         q: str | None = None,
         limit: int = 20,
+        mention_permission: str | None = None,
     ) -> list[User]:
         """プロジェクト所属ユーザー一覧を取得する。
 
@@ -410,6 +411,7 @@ class ProjectMemberService:
             project_id=project_id,
             q=q,
             limit=limit,
+            mention_permission=mention_permission,
         )
 
     def list_member_candidates(

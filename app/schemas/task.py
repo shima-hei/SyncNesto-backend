@@ -11,6 +11,7 @@ from app.schemas.change_log import (
     TaskChangeLogFieldName,
     TaskChangeLogTargetTypeCode,
 )
+from app.schemas.comment_mention import CommentMentionOccurrence
 
 
 class TaskBase(BaseModel):
@@ -114,12 +115,20 @@ class TaskTagListResponse(BaseModel):
 class TaskCommentCreate(BaseModel):
     """タスクコメント作成リクエストで受け取るschema。"""
 
+    mentions: list[CommentMentionOccurrence] = Field(
+        default_factory=list, max_length=100
+    )
+
     parent_comment_id: int | None = None
     body: str
 
 
 class TaskCommentUpdate(BaseModel):
     """タスクコメント更新リクエストで受け取るschema。"""
+
+    mentions: list[CommentMentionOccurrence] = Field(
+        default_factory=list, max_length=100
+    )
 
     version: int
     body: str
@@ -133,6 +142,10 @@ class TaskCommentStateUpdate(BaseModel):
 
 class TaskCommentRead(BaseModel):
     """タスクコメント読み取り時に返すschema。"""
+
+    mentions: list[CommentMentionOccurrence] = Field(
+        default_factory=list, max_length=100
+    )
 
     id: int
     task_id: int

@@ -10,6 +10,7 @@ from app.models.requirement import (
 from app.schemas.requirement import (
     RequirementCommentCreate,
 )
+from app.services.comment_mention import CommentMentionService
 from app.services.requirement_child_base import RequirementChildBaseService
 
 
@@ -41,12 +42,22 @@ class RequirementCommentService(RequirementChildBaseService):
             NotFoundError: 要件が存在しない、またはプロジェクトに属さない場合。
         """
         self._ensure_requirement_in_project(db, project_id, requirement_id)
+        mention_service = CommentMentionService()
+        prepared = mention_service.prepare(
+            db,
+            project_id=project_id,
+            permission="requirement:read",
+            body=comment_in.comment,
+            mentions=comment_in.mentions,
+        )
         return self.comment_repository.create(
             db,
             requirement_id=requirement_id,
             user_id=user_id,
             comment_in=comment_in,
+            mention_targets=mention_service.targets(prepared),
         )
+
     def list_comments(
         self,
         db: Session,
@@ -69,6 +80,7 @@ class RequirementCommentService(RequirementChildBaseService):
         """
         self._ensure_requirement_in_project(db, project_id, requirement_id)
         return self.comment_repository.list_by_requirement(db, requirement_id)
+
     def delete_comment(
         self,
         db: Session,
@@ -103,6 +115,7 @@ class RequirementCommentService(RequirementChildBaseService):
             raise ForbiddenError()
 
         self.comment_repository.delete(db, comment)
+
     def _get_comment_in_requirement(
         self,
         db: Session,

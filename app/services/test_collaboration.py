@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core import error_messages
 from app.core.exceptions import (
     BadRequestError,
     DuplicateResourceError,
@@ -28,6 +29,7 @@ from app.models.test_design import (
     TestPatternValue,
 )
 from app.repositories.test_collaboration import TestCollaborationRepository
+from app.schemas.comment_mention import CommentMentionOccurrence
 from app.schemas.test_collaboration import (
     RequirementCoverageRead,
     RequirementTestItemCreate,
@@ -37,6 +39,7 @@ from app.schemas.test_collaboration import (
     TestDesignCommentRead,
     TestDesignCommentUpdate,
 )
+from app.services.comment_mention import CommentMentionService
 from app.services.conflict import raise_if_version_conflict
 from app.services.test_design import TestDesignService
 
@@ -338,6 +341,12 @@ class TestCollaborationService:
             target_status=status,
             parent_comment_id=comment.parent_comment_id,
             body="削除されたコメント" if comment.deleted_at else comment.body,
+            mentions=[]
+            if comment.deleted_at
+            else [
+                CommentMentionOccurrence.model_validate(mention)
+                for mention in comment.mentions
+            ],
             author_id=comment.author_id,
             author_name=names.get(comment.author_id),
             is_resolved=comment.is_resolved,
@@ -380,7 +389,16 @@ class TestCollaborationService:
                 != (data.target_type, data.target_id, data.field)
             ):
                 raise BadRequestError("返信先が同じ対象ではありません")
+        mention_service = CommentMentionService()
+        prepared = mention_service.prepare(
+            db,
+            project_id=project_id,
+            permission="test_plan:read",
+            body=data.body,
+            mentions=data.mentions,
+        )
         comment = TestDesignComment(
+            mention_targets=mention_service.targets(prepared),
             design_id=design_id,
             target_type=data.target_type,
             target_id=data.target_id,
@@ -398,7 +416,7 @@ class TestCollaborationService:
                 actor_id=actor_id,
                 action="created",
                 old_value=None,
-                new_value={"body": comment.body},
+                new_value={"body": comment.body, "mentions": comment.mentions},
             )
         )
         db.commit()
@@ -436,15 +454,29 @@ class TestCollaborationService:
         )
         before = {
             "body": comment.body,
+            "mentions": comment.mentions,
             "is_resolved": comment.is_resolved,
             "deleted_at": None,
         }
         if delete:
+            comment.mention_targets = []
             comment.deleted_at = datetime.now(timezone.utc)
             action = "deleted"
         elif data.body is not None:
+            mention_service = CommentMentionService()
+            prepared = mention_service.prepare(
+                db,
+                project_id=project_id,
+                permission="test_plan:read",
+                body=data.body,
+                mentions=data.mentions,
+                previous=comment.mentions,
+            )
+            mention_service.replace(comment, prepared)
             comment.body = data.body
             action = "updated"
+        elif data.mentions:
+            raise BadRequestError(error_messages.COMMENT_MENTION_INVALID)
         elif data.is_resolved is not None:
             comment.is_resolved = data.is_resolved
             action = "resolved" if data.is_resolved else "reopened"
@@ -459,6 +491,7 @@ class TestCollaborationService:
                 old_value=before,
                 new_value={
                     "body": comment.body,
+                    "mentions": comment.mentions,
                     "is_resolved": comment.is_resolved,
                     "deleted_at": comment.deleted_at.isoformat()
                     if comment.deleted_at
