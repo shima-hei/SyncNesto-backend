@@ -203,6 +203,7 @@ class RequirementRead(RequirementBase):
     updated_by: int | None = None
     created_at: datetime
     updated_at: datetime
+    owner: UserSummary | None = None
 
     model_config = {"from_attributes": True}
 

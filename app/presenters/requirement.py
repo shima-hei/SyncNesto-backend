@@ -17,7 +17,7 @@ from app.models.requirement import (
     RequirementTargetComment,
 )
 from app.models.user import User
-from app.presenters.user import get_user_type
+from app.presenters.user import build_user_summary, get_user_type
 from app.schemas.change_log import (
     ChangeLogUserRead,
     ChangeLogValue,
@@ -233,16 +233,31 @@ def build_requirement_approval_list_response(
     )
 
 
-def build_requirement_response(requirement: Requirement) -> RequirementRead:
+def build_requirement_response(
+    requirement: Requirement,
+    users_by_id: dict[int, User] | None = None,
+    storage_service: StorageService | None = None,
+) -> RequirementRead:
     """要件レスポンスを組み立てる。
 
     Args:
         requirement: レスポンスへ変換する要件。
+        users_by_id: 担当者ユーザーIDをkeyにしたユーザー辞書。
+        storage_service: avatar_url生成に使用するストレージサービス。
 
     Returns:
         要件読み取りレスポンス。
     """
-    return RequirementRead.model_validate(requirement)
+    owner = (
+        (users_by_id or {}).get(requirement.owner_id) if requirement.owner_id else None
+    )
+    return RequirementRead.model_validate(requirement).model_copy(
+        update={
+            "owner": build_user_summary(owner, storage_service)
+            if owner is not None and storage_service is not None
+            else None
+        }
+    )
 
 
 def build_requirement_list_response(
@@ -251,6 +266,8 @@ def build_requirement_list_response(
     total: int,
     page: int,
     page_size: int,
+    users_by_id: dict[int, User] | None = None,
+    storage_service: StorageService | None = None,
 ) -> RequirementListResponse:
     """要件一覧レスポンスを組み立てる。
 
@@ -259,12 +276,17 @@ def build_requirement_list_response(
         total: 全件数。
         page: ページ番号。
         page_size: 1ページあたりの件数。
+        users_by_id: 担当者ユーザーIDをkeyにしたユーザー辞書。
+        storage_service: avatar_url生成に使用するストレージサービス。
 
     Returns:
         要件一覧レスポンス。
     """
     return RequirementListResponse(
-        items=[build_requirement_response(requirement) for requirement in requirements],
+        items=[
+            build_requirement_response(requirement, users_by_id, storage_service)
+            for requirement in requirements
+        ],
         total=total,
         page=page,
         page_size=page_size,
@@ -500,6 +522,8 @@ def build_requirement_summary_response(
     comments: list[RequirementCommentRead],
     reviews: list[RequirementReview],
     revisions: list[RequirementRevision],
+    users_by_id: dict[int, User] | None = None,
+    storage_service: StorageService | None = None,
 ) -> RequirementSummaryRead:
     """要件詳細画面用の集約レスポンスを組み立てる。
 
@@ -510,12 +534,16 @@ def build_requirement_summary_response(
         comments: 変換済みコメント一覧。
         reviews: 要件レビュー一覧。
         revisions: 要件改訂履歴一覧。
+        users_by_id: 担当者ユーザーIDをkeyにしたユーザー辞書。
+        storage_service: avatar_url生成に使用するストレージサービス。
 
     Returns:
         要件詳細画面用の集約レスポンス。
     """
     return RequirementSummaryRead(
-        requirement=build_requirement_response(requirement),
+        requirement=build_requirement_response(
+            requirement, users_by_id, storage_service
+        ),
         details=build_requirement_detail_responses(details),
         links=build_requirement_link_responses(links),
         comments=comments,

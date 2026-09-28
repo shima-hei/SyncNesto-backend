@@ -234,4 +234,8 @@ def promote_open_issue_to_requirement(
         promote_in=promote_in,
         actor_id=current_user.id,
     )
-    return build_requirement_response(requirement)
+    return build_requirement_response(
+        requirement,
+        shared.get_requirement_owner_users_by_id(db, [requirement]),
+        shared.storage_service,
+    )
