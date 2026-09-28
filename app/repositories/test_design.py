@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import case, delete, func, select
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.models.test_design import (
@@ -43,14 +43,16 @@ class TestDesignRepository:
         """有効な組み合わせ数を集計し、生成前のケース数を返す。"""
         tables = (
             select(TestPattern.table_id, func.count().label("n"))
-            .where(TestPattern.enabled.is_(True))
+            .where(TestPattern.enabled.is_(True), TestPattern.deleted_at.is_(None))
             .group_by(TestPattern.table_id)
             .subquery()
         )
         legacy = (
             select(
                 TestItemPattern.item_id,
-                func.count().filter(TestPattern.enabled.is_(True)).label("n"),
+                func.count()
+                .filter(TestPattern.enabled.is_(True), TestPattern.deleted_at.is_(None))
+                .label("n"),
             )
             .join(TestPattern, TestPattern.id == TestItemPattern.pattern_id)
             .group_by(TestItemPattern.item_id)
@@ -73,7 +75,12 @@ class TestDesignRepository:
             .join(TestDesign, TestDesign.id == TestItem.design_id)
             .outerjoin(tables, tables.c.table_id == TestItem.pattern_table_id)
             .outerjoin(legacy, legacy.c.item_id == TestItem.id)
-            .where(TestDesign.project_id == project_id, TestItem.is_spacer.is_(False))
+            .where(
+                TestDesign.project_id == project_id,
+                TestDesign.deleted_at.is_(None),
+                TestItem.is_spacer.is_(False),
+                TestItem.deleted_at.is_(None),
+            )
             .group_by(TestItem.design_id)
         )
         return {design_id: (int(items), int(cases)) for design_id, items, cases in rows}
@@ -83,7 +90,9 @@ class TestDesignRepository:
         return list(
             db.scalars(
                 select(TestDesign)
-                .where(TestDesign.project_id == project_id)
+                .where(
+                    TestDesign.project_id == project_id, TestDesign.deleted_at.is_(None)
+                )
                 .order_by(TestDesign.updated_at.desc())
             )
         )
@@ -94,7 +103,11 @@ class TestDesignRepository:
         """プロジェクトスコープで取得し、更新時は行をロックする。"""
         query = (
             select(TestDesign)
-            .where(TestDesign.id == design_id, TestDesign.project_id == project_id)
+            .where(
+                TestDesign.id == design_id,
+                TestDesign.project_id == project_id,
+                TestDesign.deleted_at.is_(None),
+            )
             .execution_options(populate_existing=True)
         )
         if lock:
@@ -107,7 +120,14 @@ class TestDesignRepository:
             name: list(
                 db.scalars(
                     select(model)
-                    .where(model.design_id == design_id)
+                    .where(
+                        model.design_id == design_id,
+                        *(
+                            [model.deleted_at.is_(None)]
+                            if hasattr(model, "deleted_at")
+                            else []
+                        ),
+                    )
                     .order_by(model.position, model.id)
                 )
             )
@@ -138,9 +158,22 @@ class TestDesignRepository:
         ):
             model = ENTITY_MODELS[name]
             ids = [row["id"] for row in data[name]]
-            db.execute(
-                delete(model).where(model.design_id == design_id, model.id.not_in(ids))
-            )
+            if hasattr(model, "deleted_at"):
+                db.execute(
+                    update(model)
+                    .where(
+                        model.design_id == design_id,
+                        model.id.not_in(ids),
+                        model.deleted_at.is_(None),
+                    )
+                    .values(deleted_at=func.now())
+                )
+            else:
+                db.execute(
+                    delete(model).where(
+                        model.design_id == design_id, model.id.not_in(ids)
+                    )
+                )
         for name in (
             "pattern_tables",
             "factors",
@@ -165,12 +198,17 @@ class TestDesignRepository:
                 else:
                     for key, value in values.items():
                         setattr(row, key, value)
+                    if hasattr(row, "deleted_at"):
+                        row.deleted_at = None
             db.flush()
         db.execute(
-            delete(PatternTable).where(
+            update(PatternTable)
+            .where(
                 PatternTable.design_id == design_id,
                 PatternTable.id.not_in([row["id"] for row in data["pattern_tables"]]),
+                PatternTable.deleted_at.is_(None),
             )
+            .values(deleted_at=func.now())
         )
         layout = db.get(TestDesignLayout, design_id)
         if layout is None:

@@ -38,7 +38,7 @@ Routerは認可と入出力、Serviceは所属・参照整合性・排他制御�
 | POST | 共通プレフィックス | test_plan:create | 名前・説明から空の設計書を作成 |
 | GET | /{design_id} | test_plan:read | 構造化設計全体を取得 |
 | PUT | /{design_id} | test_plan:update | version付きで設計全体を原子的に保存 |
-| DELETE | /{design_id}?version=N | test_plan:delete | 設計書と全ケースを削除 |
+| DELETE | /{design_id}?version=N | test_plan:delete | 設計書を論理削除し、履歴を保持 |
 | GET | /{design_id}/cases | test_case:read | ケース一覧・変更影響 |
 | POST | /{design_id}/cases/generate | test_case:create | 有効な紐付けから未生成ケースを追加 |
 | PATCH | /{design_id}/cases/{case_id} | test_case:execute | 実行結果・備考を更新 |
@@ -64,7 +64,7 @@ Routerは認可と入出力、Serviceは所属・参照整合性・排他制御�
 { "name": "ログイン設計", "description": "ユーザー種別と入力値を確認" }
 ```
 
-PUTは`name`、`description`、`version`、`items`、`factors`、`levels`、`patterns`、`values`、`links`、`columns`、`layout`を受け取る。配列から除いたエンティティは削除対象となるため、部分配列を送ってはいけない。GETレスポンスの`id`、`project_id`、`updated_at`は更新本文から除く。
+PUTは`name`、`description`、`version`、`items`、`factors`、`levels`、`patterns`、`values`、`links`、`columns`、`layout`を受け取る。配列から除いた項目・パターン表・因子・水準・組み合わせ・期待値は論理削除対象となるため、部分配列を送ってはいけない。既存UUIDを維持して保存すれば行挿入・再採番・並べ替えでも関連、コメント、ケースを保持する。GETレスポンスの`id`、`project_id`、`updated_at`は更新本文から除く。
 
 `layout`の構造例:
 
@@ -96,7 +96,7 @@ PUTは`name`、`description`、`version`、`items`、`factors`、`levels`、`pat
 
 `expected_selections`は同一組み合わせに複数の期待値を設定可能。同一(pattern_id, expected_value_id)の重複は禁止。ケースsourceは単一期待値では従来の`expected_value`、複数では`expected_values`配列を返す。表示側は両方に対応する。選択順のみの変更でstaleにしない。
 
-ケース状態は`not_run` / `passed` / `failed` / `blocked` / `not_applicable`（対象外）。更新APIは実行結果・備考も受け取るため、一覧で状態だけを変更するときも既存の`actual_result`と`notes`を送信する。ケース更新時に認証ユーザーを`executed_by`、更新時刻を`executed_at`へ自動記録する。既存ケースは両方nullで、対象外も同じ記録方式を使う。将来のEvidenceはケースUUIDへの独立した関連として追加し、source内の設計スナップショットに格納しない。
+ケース状態は`not_run` / `in_progress`（実施中） / `passed` / `failed` / `blocked` / `not_applicable`（対象外）。更新APIは実行結果・備考も受け取るため、一覧で状態だけを変更するときも既存の`actual_result`と`notes`を送信する。ケース更新時に認証ユーザーを`executed_by`、更新時刻を`executed_at`へ自動記録する。既存ケースは両方nullで、対象外も同じ記録方式を使う。各ケース更新は`TestExecution`を新規作成し、その時点の状態、実際の結果、備考、実行者、実行日時を保持する。Evidenceはその実行UUIDに属する独立データであり、source内の設計スナップショットに格納しない。
 
 互換用の生成リクエストは`{"version": 設計書version}`。同じ紐付けから何度生成してもケースは重複しない。無効パターンは対象外。項目内容・選択水準の名前・説明・任意列情報を`source`へ保存する。通常の画面操作では設計保存時に自動同期する。
 
@@ -106,13 +106,37 @@ PUTは`name`、`description`、`version`、`items`、`factors`、`levels`、`pat
 - `stale`: 生成元が削除・無効、または現在の設計内容がスナップショットと異なるか。
 - `source`: 最新の設計保存時点の内容。生成元を削除した場合は最後の内容。
 - `acknowledged_source`: 影響ありで生成元が有効なケースに限り、最後に確認済みとなった設計内容を返す。影響のないケースと、旧値を復元できない既存ケースではnull。通常のケース一覧でスナップショットを重複転送しない。
-- `status`: `not_run` / `passed` / `failed` / `blocked` / `not_applicable`。
+- `status`: `not_run` / `in_progress` / `passed` / `failed` / `blocked` / `not_applicable`。
 - `actual_result`、`notes`: ケースごとの実行記録。
 - `executed_by`、`executed_by_name`、`executed_at`: 最後に結果を保存した認証ユーザーと日時。設計変更確認の`refresh`では更新しない。
 
-書式・表示順だけの変更ではstaleにならない。項目・関連・パターンを削除しても、ケースのスナップショットと実行結果は残る。関連削除時の`item_pattern_id`はnullとなる。設計書そのものの削除のみ、全ケースも削除する。
+書式・表示順だけの変更ではstaleにならない。項目・関連・パターンを削除しても、ケースのスナップショットと実行結果は残る。関連削除時の`item_pattern_id`はnullとなる。項目や設計書を削除しても関連、コメント、ケース、実行履歴、証跡メタデータを保持し、有効な一覧とカバレッジからは除く。
 
 実行結果の更新と設計変更確認にはケース自身のversionを指定する。古いversionは409。`refresh`は実行結果を保持して影響表示の基準を更新する。削除・無効な生成元は確認済みにできない。
+
+## 要件追跡・設計コメント・実行証跡
+
+要件と項目は`RequirementTestItem`で多対多に結び付ける。要件IDは既存の整数主キー、項目IDは安定UUIDを利用し、表示用項目番号は関連キーにしない。要件から項目への取得は`GET /projects/{project_id}/requirements/{requirement_id}/test-items`、設計書から要件への取得は`GET /projects/{project_id}/test-designs/{design_id}/requirement-links`。追加・解除は後者の`POST {requirement_id, item_id}`および`DELETE /{link_id}`。要件一覧の関連件数は`GET /projects/{project_id}/requirement-test-coverage?document_id=N`で取得する。`has_tests`は有効なテスト項目が1件以上関連することだけを示し、要件の検証完了を意味しない。削除済み項目の関連は履歴として取得できるが件数には含めない。
+
+設計コメントは`/projects/{project_id}/test-designs/{design_id}/comments`で一覧・投稿し、`/{comment_id}`で更新・論理削除、`/{comment_id}/changes`で変更履歴を取得する。対象は`target_type`、`target_id`（設計書以外はUUID）、`field`で指定する。項目フィールドやパターン表、因子、水準、組み合わせ、期待値にアンカーできる。マトリクス選択セルは組み合わせUUIDと`level:<factor UUID>`または`expected:<expected value UUID>`で特定する。返信は`parent_comment_id`、更新・削除は`version`を指定する。レスポンスの`target_status`は`current` / `changed` / `missing`で、変更・削除後も投稿時`target_snapshot`と履歴を保持する。コメント解決、設計レビュー、ケースの設計変更確認、実行結果は別の状態である。
+
+コメント閲覧・履歴には`test_plan:read`、投稿・返信・編集・削除・解決には`test_plan:comment`を要求する。後者はsystem_admin、project_admin、manager、memberに付与し、viewerには付与しない。本文編集・削除は投稿者本人またはシステム管理者に限る。要件関連の追加・解除は`requirement:link`、要件側の関連閲覧は`requirement:read`、設計書側の関連閲覧は`test_plan:read`。実行証跡の閲覧・ダウンロードは`test_case:read`、登録・削除は`test_case:execute`。
+
+結果保存で作成した実行履歴は`GET /projects/{project_id}/test-designs/{design_id}/cases/{case_id}/executions`で新しい順に取得する。実行ごとの証跡は`/executions/{execution_id}/evidence`で一覧・multipartアップロードし、`/{evidence_id}/download`から短期の署名付きURLを取得、`DELETE /{evidence_id}`で論理削除する。許可形式はPNG、JPEG、WebP、PDF、UTF-8テキスト、JSON、ZIP。1ファイル20MB・1実行20件まで。ファイル本体は非公開S3に保存し、DBは用途が実行証跡であることと所属実行、名前、MIME、容量、保存キー、投稿者、日時を保持する。アップロード・閲覧・削除はケースと実行が要求プロジェクトの設計書に属することを検証する。過去実行の証跡は新しい実行へ引き継がない。
+
+## 不具合連携と進捗集計
+
+不具合は既存Taskの`task_type=bug`で表す。要件定義の未決事項とは別リソース。`test_case_issues`でTestCaseとTaskを多対多で結び、`origin_execution_id`には発見時の実行履歴を任意で保存する。関連を解除してもTaskと実行履歴は削除しない。同一プロジェクトの不具合Taskのみ関連でき、関連ケースが残る間はTaskの種別を変更できない。
+
+- `GET /projects/{project_id}/test-designs/{design_id}/issues`: 設計書内の全関連。`test_case:read`と`task:read`。
+- `GET/POST /projects/{project_id}/test-designs/{design_id}/cases/{case_id}/issues`: ケースの関連一覧と追加。POST本文は`{task_id, origin_execution_id?}`。追加は`test_case:execute`と`task:read`。
+- `DELETE /projects/{project_id}/test-designs/{design_id}/cases/{case_id}/issues/{link_id}`: 関連のみ解除。`test_case:execute`と`task:read`。
+- `GET /projects/{project_id}/tasks/{task_id}/test-cases`: 不具合Taskから関連ケースを逆引き。`task:read`と`test_case:read`。
+- `GET /projects/{project_id}/test-designs/{design_id}/progress?target_feature=...`: 最新状態の集計。`test_case:read`と`task:read`。
+
+集計対象は設計書の有効なケースのみ。`total`は全有効ケース、`progress_numerator`は`passed+failed`、`progress_denominator`は`total-not_applicable`。`ng_numerator`は`failed`、`ng_denominator`は`passed+failed`。分母0の率は画面で「－」と表示する。`issue_count`は対象ケースに関連する重複を除いた有効な不具合Task数、`failed_without_issue`は不具合Taskが一件もないNGケース数。過去のTestExecutionは加算しない。`target_feature`で対象画面・機能単位へ絞り込める。
+
+実行証跡の既存multipart APIはクリップボード画像から生成したFileも受け付ける。エビデンス一覧では`uploaded_by_name`を追加して投稿者を表示する。画像プレビューは既存ダウンロードAPIの短期署名付きURLを利用する。
 
 ## 制限と将来拡張
 
@@ -124,6 +148,6 @@ PUTは`name`、`description`、`version`、`items`、`factors`、`levels`、`pat
 
 ## 適用・検証
 
-Alembic revision: `2b3c4d5e6f70`（親: `1a2b3c4d5e6f`）。`uv run alembic upgrade head`で適用する。既存のpermissionは変更しない。
+最新Alembic revision: `4d5e6f708192`（親: `3c4d5e6f7081`）。`uv run alembic upgrade head`で適用する。`test_plan:comment` permissionと既存ロールへの付与は親migrationで行う。
 
 `uv run pytest tests/routers/test_test_designs.py`で実DBへのmigration、認可、別設計参照、競合、ケース保持を検証する。OpenAPI変更後はfrontendの`OPENAPI_TARGET=... npm run api:generate`で再生成する。

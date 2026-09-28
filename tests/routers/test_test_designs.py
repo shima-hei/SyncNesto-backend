@@ -541,6 +541,10 @@ def test_legacy_matrix_migration_preserves_results(client, design_context, db):
         with Operations.context(MigrationContext.configure(connection)):
             migration.downgrade()
             migration.upgrade()
+        # 旧migrationを単独で再実行したため、後続migrationの列を復元する。
+        connection.execute(
+            text("ALTER TABLE test_pattern_tables ADD COLUMN deleted_at TIMESTAMPTZ")
+        )
     migrated = client.get(url).json()
     assert len(migrated["pattern_tables"]) == 1
     assert all(item["pattern_table_id"] for item in migrated["items"])

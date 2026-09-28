@@ -119,6 +119,25 @@ class StorageService:
             Key=key,
         )
 
+    def upload_private_object(
+        self, *, key: str, content: bytes, content_type: str
+    ) -> None:
+        """検証済みの用途固有ファイルを非公開S3オブジェクトとして保存する。"""
+        self.s3_client.put_object(
+            Bucket=settings.aws_s3_bucket_name,
+            Key=key,
+            Body=content,
+            ContentType=content_type,
+        )
+
+    def private_object_url(self, key: str) -> str:
+        """権限検証後に呼び出す短期有効な非公開オブジェクトURL。"""
+        return self.s3_client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": settings.aws_s3_bucket_name, "Key": key},
+            ExpiresIn=settings.aws_s3_presigned_url_expires_seconds,
+        )
+
     def _get_image_extension(self, content_type: str | None) -> str:
         """Content-Typeに対応する画像拡張子を取得する。"""
         if content_type not in ALLOWED_IMAGE_CONTENT_TYPES:

@@ -3,6 +3,7 @@
 from sqlalchemy.orm import Session
 
 from app.models.requirement import (
+    Requirement,
     RequirementComment,
     RequirementDocument,
     RequirementTargetComment,
@@ -34,6 +35,26 @@ target_comment_service = RequirementTargetCommentService()
 requirement_child_service = RequirementChildService()
 storage_service = StorageService()
 user_service = UserService()
+
+
+def get_requirement_owner_users_by_id(
+    db: Session,
+    requirements: list[Requirement],
+) -> dict[int, User]:
+    """要件一覧の担当者情報を一括取得する。
+
+    Args:
+        db: DBセッション。
+        requirements: 担当者を解決する要件一覧。
+
+    Returns:
+        ユーザーIDをキーにしたユーザー辞書。
+    """
+    user_ids = list(
+        {item.owner_id for item in requirements if item.owner_id is not None}
+    )
+    users = user_service.list_users_by_ids(db, user_ids)
+    return {user.id: user for user in users}
 
 
 def get_requirement_document_users_by_id(

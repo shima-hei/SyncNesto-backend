@@ -2162,6 +2162,115 @@ def test_create_requirement_allows_member(
     assert response.json()["created_by"] == user.id
 
 
+def test_requirement_returns_owner_summary_and_keeps_owner_id_input(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    monkeypatch,
+) -> None:
+    """担当者の要約が各レスポンスに入り、解除時はnullになる。"""
+    from app.routers import requirements_shared
+
+    monkeypatch.setattr(requirements_shared, "storage_service", FakeStorageService())
+    user = create_test_user(email="owner@example.com", name="担当 太郎")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=user, project=project, role_key="manager")
+    authorize_as(client, user)
+
+    response = client.post(
+        f"/projects/{project.id}/requirements",
+        json={
+            "document_id": document.id,
+            "requirement_type": "functional",
+            "title": "担当者表示",
+            "owner_id": user.id,
+        },
+    )
+    assert response.status_code == 201
+    expected_owner = {
+        "id": user.id,
+        "name": "担当 太郎",
+        "email": "owner@example.com",
+        "avatar_url": "https://example.com/default-avatar.png?signature=test",
+        "user_type": "internal",
+        "is_active": True,
+    }
+    assert response.json()["owner"] == expected_owner
+    requirement_id = response.json()["id"]
+    path = f"/projects/{project.id}/requirements/{requirement_id}"
+    assert client.get(path).json()["owner"] == expected_owner
+    assert (
+        client.get(f"{path}/summary").json()["requirement"]["owner"] == expected_owner
+    )
+    listed = client.get(f"/projects/{project.id}/requirements").json()["items"]
+    assert listed[0]["owner"] == expected_owner
+
+    updated = client.patch(path, json={"version": 1, "title": "更新後"})
+    assert updated.status_code == 200
+    assert updated.json()["owner"] == expected_owner
+    cleared = client.patch(path, json={"version": 2, "owner_id": None})
+    assert cleared.status_code == 200
+    assert cleared.json()["owner_id"] is None
+    assert cleared.json()["owner"] is None
+
+
+def test_requirement_list_batches_owners_and_handles_deleted_users(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    create_test_requirement: Callable[..., Requirement],
+    db: Session,
+    monkeypatch,
+) -> None:
+    """同一担当者を一括取得し、未設定・削除済み担当者は要約に含めない。"""
+    from app.routers import requirements_shared
+
+    monkeypatch.setattr(requirements_shared, "storage_service", FakeStorageService())
+    viewer = create_test_user(email="viewer@example.com")
+    owner = create_test_user(email="owner@example.com", name="担当者")
+    deleted = create_test_user(email="deleted@example.com")
+    project = create_test_project(name="Project")
+    document = create_test_requirement_document(project=project)
+    assign_project_role(user=viewer, project=project, role_key="viewer")
+    for code, owner_id in [
+        ("REQ-A", owner.id),
+        ("REQ-B", owner.id),
+        ("REQ-C", deleted.id),
+        ("REQ-D", None),
+    ]:
+        requirement = create_test_requirement(document=document, requirement_code=code)
+        requirement.owner_id = owner_id
+    deleted.deleted_at = datetime.now(UTC)
+    db.commit()
+    authorize_as(client, viewer)
+
+    calls: list[list[int]] = []
+    original = requirements_shared.user_service.list_users_by_ids
+
+    def collect_users(session: Session, user_ids: list[int]) -> list[User]:
+        calls.append(user_ids)
+        return original(session, user_ids)
+
+    monkeypatch.setattr(
+        requirements_shared.user_service, "list_users_by_ids", collect_users
+    )
+    response = client.get(f"/projects/{project.id}/requirements")
+    assert response.status_code == 200
+    assert len(calls) == 1
+    assert set(calls[0]) == {owner.id, deleted.id}
+    items = {item["requirement_code"]: item for item in response.json()["items"]}
+    assert items["REQ-A"]["owner"]["name"] == "担当者"
+    assert items["REQ-B"]["owner"]["id"] == owner.id
+    assert items["REQ-C"]["owner"] is None
+    assert items["REQ-D"]["owner"] is None
+    assert items["REQ-C"]["owner_id"] == deleted.id
+
+
 def test_create_requirement_rejects_document_from_other_project(
     client: TestClient,
     create_test_user: Callable[..., User],

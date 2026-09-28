@@ -54,7 +54,11 @@ def create_requirement(
         requirement_in=requirement_in,
         actor_id=current_user.id,
     )
-    return build_requirement_response(requirement)
+    return build_requirement_response(
+        requirement,
+        shared.get_requirement_owner_users_by_id(db, [requirement]),
+        shared.storage_service,
+    )
 
 
 @router.get(
@@ -121,6 +125,8 @@ def list_requirements(
         total=total,
         page=page,
         page_size=page_size,
+        users_by_id=shared.get_requirement_owner_users_by_id(db, requirements),
+        storage_service=shared.storage_service,
     )
 
 
@@ -150,7 +156,11 @@ def read_requirement(
         project_id=project_id,
         requirement_id=requirement_id,
     )
-    return build_requirement_response(requirement)
+    return build_requirement_response(
+        requirement,
+        shared.get_requirement_owner_users_by_id(db, [requirement]),
+        shared.storage_service,
+    )
 
 
 @router.get(
@@ -192,6 +202,10 @@ def read_requirement_summary(
         ),
         reviews=summary["reviews"],
         revisions=summary["revisions"],
+        users_by_id=shared.get_requirement_owner_users_by_id(
+            db, [summary["requirement"]]
+        ),
+        storage_service=shared.storage_service,
     )
 
 
@@ -225,7 +239,11 @@ def update_requirement(
         requirement_in=requirement_in,
         actor_id=current_user.id,
     )
-    return build_requirement_response(requirement)
+    return build_requirement_response(
+        requirement,
+        shared.get_requirement_owner_users_by_id(db, [requirement]),
+        shared.storage_service,
+    )
 
 
 @router.delete(
