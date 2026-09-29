@@ -215,5 +215,6 @@ docker/pgadmin/
 # docs
 /docs/*
 !/docs/frontend-notifications-api.md
+!/docs/frontend-home-api.md
 .codex
 AGENTS.md

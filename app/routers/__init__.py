@@ -6,6 +6,7 @@ from app.routers import (
     auth,
     drafts,
     health,
+    home,
     notifications,
     projects,
     requirements,
@@ -26,6 +27,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(auth.router)
     app.include_router(drafts.router)
     app.include_router(health.router)
+    app.include_router(home.router)
     app.include_router(notifications.router)
     app.include_router(projects.router)
     app.include_router(requirements.router)

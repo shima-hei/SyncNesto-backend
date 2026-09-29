@@ -6,7 +6,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models.project import Project, ProjectMember
-from app.models.rbac import Role
+from app.models.rbac import Permission, Role, RolePermission
 from app.models.user import User
 from app.repositories.comment_mention import CommentMentionRepository
 from app.schemas.project import ProjectCreate, ProjectUpdate
@@ -160,6 +160,7 @@ class ProjectRepository:
         page_size: int,
         q: str | None = None,
         status: str | None = None,
+        require_read_permission: bool = False,
     ) -> tuple[list[Project], int]:
         """ユーザーが所属するプロジェクト一覧をページング付きで取得する。
 
@@ -170,6 +171,7 @@ class ProjectRepository:
             page_size: 1ページあたりの件数。
             q: 検索キーワード。
             status: ステータス絞り込み。
+            require_read_permission: 所属ロールに案件閲覧権限を要求するか。
 
         Returns:
             所属プロジェクト一覧と総件数。
@@ -183,6 +185,14 @@ class ProjectRepository:
                 ProjectMember.user_id == user_id,
             )
         )
+        if require_read_permission:
+            readable_roles = (
+                select(RolePermission.role_id)
+                .join(Role, Role.id == RolePermission.role_id)
+                .join(Permission, Permission.id == RolePermission.permission_id)
+                .where(Role.scope == "project", Permission.code == "project:read")
+            )
+            query = query.filter(ProjectMember.role_id.in_(readable_roles))
         query = self._apply_list_filters(query, q=q, status=status)
         total = query.count()
         projects = (

@@ -74,6 +74,7 @@ def list_projects(
     page_size: int = Query(default=20, ge=1, le=100),
     q: str | None = Query(default=None),
     status: str | None = Query(default=None),
+    member_only: bool = Query(default=False),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ProjectListResponse:
@@ -84,6 +85,7 @@ def list_projects(
         page_size: 1ページあたりの件数。
         q: 検索キーワード。
         status: ステータス絞り込み。
+        member_only: system権限を持つ場合も参加案件だけに絞る。
         current_user: 認証済みユーザー。
         db: DBセッション。
 
@@ -97,6 +99,7 @@ def list_projects(
         page_size=page_size,
         q=q,
         status=status,
+        member_only=member_only,
     )
     return build_project_list_response(
         projects,
