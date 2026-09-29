@@ -27,6 +27,7 @@ from app.schemas.requirement import (
 )
 from app.services.comment_mention import CommentMentionService
 from app.services.conflict import build_conflict_current, raise_if_version_conflict
+from app.services.notification import NotificationService
 from app.services.requirement_change_log import (
     RequirementChangeLogAction,
     RequirementChangeLogService,
@@ -144,6 +145,13 @@ class RequirementTargetCommentService:
             comment_in=comment_in,
             author_id=author_id,
             mention_targets=mention_service.targets(prepared),
+            commit=False,
+        )
+        NotificationService().mentions_changed(
+            db,
+            project_id=project_id,
+            actor_id=author_id,
+            comment=comment,
         )
         self._record_change_log(
             db,
@@ -188,6 +196,7 @@ class RequirementTargetCommentService:
     ) -> RequirementTargetComment:
         """要件定義対象コメントを更新する。"""
         comment = self.get_comment(db, project_id=project_id, comment_id=comment_id)
+        db.refresh(comment, with_for_update=True)
         self._ensure_comment_owner_or_moderator(
             comment,
             actor_id=actor_id,
@@ -203,6 +212,7 @@ class RequirementTargetCommentService:
             ),
         )
         before_value = self._build_comment_snapshot(comment)
+        previous_user_ids = {target.user_id for target in comment.mention_targets}
         mention_service = CommentMentionService()
         prepared = mention_service.prepare(
             db,
@@ -217,6 +227,13 @@ class RequirementTargetCommentService:
             db,
             comment=comment,
             comment_in=comment_in,
+        )
+        NotificationService().mentions_changed(
+            db,
+            project_id=project_id,
+            actor_id=actor_id,
+            comment=updated_comment,
+            previous_user_ids=previous_user_ids,
         )
         self._record_change_log(
             db,

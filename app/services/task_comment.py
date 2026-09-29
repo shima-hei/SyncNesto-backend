@@ -17,6 +17,7 @@ from app.schemas.task import (
 )
 from app.services.comment_mention import CommentMentionService
 from app.services.conflict import build_conflict_current, raise_if_version_conflict
+from app.services.notification import NotificationService
 
 TASK_COMMENT_CONFLICT_CURRENT_FIELDS = (
     "id",
@@ -85,6 +86,13 @@ class TaskCommentService:
             body=comment_in.body,
             actor_id=actor_id,
             mention_targets=mention_service.targets(prepared),
+            commit=False,
+        )
+        NotificationService().mentions_changed(
+            db,
+            project_id=task.project_id,
+            actor_id=actor_id,
+            comment=comment,
         )
         self._record_comment_change(
             db,
@@ -133,6 +141,7 @@ class TaskCommentService:
     ) -> TaskComment:
         """タスクコメントを更新する。"""
         comment = self.get_comment(db, comment_id)
+        db.refresh(comment, with_for_update=True)
         task = self._get_task(db, comment.task_id)
         self._raise_if_comment_version_conflict(comment, comment_in.version)
         old_body = comment.body
@@ -152,6 +161,13 @@ class TaskCommentService:
             comment=comment,
             body=comment_in.body,
             actor_id=actor_id,
+        )
+        NotificationService().mentions_changed(
+            db,
+            project_id=task.project_id,
+            actor_id=actor_id,
+            comment=comment,
+            previous_user_ids={mention["user_id"] for mention in old_mentions},
         )
         self._record_comment_change(
             db,

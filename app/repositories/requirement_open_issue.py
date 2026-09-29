@@ -23,6 +23,7 @@ class RequirementOpenIssueRepository:
         *,
         issue_in: RequirementOpenIssueCreate,
         actor_id: int | None = None,
+        commit: bool = True,
     ) -> RequirementOpenIssue:
         """未決事項を作成する。"""
         issue = RequirementOpenIssue(
@@ -40,7 +41,10 @@ class RequirementOpenIssueRepository:
             updated_by=actor_id,
         )
         db.add(issue)
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(issue)
         return issue
 
@@ -191,6 +195,7 @@ class RequirementOpenIssueRepository:
         issue: RequirementOpenIssue,
         issue_in: RequirementOpenIssueUpdate,
         actor_id: int | None = None,
+        commit: bool = True,
     ) -> RequirementOpenIssue:
         """未決事項を更新する。"""
         for field in (
@@ -209,7 +214,10 @@ class RequirementOpenIssueRepository:
             issue.updated_by = actor_id
         issue.version += 1
 
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(issue)
         return issue
 

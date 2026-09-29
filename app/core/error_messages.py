@@ -76,3 +76,4 @@ COMMENT_MENTION_INVALID = "メンションの位置または表示名が本文�
 COMMENT_MENTION_USER_UNAVAILABLE = (
     "このコメントでメンションできないユーザーが含まれています。"
 )
+NOTIFICATION_NOT_FOUND = "通知が見つかりません"

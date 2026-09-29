@@ -11,6 +11,7 @@ from app.schemas.requirement import (
     RequirementCommentCreate,
 )
 from app.services.comment_mention import CommentMentionService
+from app.services.notification import NotificationService
 from app.services.requirement_child_base import RequirementChildBaseService
 
 
@@ -50,13 +51,20 @@ class RequirementCommentService(RequirementChildBaseService):
             body=comment_in.comment,
             mentions=comment_in.mentions,
         )
-        return self.comment_repository.create(
+        comment = self.comment_repository.create(
             db,
             requirement_id=requirement_id,
             user_id=user_id,
             comment_in=comment_in,
             mention_targets=mention_service.targets(prepared),
+            commit=False,
         )
+        NotificationService().mentions_changed(
+            db, project_id=project_id, actor_id=user_id, comment=comment,
+        )
+        db.commit()
+        db.refresh(comment)
+        return comment
 
     def list_comments(
         self,

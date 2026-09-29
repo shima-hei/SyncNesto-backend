@@ -213,6 +213,7 @@ docker/pgadmin/
 .vscode/
 
 # docs
-/docs
+/docs/*
+!/docs/frontend-notifications-api.md
 .codex
 AGENTS.md

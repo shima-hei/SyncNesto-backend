@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core import error_messages
 from app.core.exceptions import DuplicateResourceError, NotFoundError
+from app.models.notification import NotificationTargetType
 from app.models.requirement import (
     Requirement,
     RequirementDocument,
@@ -33,6 +34,7 @@ from app.services.conflict import (
     raise_duplicate_after_rollback,
     raise_if_version_conflict,
 )
+from app.services.notification import NotificationService
 from app.services.requirement_change_log import (
     RequirementChangeLogAction,
     RequirementChangeLogService,
@@ -135,13 +137,10 @@ class RequirementOpenIssueService:
                 requirement_id=issue_in.related_requirement_id,
             )
         requested_issue_code = self._normalize_issue_code(issue_in.issue_code)
-        if (
-            requested_issue_code
-            and self.repository.get_by_document_issue_code(
-                db,
-                document_id=issue_in.document_id,
-                issue_code=requested_issue_code,
-            )
+        if requested_issue_code and self.repository.get_by_document_issue_code(
+            db,
+            document_id=issue_in.document_id,
+            issue_code=requested_issue_code,
         ):
             raise DuplicateResourceError(
                 error_messages.REQUIREMENT_OPEN_ISSUE_CODE_ALREADY_EXISTS
@@ -159,6 +158,7 @@ class RequirementOpenIssueService:
                     db,
                     issue_in=normalized,
                     actor_id=actor_id,
+                    commit=False,
                 )
             except IntegrityError as exc:
                 db.rollback()
@@ -175,6 +175,18 @@ class RequirementOpenIssueService:
                 error_messages.REQUIREMENT_OPEN_ISSUE_CODE_ALREADY_EXISTS
             )
 
+        NotificationService().assignment_changed(
+            db,
+            project_id=project_id,
+            actor_id=actor_id,
+            target_type=NotificationTargetType.OPEN_ISSUE,
+            target_id=issue.id,
+            version=issue.version,
+            previous_user_id=None,
+            recipient_id=issue.assignee_id,
+            title=issue.title,
+            document_id=issue.document_id,
+        )
         self.change_log_service.record(
             db,
             document_id=issue.document_id,
@@ -257,6 +269,7 @@ class RequirementOpenIssueService:
     ) -> RequirementOpenIssue:
         """未決事項を更新する。"""
         issue = self.get_open_issue(db, project_id=project_id, issue_id=issue_id)
+        db.refresh(issue, with_for_update=True)
         raise_if_version_conflict(
             current_version=issue.version,
             requested_version=issue_in.version,
@@ -276,12 +289,14 @@ class RequirementOpenIssueService:
             )
 
         before_value = self._build_issue_snapshot(issue)
+        previous_assignee_id = issue.assignee_id
         try:
             updated_issue = self.repository.update(
                 db,
                 issue=issue,
                 issue_in=issue_in,
                 actor_id=actor_id,
+                commit=False,
             )
         except IntegrityError as exc:
             raise_duplicate_after_rollback(
@@ -290,18 +305,29 @@ class RequirementOpenIssueService:
                 exc,
             )
 
+        NotificationService().assignment_changed(
+            db,
+            project_id=project_id,
+            actor_id=actor_id,
+            target_type=NotificationTargetType.OPEN_ISSUE,
+            target_id=updated_issue.id,
+            version=updated_issue.version,
+            previous_user_id=previous_assignee_id,
+            recipient_id=updated_issue.assignee_id,
+            title=updated_issue.title,
+            document_id=updated_issue.document_id,
+        )
         self._record_issue_update_change_log(
             db,
             issue=updated_issue,
             old_snapshot=before_value,
             new_snapshot=self._build_issue_snapshot(updated_issue),
-            updated_fields=(
-                issue_in.model_fields_set - {"version", "reason"}
-            )
+            updated_fields=(issue_in.model_fields_set - {"version", "reason"})
             & REQUIREMENT_OPEN_ISSUE_UPDATABLE_FIELDS,
             reason=issue_in.reason,
             changed_by=actor_id,
         )
+        db.commit()
         return updated_issue
 
     def delete_open_issue(
@@ -379,6 +405,7 @@ class RequirementOpenIssueService:
                     db,
                     requirement_in=requirement_in,
                     actor_id=actor_id,
+                    commit=False,
                 )
             except IntegrityError as exc:
                 db.rollback()
@@ -391,11 +418,21 @@ class RequirementOpenIssueService:
                 continue
             break
         else:
-            raise DuplicateResourceError(
-                error_messages.REQUIREMENT_CODE_ALREADY_EXISTS
-            )
+            raise DuplicateResourceError(error_messages.REQUIREMENT_CODE_ALREADY_EXISTS)
 
         before_value = self._build_issue_snapshot(issue)
+        NotificationService().assignment_changed(
+            db,
+            project_id=project_id,
+            actor_id=actor_id,
+            target_type=NotificationTargetType.REQUIREMENT,
+            target_id=requirement.id,
+            version=requirement.version,
+            previous_user_id=None,
+            recipient_id=requirement.owner_id,
+            title=requirement.title,
+            document_id=requirement.document_id,
+        )
         updated_issue = self.repository.mark_promoted(
             db,
             issue=issue,

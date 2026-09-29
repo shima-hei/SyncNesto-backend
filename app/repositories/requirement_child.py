@@ -281,6 +281,7 @@ class RequirementCommentRepository:
         user_id: int,
         comment_in: RequirementCommentCreate,
         mention_targets: list[CommentMention] | None = None,
+        commit: bool = True,
     ) -> RequirementComment:
         """要件コメントを作成する。"""
         comment = RequirementComment(
@@ -290,7 +291,10 @@ class RequirementCommentRepository:
             comment=comment_in.comment,
         )
         db.add(comment)
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(comment)
         return comment
 

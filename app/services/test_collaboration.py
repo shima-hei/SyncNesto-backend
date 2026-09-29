@@ -41,6 +41,7 @@ from app.schemas.test_collaboration import (
 )
 from app.services.comment_mention import CommentMentionService
 from app.services.conflict import raise_if_version_conflict
+from app.services.notification import NotificationService
 from app.services.test_design import TestDesignService
 
 TARGET_MODELS = {
@@ -410,6 +411,12 @@ class TestCollaborationService:
         )
         db.add(comment)
         db.flush()
+        NotificationService().mentions_changed(
+            db,
+            project_id=project_id,
+            actor_id=actor_id,
+            comment=comment,
+        )
         db.add(
             TestDesignCommentChange(
                 comment_id=comment.id,
@@ -441,6 +448,7 @@ class TestCollaborationService:
         comment = self.repository.comment(db, design_id, comment_id)
         if comment is None or comment.deleted_at is not None:
             raise NotFoundError()
+        db.refresh(comment, with_for_update=True)
         if (delete or data.body is not None) and not (
             can_moderate or comment.author_id == actor_id
         ):
@@ -483,6 +491,16 @@ class TestCollaborationService:
         else:
             raise BadRequestError("変更内容がありません")
         comment.version += 1
+        if action == "updated":
+            NotificationService().mentions_changed(
+                db,
+                project_id=project_id,
+                actor_id=actor_id,
+                comment=comment,
+                previous_user_ids={
+                    mention["user_id"] for mention in before["mentions"]
+                },
+            )
         db.add(
             TestDesignCommentChange(
                 comment_id=comment.id,

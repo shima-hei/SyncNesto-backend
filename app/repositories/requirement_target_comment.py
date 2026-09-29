@@ -25,6 +25,7 @@ class RequirementTargetCommentRepository:
         comment_in: RequirementTargetCommentCreate,
         author_id: int,
         mention_targets: list[CommentMention] | None = None,
+        commit: bool = True,
     ) -> RequirementTargetComment:
         """要件定義対象コメントを作成する。"""
         comment = RequirementTargetComment(
@@ -38,7 +39,10 @@ class RequirementTargetCommentRepository:
             author_id=author_id,
         )
         db.add(comment)
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(comment)
         return comment
 
@@ -104,7 +108,7 @@ class RequirementTargetCommentRepository:
         """要件定義対象コメントを更新する。"""
         comment.body = comment_in.body
         comment.version += 1
-        db.commit()
+        db.flush()
         db.refresh(comment)
         return comment
 
