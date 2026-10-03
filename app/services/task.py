@@ -14,6 +14,7 @@ from app.core.exceptions import (
     ForbiddenError,
     NotFoundError,
 )
+from app.models.notification import NotificationTargetType
 from app.models.task import (
     Milestone,
     RequirementTaskRelation,
@@ -49,6 +50,7 @@ from app.services.conflict import (
     raise_duplicate_after_rollback,
     raise_if_version_conflict,
 )
+from app.services.notification import NotificationService
 from app.services.task_presentation import (
     TaskPresentationData,
     TaskPresentationDataService,
@@ -238,9 +240,7 @@ class TaskService:
         self.relation_repository = (
             relation_repository or RequirementTaskRelationRepository()
         )
-        self.dependency_repository = (
-            dependency_repository or TaskDependencyRepository()
-        )
+        self.dependency_repository = dependency_repository or TaskDependencyRepository()
         self.milestone_repository = milestone_repository or MilestoneRepository()
         self.requirement_lookup_repository = (
             requirement_lookup_repository or TaskRequirementLookupRepository()
@@ -251,7 +251,8 @@ class TaskService:
         self.comment_repository = comment_repository or TaskCommentRepository()
         self.audit_log_service = audit_log_service or AuditLogService()
         self.presentation_data_service = (
-            presentation_data_service or TaskPresentationDataService(
+            presentation_data_service
+            or TaskPresentationDataService(
                 task_repository=self.task_repository,
                 relation_repository=self.relation_repository,
                 dependency_repository=self.dependency_repository,
@@ -311,6 +312,7 @@ class TaskService:
                     project_id=project_id,
                     task_in=normalized,
                     actor_id=actor_id,
+                    commit=False,
                 )
             except IntegrityError as exc:
                 db.rollback()
@@ -321,6 +323,17 @@ class TaskService:
                         exc,
                     )
                 continue
+            NotificationService().assignment_changed(
+                db,
+                project_id=project_id,
+                actor_id=actor_id,
+                target_type=NotificationTargetType.TASK,
+                target_id=task.id,
+                version=task.version,
+                previous_user_id=None,
+                recipient_id=task.assignee_id,
+                title=task.title,
+            )
             self._record_change(
                 db,
                 project_id=project_id,
@@ -420,6 +433,7 @@ class TaskService:
     ) -> Task:
         """タスクを更新する。"""
         task = self.get_task(db, task_id)
+        db.refresh(task, with_for_update=True)
         current = self._build_task_conflict_current(db, task)
         raise_if_version_conflict(
             current_version=task.version,
@@ -490,6 +504,7 @@ class TaskService:
                 task=task,
                 task_in=normalized,
                 actor_id=actor_id,
+                commit=False,
             )
         except IntegrityError as exc:
             raise_duplicate_after_rollback(
@@ -501,6 +516,17 @@ class TaskService:
         candidate_fields = (
             task_in.model_fields_set - {"version", "change_reason"}
         ) & TASK_UPDATABLE_FIELDS
+        NotificationService().assignment_changed(
+            db,
+            project_id=task.project_id,
+            actor_id=actor_id,
+            target_type=NotificationTargetType.TASK,
+            target_id=task.id,
+            version=task.version,
+            previous_user_id=before_snapshot["assignee_id"],
+            recipient_id=task.assignee_id,
+            title=task.title,
+        )
         updated_fields, old_values, new_values = build_changed_field_snapshots(
             before_snapshot,
             self._task_snapshot(task),
@@ -524,6 +550,7 @@ class TaskService:
                 resource_id=task.id,
                 metadata={"updated_fields": updated_fields},
             )
+        db.commit()
         return task
 
     def delete_task(self, db: Session, *, task_id: int, actor_id: int | None) -> None:

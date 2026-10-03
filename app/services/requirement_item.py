@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core import error_messages
 from app.core.exceptions import DuplicateResourceError, NotFoundError
+from app.models.notification import NotificationTargetType
 from app.models.requirement import (
     Requirement,
     RequirementDocument,
@@ -28,6 +29,7 @@ from app.services.conflict import (
     raise_duplicate_after_rollback,
     raise_if_version_conflict,
 )
+from app.services.notification import NotificationService
 from app.services.requirement_change_log import (
     RequirementChangeLogAction,
     RequirementChangeLogService,
@@ -152,9 +154,7 @@ class RequirementService:
                 requirement_code=requested_requirement_code,
             )
         ):
-            raise DuplicateResourceError(
-                error_messages.REQUIREMENT_CODE_ALREADY_EXISTS
-            )
+            raise DuplicateResourceError(error_messages.REQUIREMENT_CODE_ALREADY_EXISTS)
 
         retry_limit = (
             1 if requested_requirement_code else AUTO_REQUIREMENT_CODE_RETRY_LIMIT
@@ -171,6 +171,7 @@ class RequirementService:
                     db,
                     requirement_in=normalized,
                     actor_id=actor_id,
+                    commit=False,
                 )
             except IntegrityError as exc:
                 db.rollback()
@@ -181,6 +182,18 @@ class RequirementService:
                         exc,
                     )
                 continue
+            NotificationService().assignment_changed(
+                db,
+                project_id=project_id,
+                actor_id=actor_id,
+                target_type=NotificationTargetType.REQUIREMENT,
+                target_id=requirement.id,
+                version=requirement.version,
+                previous_user_id=None,
+                recipient_id=requirement.owner_id,
+                title=requirement.title,
+                document_id=requirement.document_id,
+            )
             self._record_requirement_change_log(
                 db,
                 requirement=requirement,
@@ -332,6 +345,7 @@ class RequirementService:
             project_id=project_id,
             requirement_id=requirement_id,
         )
+        db.refresh(requirement, with_for_update=True)
         raise_if_version_conflict(
             current_version=requirement.version,
             requested_version=requirement_in.version,
@@ -352,6 +366,7 @@ class RequirementService:
             )
 
         before_value = self._build_revision_snapshot(requirement)
+        previous_owner_id = requirement.owner_id
         try:
             updated_requirement = self.repository.update(
                 db,
@@ -360,6 +375,18 @@ class RequirementService:
                 actor_id=actor_id,
             )
             after_value = self._build_revision_snapshot(updated_requirement)
+            NotificationService().assignment_changed(
+                db,
+                project_id=project_id,
+                actor_id=actor_id,
+                target_type=NotificationTargetType.REQUIREMENT,
+                target_id=updated_requirement.id,
+                version=updated_requirement.version,
+                previous_user_id=previous_owner_id,
+                recipient_id=updated_requirement.owner_id,
+                title=updated_requirement.title,
+                document_id=updated_requirement.document_id,
+            )
             self.revision_repository.create(
                 db,
                 requirement_id=updated_requirement.id,

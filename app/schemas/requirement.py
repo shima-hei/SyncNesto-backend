@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.change_log import (
     ChangeLogUserRead,
@@ -11,6 +11,7 @@ from app.schemas.change_log import (
     RequirementChangeLogFieldName,
     RequirementChangeLogTargetTypeCode,
 )
+from app.schemas.comment_mention import CommentMentionOccurrence
 from app.schemas.user import UserSummary
 
 
@@ -368,6 +369,10 @@ class RequirementApprovalListResponse(BaseModel):
 class RequirementTargetCommentCreate(BaseModel):
     """要件定義対象コメント作成リクエストで受け取るschema。"""
 
+    mentions: list[CommentMentionOccurrence] = Field(
+        default_factory=list, max_length=100
+    )
+
     target_type: str
     target_id: int
     target_anchor: dict | None = None
@@ -377,6 +382,10 @@ class RequirementTargetCommentCreate(BaseModel):
 
 class RequirementTargetCommentUpdate(BaseModel):
     """要件定義対象コメント更新リクエストで受け取るschema。"""
+
+    mentions: list[CommentMentionOccurrence] = Field(
+        default_factory=list, max_length=100
+    )
 
     version: int
     body: str
@@ -392,6 +401,10 @@ class RequirementTargetCommentStateUpdate(BaseModel):
 
 class RequirementTargetCommentRead(BaseModel):
     """要件定義対象コメント読み取り時に返すschema。"""
+
+    mentions: list[CommentMentionOccurrence] = Field(
+        default_factory=list, max_length=100
+    )
 
     id: int
     document_id: int
@@ -523,11 +536,19 @@ class RequirementRelationRead(BaseModel):
 class RequirementCommentCreate(BaseModel):
     """要件コメント作成リクエストで受け取るschema。"""
 
+    mentions: list[CommentMentionOccurrence] = Field(
+        default_factory=list, max_length=100
+    )
+
     comment: str
 
 
 class RequirementCommentRead(BaseModel):
     """要件コメント読み取り時に返すschema。"""
+
+    mentions: list[CommentMentionOccurrence] = Field(
+        default_factory=list, max_length=100
+    )
 
     id: int
     requirement_id: int

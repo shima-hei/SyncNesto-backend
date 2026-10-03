@@ -18,6 +18,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.models.comment_mention import MentionedComment
 from app.models.comments import db_comment
 
 
@@ -180,7 +181,7 @@ class Task(Base):
     )
 
 
-class TaskComment(Base):
+class TaskComment(MentionedComment, Base):
     """タスクコメントを管理するモデル。"""
 
     __tablename__ = "task_comments"

@@ -26,6 +26,7 @@ class TaskRepository:
         project_id: int,
         task_in: TaskCreate,
         actor_id: int | None,
+        commit: bool = True,
     ) -> Task:
         """タスクを作成する。"""
         if task_in.task_code is None:
@@ -54,7 +55,10 @@ class TaskRepository:
             updated_by=actor_id,
         )
         db.add(task)
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(task)
         return task
 
@@ -281,6 +285,7 @@ class TaskRepository:
         task: Task,
         task_in: TaskUpdate,
         actor_id: int | None,
+        commit: bool = True,
     ) -> Task:
         """タスクを更新する。"""
         for field in [
@@ -307,7 +312,10 @@ class TaskRepository:
                 setattr(task, field, getattr(task_in, field))
         task.updated_by = actor_id
         task.version += 1
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(task)
         return task
 

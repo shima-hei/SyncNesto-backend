@@ -24,6 +24,7 @@ class RequirementRepository:
         *,
         requirement_in: RequirementCreate,
         actor_id: int | None = None,
+        commit: bool = True,
     ) -> Requirement:
         """要件を作成する。"""
         requirement = Requirement(
@@ -46,7 +47,10 @@ class RequirementRepository:
             updated_by=actor_id,
         )
         db.add(requirement)
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(requirement)
         return requirement
 

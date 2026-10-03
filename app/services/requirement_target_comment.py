@@ -25,7 +25,9 @@ from app.schemas.requirement import (
     RequirementTargetCommentStateUpdate,
     RequirementTargetCommentUpdate,
 )
+from app.services.comment_mention import CommentMentionService
 from app.services.conflict import build_conflict_current, raise_if_version_conflict
+from app.services.notification import NotificationService
 from app.services.requirement_change_log import (
     RequirementChangeLogAction,
     RequirementChangeLogService,
@@ -129,11 +131,27 @@ class RequirementTargetCommentService:
                 parent_comment_id=comment_in.parent_comment_id,
                 target=target,
             )
+        mention_service = CommentMentionService()
+        prepared = mention_service.prepare(
+            db,
+            project_id=project_id,
+            permission="requirement:read",
+            body=comment_in.body,
+            mentions=comment_in.mentions,
+        )
         comment = self.repository.create(
             db,
             document_id=target.document_id,
             comment_in=comment_in,
             author_id=author_id,
+            mention_targets=mention_service.targets(prepared),
+            commit=False,
+        )
+        NotificationService().mentions_changed(
+            db,
+            project_id=project_id,
+            actor_id=author_id,
+            comment=comment,
         )
         self._record_change_log(
             db,
@@ -178,6 +196,7 @@ class RequirementTargetCommentService:
     ) -> RequirementTargetComment:
         """要件定義対象コメントを更新する。"""
         comment = self.get_comment(db, project_id=project_id, comment_id=comment_id)
+        db.refresh(comment, with_for_update=True)
         self._ensure_comment_owner_or_moderator(
             comment,
             actor_id=actor_id,
@@ -189,14 +208,32 @@ class RequirementTargetCommentService:
             current=build_conflict_current(
                 comment,
                 REQUIREMENT_TARGET_COMMENT_CONFLICT_CURRENT_FIELDS,
-                extra={"author": None},
+                extra={"author": None, "mentions": comment.mentions},
             ),
         )
         before_value = self._build_comment_snapshot(comment)
+        previous_user_ids = {target.user_id for target in comment.mention_targets}
+        mention_service = CommentMentionService()
+        prepared = mention_service.prepare(
+            db,
+            project_id=project_id,
+            permission="requirement:read",
+            body=comment_in.body,
+            mentions=comment_in.mentions,
+            previous=comment.mentions,
+        )
+        mention_service.replace(comment, prepared)
         updated_comment = self.repository.update(
             db,
             comment=comment,
             comment_in=comment_in,
+        )
+        NotificationService().mentions_changed(
+            db,
+            project_id=project_id,
+            actor_id=actor_id,
+            comment=updated_comment,
+            previous_user_ids=previous_user_ids,
         )
         self._record_change_log(
             db,
@@ -266,6 +303,7 @@ class RequirementTargetCommentService:
             can_moderate=can_moderate,
         )
         before_value = self._build_comment_snapshot(comment)
+        comment.mention_targets = []
         deleted_comment = self.repository.soft_delete(db, comment=comment)
         self._record_change_log(
             db,
@@ -326,7 +364,7 @@ class RequirementTargetCommentService:
             current=build_conflict_current(
                 comment,
                 REQUIREMENT_TARGET_COMMENT_CONFLICT_CURRENT_FIELDS,
-                extra={"author": None},
+                extra={"author": None, "mentions": comment.mentions},
             ),
         )
         before_value = self._build_comment_snapshot(comment)

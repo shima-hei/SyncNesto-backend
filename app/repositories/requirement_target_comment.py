@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from app.models.comment_mention import CommentMention
 from app.models.requirement import (
     RequirementTargetComment,
 )
@@ -23,9 +24,12 @@ class RequirementTargetCommentRepository:
         document_id: int,
         comment_in: RequirementTargetCommentCreate,
         author_id: int,
+        mention_targets: list[CommentMention] | None = None,
+        commit: bool = True,
     ) -> RequirementTargetComment:
         """要件定義対象コメントを作成する。"""
         comment = RequirementTargetComment(
+            mention_targets=mention_targets or [],
             document_id=document_id,
             target_type=comment_in.target_type,
             target_id=comment_in.target_id,
@@ -35,7 +39,10 @@ class RequirementTargetCommentRepository:
             author_id=author_id,
         )
         db.add(comment)
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(comment)
         return comment
 
@@ -101,7 +108,7 @@ class RequirementTargetCommentRepository:
         """要件定義対象コメントを更新する。"""
         comment.body = comment_in.body
         comment.version += 1
-        db.commit()
+        db.flush()
         db.refresh(comment)
         return comment
 

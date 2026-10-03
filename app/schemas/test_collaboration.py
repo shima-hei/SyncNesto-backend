@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.comment_mention import CommentMentionOccurrence
+
 
 class RequirementTestItemCreate(BaseModel):
     """要件と項目の関連追加。"""
@@ -42,6 +44,10 @@ class RequirementCoverageRead(BaseModel):
 class TestDesignCommentCreate(BaseModel):
     """対象を指定した設計コメント投稿。"""
 
+    mentions: list[CommentMentionOccurrence] = Field(
+        default_factory=list, max_length=100
+    )
+
     target_type: Literal[
         "design",
         "test_item",
@@ -60,6 +66,10 @@ class TestDesignCommentCreate(BaseModel):
 class TestDesignCommentUpdate(BaseModel):
     """コメント本文または状態の競合付き更新。"""
 
+    mentions: list[CommentMentionOccurrence] = Field(
+        default_factory=list, max_length=100
+    )
+
     version: int = Field(ge=1)
     body: str | None = Field(default=None, min_length=1, max_length=20000)
     is_resolved: bool | None = None
@@ -67,6 +77,10 @@ class TestDesignCommentUpdate(BaseModel):
 
 class TestDesignCommentRead(BaseModel):
     """対象状態を含むコメント表示情報。"""
+
+    mentions: list[CommentMentionOccurrence] = Field(
+        default_factory=list, max_length=100
+    )
 
     model_config = ConfigDict(from_attributes=True)
     id: int

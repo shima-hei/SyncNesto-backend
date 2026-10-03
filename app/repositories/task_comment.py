@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from app.models.comment_mention import CommentMention
 from app.models.task import (
     TaskComment,
 )
@@ -20,9 +21,12 @@ class TaskCommentRepository:
         parent_comment_id: int | None,
         body: str,
         actor_id: int | None,
+        mention_targets: list[CommentMention] | None = None,
+        commit: bool = True,
     ) -> TaskComment:
         """タスクコメントを作成する。"""
         comment = TaskComment(
+            mention_targets=mention_targets or [],
             task_id=task_id,
             parent_comment_id=parent_comment_id,
             body=body,
@@ -30,7 +34,10 @@ class TaskCommentRepository:
             updated_by=actor_id,
         )
         db.add(comment)
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(comment)
         return comment
 
@@ -73,7 +80,7 @@ class TaskCommentRepository:
         comment.body = body
         comment.updated_by = actor_id
         comment.version += 1
-        db.commit()
+        db.flush()
         db.refresh(comment)
         return comment
 

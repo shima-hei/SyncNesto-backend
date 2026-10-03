@@ -17,6 +17,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.models.comment_mention import MentionedComment
 from app.models.comments import db_comment
 
 
@@ -620,7 +621,7 @@ class RequirementApproval(Base):
     )
 
 
-class RequirementTargetComment(Base):
+class RequirementTargetComment(MentionedComment, Base):
     """要件定義内の任意対象へのコメントを管理するモデル。"""
 
     __tablename__ = "requirement_target_comments"
@@ -967,7 +968,7 @@ class RequirementReview(Base):
     )
 
 
-class RequirementComment(Base):
+class RequirementComment(MentionedComment, Base):
     """要件コメントを管理するモデル。"""
 
     __tablename__ = "requirement_comments"

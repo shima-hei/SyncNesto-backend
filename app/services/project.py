@@ -129,6 +129,7 @@ class ProjectService:
         page_size: int,
         q: str | None = None,
         status: str | None = None,
+        member_only: bool = False,
     ) -> tuple[list[Project], int]:
         """ユーザーが閲覧可能なプロジェクト一覧をページング付きで取得する。
 
@@ -139,15 +140,17 @@ class ProjectService:
             page_size: 1ページあたりの件数。
             q: 検索キーワード。
             status: ステータス絞り込み。
+            member_only: 参加案件だけに絞るか。
 
         Returns:
             閲覧可能なプロジェクト一覧と総件数。
         """
-        if self.authorization_service.has_system_permission(
+        system_read = self.authorization_service.has_system_permission(
             db,
             user=current_user,
             permission_code="project:read",
-        ):
+        )
+        if not member_only and system_read:
             return self.repository.list_paginated(
                 db,
                 page=page,
@@ -163,6 +166,7 @@ class ProjectService:
             page_size=page_size,
             q=q,
             status=status,
+            require_read_permission=member_only and not system_read,
         )
 
     def get_project(self, db: Session, project_id: int) -> Project:
@@ -392,6 +396,7 @@ class ProjectMemberService:
         project_id: int,
         q: str | None = None,
         limit: int = 20,
+        mention_permission: str | None = None,
     ) -> list[User]:
         """プロジェクト所属ユーザー一覧を取得する。
 
@@ -410,6 +415,7 @@ class ProjectMemberService:
             project_id=project_id,
             q=q,
             limit=limit,
+            mention_permission=mention_permission,
         )
 
     def list_member_candidates(

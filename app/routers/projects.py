@@ -18,6 +18,7 @@ from app.presenters.project import (
     build_project_member_responses,
     build_project_member_user_list_response,
 )
+from app.schemas.comment_mention import MentionPermission
 from app.schemas.project import (
     CurrentProjectRoleRead,
     ProjectCreate,
@@ -73,6 +74,7 @@ def list_projects(
     page_size: int = Query(default=20, ge=1, le=100),
     q: str | None = Query(default=None),
     status: str | None = Query(default=None),
+    member_only: bool = Query(default=False),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ProjectListResponse:
@@ -83,6 +85,7 @@ def list_projects(
         page_size: 1ページあたりの件数。
         q: 検索キーワード。
         status: ステータス絞り込み。
+        member_only: system権限を持つ場合も参加案件だけに絞る。
         current_user: 認証済みユーザー。
         db: DBセッション。
 
@@ -96,6 +99,7 @@ def list_projects(
         page_size=page_size,
         q=q,
         status=status,
+        member_only=member_only,
     )
     return build_project_list_response(
         projects,
@@ -187,6 +191,7 @@ def list_project_member_users(
     project_id: int,
     q: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
+    mention_permission: MentionPermission | None = Query(default=None),
     _: User = Depends(require_project_permission("project:read")),
     db: Session = Depends(get_db),
 ) -> UserSummaryListResponse:
@@ -206,6 +211,7 @@ def list_project_member_users(
         project_id=project_id,
         q=q,
         limit=limit,
+        mention_permission=mention_permission,
     )
     return build_project_member_user_list_response(
         users,

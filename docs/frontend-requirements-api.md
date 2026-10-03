@@ -702,3 +702,7 @@ approved
 rejected
 commented
 ```
+
+## コメントのメンション
+
+要件コメントと要件定義対象コメントのAPIに `mentions` を追加した。本文形式は維持し、UTF-16単位の出現位置とユーザーIDを送受信する。候補は既存メンバー検索APIの `mention_permission=requirement:read` で取得する。詳細は [コメントのメンションAPI](frontend-comment-mentions-api.md) を参照。

@@ -1,8 +1,10 @@
 """SQLAlchemy models."""
 
 from app.models.audit_log import AuditLog
+from app.models.comment_mention import CommentMention
 from app.models.draft import Draft
 from app.models.login_attempt import LoginAttempt
+from app.models.notification import Notification
 from app.models.project import Project, ProjectMember
 from app.models.rbac import Permission, Role, RolePermission, UserRole
 from app.models.requirement import (
@@ -55,6 +57,7 @@ from app.models.test_design import (
 from app.models.user import User
 
 __all__ = [
+    "CommentMention",
     "Factor",
     "FactorLevel",
     "PatternTable",
@@ -79,6 +82,7 @@ __all__ = [
     "BoardColumn",
     "Draft",
     "LoginAttempt",
+    "Notification",
     "Milestone",
     "Permission",
     "Project",
