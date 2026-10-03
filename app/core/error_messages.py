@@ -77,3 +77,8 @@ COMMENT_MENTION_USER_UNAVAILABLE = (
     "このコメントでメンションできないユーザーが含まれています。"
 )
 NOTIFICATION_NOT_FOUND = "通知が見つかりません"
+FILE_UPLOAD_INVALID = "アップロードの許可が無効または期限切れです"
+FILE_UPLOAD_MISMATCH = "アップロードしたファイルの形式またはサイズが一致しません"
+FILE_UPLOAD_MISSING = "アップロードしたファイルが見つかりません"
+FILE_UPLOAD_UNAVAILABLE = "直接アップロードは現在利用できません"
+FILE_UPLOAD_STORAGE_ERROR = "一時ファイルの削除に失敗しました"

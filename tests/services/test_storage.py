@@ -1,5 +1,8 @@
 """StorageServiceのテスト。"""
 
+from io import BytesIO
+from typing import Any
+
 import pytest
 
 from app.core.config import settings
@@ -14,6 +17,16 @@ class FakeS3Client:
         """FakeS3Clientを初期化する。"""
         self.put_object_kwargs: dict[str, object] | None = None
         self.delete_object_kwargs: dict[str, object] | None = None
+        self.content = b"test"
+        self.content_type = "text/plain"
+
+    def get_object(self, **kwargs: object) -> dict[str, Any]:
+        """保存済みファイルを返す。"""
+        return {
+            "Body": BytesIO(self.content),
+            "ContentLength": len(self.content),
+            "ContentType": self.content_type,
+        }
 
     def put_object(self, **kwargs: object) -> object:
         """put_objectの呼び出し内容を保持する。"""
@@ -28,7 +41,7 @@ class FakeS3Client:
     def generate_presigned_url(
         self,
         ClientMethod: str,
-        Params: dict[str, str],
+        Params: dict[str, Any],
         ExpiresIn: int,
     ) -> str:
         """固定の署名付きURLを返す。"""

@@ -64,6 +64,25 @@ def get_int_env(name: str, default: int) -> int:
 
 
 CookieSameSite = Literal["lax", "strict", "none"]
+FileUploadMode = Literal["server", "presigned"]
+
+
+def get_file_upload_mode() -> FileUploadMode:
+    """アップロード方式を取得し、未対応の値は起動時に拒否する。"""
+    value = os.getenv("FILE_UPLOAD_MODE", "server")
+    if value == "server":
+        return "server"
+    if value == "presigned":
+        return "presigned"
+    raise RuntimeError("FILE_UPLOAD_MODE must be one of: server, presigned")
+
+
+def get_file_upload_url_expires_seconds() -> int:
+    """直接送信用URLの有効期間を起動時に検証する。"""
+    value = get_int_env("FILE_UPLOAD_URL_EXPIRES_SECONDS", 600)
+    if not 1 <= value <= 3600:
+        raise RuntimeError("FILE_UPLOAD_URL_EXPIRES_SECONDS must be 1..3600")
+    return value
 
 
 def get_cookie_samesite_env(name: str, default: CookieSameSite) -> CookieSameSite:
@@ -148,6 +167,8 @@ class Settings:
         "AWS_REGION",
         os.getenv("AWS_DEFAULT_REGION", "ap-northeast-1"),
     )
+    file_upload_mode: FileUploadMode = get_file_upload_mode()
+    file_upload_url_expires_seconds: int = get_file_upload_url_expires_seconds()
     aws_access_key_id: str | None = os.getenv("AWS_ACCESS_KEY_ID")
     aws_secret_access_key: str | None = os.getenv("AWS_SECRET_ACCESS_KEY")
     aws_s3_bucket_name: str = os.getenv(

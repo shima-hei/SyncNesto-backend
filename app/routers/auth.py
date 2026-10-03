@@ -10,6 +10,11 @@ from app.core.csrf import delete_csrf_cookie, generate_csrf_token, set_csrf_cook
 from app.db.session import get_db
 from app.models.user import User
 from app.presenters.user import build_current_user_response
+from app.schemas.file_upload import (
+    FileUploadComplete,
+    FileUploadPlan,
+    FileUploadRequest,
+)
 from app.schemas.user import (
     CurrentUserRead,
     UserLogin,
@@ -18,7 +23,7 @@ from app.schemas.user import (
 )
 from app.services.audit_log import AuditLogService
 from app.services.session import SessionService
-from app.services.storage import StorageService
+from app.services.storage import MAX_IMAGE_BYTES, StorageService
 from app.services.user import UserService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -173,8 +178,36 @@ def update_current_user_avatar(
     user = user_service.update_avatar(
         db,
         current_user=current_user,
-        content=file.file.read(),
+        content=file.file.read(MAX_IMAGE_BYTES + 1),
         content_type=file.content_type,
+        storage_service=storage_service,
+    )
+    system_roles = user_service.list_system_roles_by_user(db, user.id)
+    return build_current_user_response(user, system_roles, storage_service)
+
+
+@router.post("/me/avatar/upload-plan", response_model=FileUploadPlan)
+def plan_current_user_avatar_upload(
+    data: FileUploadRequest,
+    current_user: User = Depends(get_current_user),
+) -> FileUploadPlan:
+    """本人のアイコン送信方式を返す。"""
+    return user_service.plan_avatar_upload(
+        current_user=current_user, data=data, storage_service=storage_service
+    )
+
+
+@router.post("/me/avatar/upload-complete", response_model=CurrentUserRead)
+def complete_current_user_avatar_upload(
+    data: FileUploadComplete,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CurrentUserRead:
+    """本人が直接送信したアイコンを検証して登録する。"""
+    user = user_service.complete_avatar_upload(
+        db,
+        current_user=current_user,
+        token=data.upload_token,
         storage_service=storage_service,
     )
     system_roles = user_service.list_system_roles_by_user(db, user.id)

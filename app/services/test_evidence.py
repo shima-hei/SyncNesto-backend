@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.models.test_design import TestEvidence, TestExecution
 from app.repositories.test_collaboration import TestCollaborationRepository
+from app.schemas.file_upload import FileUploadPlan, FileUploadRequest
 from app.schemas.test_collaboration import TestEvidenceRead, TestExecutionRead
+from app.services.file_upload import FileUploadService
 from app.services.storage import StorageService
 from app.services.test_design import TestDesignService
 
@@ -104,26 +106,36 @@ class TestEvidenceService:
             for row in rows
         ]
 
-    def _validate_file(
-        self, filename: str, content_type: str, content: bytes
+    def _validate_metadata(
+        self, filename: str, content_type: str, byte_size: int
     ) -> tuple[str, str]:
-        """証跡用の形式、容量、ファイル名を検証する。"""
+        """送信前に証跡用の形式、容量、ファイル名を検証する。"""
         filename = PurePath(filename.replace("\\", "/")).name.strip()
         if (
             not filename
             or len(filename) > 255
-            or not content
-            or len(content) > MAX_BYTES
+            or byte_size <= 0
+            or byte_size > MAX_BYTES
         ):
             raise BadRequestError("エビデンスの名前またはサイズが不正です")
         spec = ALLOWED_TYPES.get(content_type)
         if spec is None:
             raise BadRequestError("このファイル形式は添付できません")
-        extension, signature = spec
+        extension, _ = spec
         if not filename.lower().endswith(
             (extension, ".jpeg" if extension == ".jpg" else extension)
         ):
             raise BadRequestError("ファイル名と形式が一致しません")
+        return filename, extension
+
+    def _validate_file(
+        self, filename: str, content_type: str, content: bytes
+    ) -> tuple[str, str]:
+        """メタデータと実際の証跡内容を検証する。"""
+        filename, extension = self._validate_metadata(
+            filename, content_type, len(content)
+        )
+        _, signature = ALLOWED_TYPES[content_type]
         if signature and not content.startswith(signature):
             raise BadRequestError("ファイル内容と形式が一致しません")
         if content_type == "image/webp" and content[8:12] != b"WEBP":
@@ -134,6 +146,74 @@ class TestEvidenceService:
             except UnicodeDecodeError as exc:
                 raise BadRequestError("テキストはUTF-8で保存してください") from exc
         return filename, extension
+
+    def plan_upload(
+        self,
+        db: Session,
+        project_id: int,
+        design_id: int,
+        case_id: UUID,
+        execution_id: UUID,
+        data: FileUploadRequest,
+        actor_id: int,
+    ) -> FileUploadPlan:
+        """所属と件数を確認して環境ごとの送信方式を返す。"""
+        self._case_execution(db, project_id, design_id, case_id, execution_id)
+        self._validate_metadata(data.filename, data.content_type, data.byte_size)
+        if len(self.repository.evidence(db, execution_id)) >= MAX_FILES_PER_EXECUTION:
+            raise BadRequestError("1回の実行に添付できるファイルは20件までです")
+        return FileUploadService(self.storage).plan(
+            data,
+            user_id=actor_id,
+            scope=f"evidence:{project_id}:{design_id}:{case_id}:{execution_id}",
+        )
+
+    def complete_upload(
+        self,
+        db: Session,
+        project_id: int,
+        design_id: int,
+        case_id: UUID,
+        execution_id: UUID,
+        token: str,
+        actor_id: int,
+    ) -> TestEvidenceRead:
+        """一時ファイルを検証し、再上書きできない保存先へ登録する。"""
+        self._case_execution(db, project_id, design_id, case_id, execution_id)
+        uploads = FileUploadService(self.storage)
+        upload_id, data, key = uploads.verify(
+            token,
+            user_id=actor_id,
+            scope=f"evidence:{project_id}:{design_id}:{case_id}:{execution_id}",
+        )
+        self.repository.lock_execution(db, execution_id)
+        existing = self.repository.evidence_upload(db, upload_id)
+        if existing is not None:
+            if existing.deleted_at is not None:
+                raise NotFoundError()
+            names = self.repository.user_names(db, {existing.uploaded_by})
+            return TestEvidenceRead.model_validate(existing).model_copy(
+                update={"uploaded_by_name": names.get(existing.uploaded_by)}
+            )
+        self._validate_metadata(data.filename, data.content_type, data.byte_size)
+        try:
+            content = self.storage.read_uploaded_object(
+                key=key, content_type=data.content_type, byte_size=data.byte_size
+            )
+            return self.upload(
+                db,
+                project_id,
+                design_id,
+                case_id,
+                execution_id,
+                data.filename,
+                data.content_type,
+                content,
+                actor_id,
+                evidence_id=upload_id,
+            )
+        finally:
+            uploads.discard(key)
 
     def upload(
         self,
@@ -146,14 +226,17 @@ class TestEvidenceService:
         content_type: str,
         content: bytes,
         actor_id: int,
+        *,
+        evidence_id: UUID | None = None,
     ) -> TestEvidenceRead:
         """実行に対して検証済みファイルを登録する。"""
         self._case_execution(db, project_id, design_id, case_id, execution_id)
+        self.repository.lock_execution(db, execution_id)
         existing = self.repository.evidence(db, execution_id)
         if len(existing) >= MAX_FILES_PER_EXECUTION:
             raise BadRequestError("1回の実行に添付できるファイルは20件までです")
         filename, extension = self._validate_file(filename, content_type, content)
-        evidence_id = uuid4()
+        evidence_id = evidence_id or uuid4()
         key = (
             f"projects/{project_id}/test-cases/{case_id}/executions/"
             f"{execution_id}/{evidence_id}{extension}"

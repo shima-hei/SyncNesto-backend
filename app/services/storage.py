@@ -1,8 +1,10 @@
 """S3ストレージ操作を提供するモジュール。"""
 
-from typing import Protocol
+from typing import Any, Protocol
 
 import boto3
+from botocore.config import Config
+from botocore.exceptions import ClientError
 
 from app.core import error_messages
 from app.core.config import settings
@@ -27,10 +29,14 @@ class S3Client(Protocol):
         """S3からオブジェクトを削除する。"""
         ...
 
+    def get_object(self, **kwargs: object) -> dict[str, Any]:
+        """保存されたファイルとメタデータを取得する。"""
+        ...
+
     def generate_presigned_url(
         self,
         ClientMethod: str,
-        Params: dict[str, str],
+        Params: dict[str, Any],
         ExpiresIn: int,
     ) -> str:
         """署名付きURLを生成する。"""
@@ -49,6 +55,12 @@ class StorageService:
         s3_client_kwargs: dict[str, object] = {
             "region_name": settings.aws_region,
             "endpoint_url": settings.aws_s3_endpoint_url,
+            "config": Config(
+                signature_version="s3v4",
+                s3={"addressing_style": "path"},
+                request_checksum_calculation="when_required",
+                response_checksum_validation="when_required",
+            ),
         }
         if settings.aws_access_key_id and settings.aws_secret_access_key:
             s3_client_kwargs["aws_access_key_id"] = settings.aws_access_key_id
@@ -137,6 +149,47 @@ class StorageService:
             Params={"Bucket": settings.aws_s3_bucket_name, "Key": key},
             ExpiresIn=settings.aws_s3_presigned_url_expires_seconds,
         )
+
+    def presigned_upload_url(
+        self, *, key: str, content_type: str, byte_size: int, expires_in: int
+    ) -> str:
+        """ファイルの形式・容量を署名に含めた一時保存用PUT URLを作る。"""
+        return self.s3_client.generate_presigned_url(
+            "put_object",
+            Params={
+                "Bucket": settings.aws_s3_bucket_name,
+                "Key": key,
+                "ContentType": content_type,
+                "ContentLength": byte_size,
+            },
+            ExpiresIn=expires_in,
+        )
+
+    def read_uploaded_object(
+        self, *, key: str, content_type: str, byte_size: int
+    ) -> bytes:
+        """許可された容量まで読み込み、実際のメタデータを検証する。"""
+        try:
+            result = self.s3_client.get_object(
+                Bucket=settings.aws_s3_bucket_name, Key=key
+            )
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] in {"NoSuchKey", "404"}:
+                raise BadRequestError(error_messages.FILE_UPLOAD_MISSING) from exc
+            raise
+        body = result["Body"]
+        try:
+            if (
+                result["ContentLength"] != byte_size
+                or result.get("ContentType") != content_type
+            ):
+                raise BadRequestError(error_messages.FILE_UPLOAD_MISMATCH)
+            content = body.read(byte_size + 1)
+            if len(content) != byte_size:
+                raise BadRequestError(error_messages.FILE_UPLOAD_MISMATCH)
+            return content
+        finally:
+            body.close()
 
     def _get_image_extension(self, content_type: str | None) -> str:
         """Content-Typeに対応する画像拡張子を取得する。"""

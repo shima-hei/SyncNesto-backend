@@ -237,6 +237,8 @@ Alembic は `.env` の `DATABASE_URL` を読み込みます。
 
 ## 初期管理者seed
 
+ファイル送信方式は `FILE_UPLOAD_MODE=server / presigned` で切り替えます。既定値は `server` です。直接送信のAPI、S3接続先、CORS、一時ファイルの清掃設定は [ファイル送信仕様](docs/frontend-file-upload.md) を参照してください。
+
 管理者用APIを使い始めるため、RBAC初期データと最初の `system_admin` ユーザーはseedで作成します。
 
 ```bash

@@ -211,6 +211,18 @@ class TestCollaborationRepository:
             )
         )
 
+    def lock_execution(self, db: Session, execution_id: UUID) -> None:
+        """添付件数の確認と登録を同じ実行内で直列化する。"""
+        db.scalar(
+            select(TestExecution)
+            .where(TestExecution.id == execution_id)
+            .with_for_update()
+        )
+
+    def evidence_upload(self, db: Session, evidence_id: UUID) -> TestEvidence | None:
+        """完了要求の再送を判定するため、削除済みも含めて取得する。"""
+        return db.get(TestEvidence, evidence_id)
+
     def evidence_by_id(
         self, db: Session, execution_id: UUID, evidence_id: UUID
     ) -> TestEvidence | None:
