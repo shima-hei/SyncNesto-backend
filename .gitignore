@@ -212,6 +212,7 @@ docker/pgadmin/
 .env.*
 !.env.example
 .vscode/
+.vercel/
 
 # docs
 /docs/*

@@ -1,22 +1,25 @@
-"""公開APIのBFF認証と、DB処理前の簡易リクエスト制限。"""
+"""公開APIのBFF認証と、業務処理前の共有リクエスト制限。"""
 
 import hmac
 from ipaddress import ip_address
 from math import ceil
 from time import monotonic
 
+from sqlalchemy.exc import SQLAlchemyError
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from app.core.config import settings
+from app.services.request_limit import consume_request_budget
 
 BFF_KEY_HEADER = "X-Syncnesto-BFF-Key"
 CLIENT_IP_HEADER = "X-Syncnesto-Client-IP"
 
 
 class IngressMiddleware(BaseHTTPMiddleware):
-    """BFF以外の直接アクセスを拒否し、プロセス内で回数を制限する。"""
+    """BFF以外の直接アクセスを拒否し、DBとプロセス内で回数を制限する。"""
 
     window_seconds = 60
     max_buckets = 10000
@@ -66,6 +69,17 @@ class IngressMiddleware(BaseHTTPMiddleware):
         if count >= (10 if login else 240):
             return self.limited_response(ceil(self.window_seconds - (now - start)))
         self.buckets[key] = (start, count + 1)
+        try:
+            retry_after = await run_in_threadpool(
+                consume_request_budget, client_ip, login
+            )
+        except SQLAlchemyError:
+            return JSONResponse(
+                {"message": "Service unavailable", "code": "SERVICE_UNAVAILABLE"},
+                status_code=503,
+            )
+        if retry_after:
+            return self.limited_response(retry_after)
         return await call_next(request)
 
     @staticmethod

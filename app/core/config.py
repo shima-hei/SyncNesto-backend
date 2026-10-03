@@ -68,6 +68,21 @@ CookieSameSite = Literal["lax", "strict", "none"]
 FileUploadMode = Literal["server", "presigned"]
 
 
+def get_allowed_hosts() -> list[str]:
+    """設定したHostと、Vercelが発行する実デプロイのHostを取得する。"""
+    hosts = [
+        host.strip()
+        for host in os.getenv("ALLOWED_HOSTS", "").split(",")
+        if host.strip()
+    ]
+    if os.getenv("VERCEL") == "1":
+        for key in ("VERCEL_URL", "VERCEL_PROJECT_PRODUCTION_URL"):
+            host = os.getenv(key)
+            if host and host not in hosts:
+                hosts.append(host)
+    return hosts
+
+
 def get_file_upload_mode() -> FileUploadMode:
     """アップロード方式を取得し、未対応の値は起動時に拒否する。"""
     value = os.getenv("FILE_UPLOAD_MODE", "server")
@@ -113,13 +128,7 @@ class Settings:
     app_name: str = os.getenv("APP_NAME", "Syncnesto API")
     app_env: str = os.getenv("APP_ENV", "development")
     bff_shared_secret: str = os.getenv("BFF_SHARED_SECRET", "")
-    allowed_hosts: list[str] = field(
-        default_factory=lambda: [
-            host.strip()
-            for host in os.getenv("ALLOWED_HOSTS", "").split(",")
-            if host.strip()
-        ]
-    )
+    allowed_hosts: list[str] = field(default_factory=get_allowed_hosts)
     database_url: str = get_required_env("DATABASE_URL")
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
     log_format: str = os.getenv("LOG_FORMAT", "text")

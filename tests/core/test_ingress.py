@@ -5,6 +5,7 @@ from dataclasses import replace
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import OperationalError
 
 from app.core.config import settings
 from app.core.ingress import IngressMiddleware
@@ -18,6 +19,7 @@ def ingress_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(settings, "app_env", "production")
     monkeypatch.setattr(settings, "bff_shared_secret", "s" * 48)
     monkeypatch.setattr(settings, "allowed_hosts", ["testserver"])
+    monkeypatch.setattr("app.core.ingress.consume_request_budget", lambda *_args: 0)
     app = FastAPI()
 
     @app.get("/")
@@ -86,6 +88,24 @@ def test_bounded_rate_limit_cache(
     assert ingress_client.post("/auth/login", headers=headers).status_code == 200
     headers["X-Syncnesto-Client-IP"] = "192.0.2.2"
     assert ingress_client.post("/auth/login", headers=headers).status_code == 429
+
+
+def test_shared_budget_is_required(
+    ingress_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """共有カウンター超過は429、DB障害は迂回せず503にする。"""
+    headers = {"X-Syncnesto-BFF-Key": "s" * 48}
+    monkeypatch.setattr("app.core.ingress.consume_request_budget", lambda *_args: 15)
+    assert ingress_client.post("/auth/login", headers=headers).status_code == 429
+
+    def broken_budget(*_args) -> int:
+        """共有ストアの接続障害を再現する。"""
+        raise OperationalError("", {}, Exception("database unavailable"))
+
+    monkeypatch.setattr("app.core.ingress.consume_request_budget", broken_budget)
+    response = ingress_client.post("/auth/login", headers=headers)
+    assert response.status_code == 503
+    assert "database unavailable" not in response.text
 
 
 def production_settings():

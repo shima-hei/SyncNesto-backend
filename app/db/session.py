@@ -4,6 +4,7 @@ import os
 import ssl
 from collections.abc import Generator
 
+import certifi
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -12,7 +13,11 @@ from app.core.config import settings
 connect_args = {}
 if settings.app_env == "production":
     settings.validate_production()
-    ca_file = os.getenv("PGSSLROOTCERT") or ssl.get_default_verify_paths().cafile
+    ca_file = (
+        os.getenv("PGSSLROOTCERT")
+        or ssl.get_default_verify_paths().cafile
+        or certifi.where()
+    )
     if not ca_file:
         raise RuntimeError("Production requires a trusted PostgreSQL CA bundle")
     connect_args["sslrootcert"] = ca_file

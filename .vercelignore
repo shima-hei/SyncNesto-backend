@@ -1,0 +1,13 @@
+.env*
+.venv/
+.git/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+**/__pycache__/
+docker/
+tests/
+docs/
+.codex/
+.vscode/
+*.log

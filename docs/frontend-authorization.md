@@ -8,9 +8,11 @@
 
 キー未設定・不一致はDBへ到達する前に `403 FORBIDDEN` になります。Vercelでキーが未設定・32文字未満ならBFFは `503 SERVICE_UNAVAILABLE` を返します。ローカルでは共有キーを省略できます。
 
-本番はIP単位にログイン10回/分、その他240回/分を制限し、超過は `429 RATE_LIMITED` と `Retry-After` を返します。BFFがVercelの `x-vercel-forwarded-for` から検証したIPだけを `X-Syncnesto-Client-IP` で転送します。このヘッダーもブラウザの入力を上書きし、バックエンドは共有キーの確認後に使用します。Server Guardの呼び出しは接続元IPを使います。カウンターは単一バックエンドプロセス内に限られ、再起動でリセットされます。複数workerや複数instanceへ拡張する際は共有ストアでの制限へ置き換えてください。既存のアカウント単位の失敗回数・ロックも維持します。
+本番はIP単位にログイン10回/分、その他240回/分を制限し、超過は `429 RATE_LIMITED` と `Retry-After` を返します。BFFがVercelの `x-vercel-forwarded-for` から検証したIPだけを `X-Syncnesto-Client-IP` で転送します。このヘッダーもブラウザの入力を上書きし、バックエンドは共有キーの確認後に使用します。Server Guardの呼び出しは接続元IPを使います。既存のアカウント単位の失敗回数・ロックも維持します。
 
-本番起動には32文字以上の `BFF_SHARED_SECRET`・強い `SECRET_KEY`、Secureな認証/CSRF Cookie、Cookie-only認証、ワイルドカードを含まない `ALLOWED_HOSTS`、`sslmode=verify-full` のDB接続、`SQL_ECHO=false` が必須です。PostgreSQLのCAはOSの信頼ストアを使い、必要なら `PGSSLROOTCERT` でCAファイルを指定します。本番ではSwagger・ReDoc・OpenAPIルートと開発用CORSを無効化します。APIクライアント生成は開発環境のOpenAPIを使います。
+カウンターはPostgreSQLの `request_limits` に保存し、複数worker・Vercel instance・再起動をまたいで共有します。DBの時刻で1分の時間枠を決め、原子的なupsertで同時要求の超過を防ぎます。IPは `SECRET_KEY` によるHMACにして保存します。全体6000回/分の上限でIPを増やす要求による行数の増加も抑え、古い時間枠の行は次の要求で削除します。業務処理に入る前に独立した短いDBトランザクションが発生し、カウンターDBが使えない場合は `503 SERVICE_UNAVAILABLE` で停止します。同一プロセス内でも回数を先に確認します。分散攻撃や無料枠の消費を完全に防ぐものではありません。
+
+本番起動には32文字以上の `BFF_SHARED_SECRET`・強い `SECRET_KEY`、Secureな認証/CSRF Cookie、Cookie-only認証、ワイルドカードを含まない `ALLOWED_HOSTS`、`sslmode=verify-full` のDB接続、`SQL_ECHO=false` が必須です。PostgreSQLのCAはOSの信頼ストアを優先し、存在しない環境ではcertifiを使います。必要なら `PGSSLROOTCERT` でCAファイルを指定します。Vercelではプラットフォームが設定した `VERCEL_URL`・`VERCEL_PROJECT_PRODUCTION_URL` も許可Hostに追加します。本番ではSwagger・ReDoc・OpenAPIルートと開発用CORSを無効化します。APIクライアント生成は開発環境のOpenAPIを使います。
 
 ## 基本方針
 

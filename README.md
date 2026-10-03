@@ -467,6 +467,24 @@ LOGIN_MAX_FAILED_ATTEMPTS=5
 LOGIN_LOCK_MINUTES=15
 ```
 
+### VercelでのFastAPI運用
+
+`app/main.py` をVercel Functionsの入口に使います。`pyproject.toml` の
+`[tool.vercel]`、`.python-version`、`vercel.json` にビルド・実行設定があります。
+PostgreSQLドライバーはLinux向けwheelを利用できる `psycopg2-binary` を使います。
+秘密ファイル・テスト・ローカル仮想環境は `.vercelignore` で送信対象から外します。
+
+本番では上記に加えて強い `SECRET_KEY`・`BFF_SHARED_SECRET`、明示した
+`ALLOWED_HOSTS`、制限付きロールの `DATABASE_URL`（`sslmode=verify-full`）、
+S3互換接続先とサーバー専用のキーが必要です。環境変数はinfraの
+`terraform/portfolio/` と `runtime/` で管理します。
+
+`FILE_UPLOAD_MODE=presigned` でファイル本体をストレージへ直接送信します。
+IPごとの回数はPostgreSQLの `request_limits` で共有し、Vercelのinstanceが
+増えたり再起動したりしても維持します。テーブル作成のmigrationを適用してから
+デプロイしてください。公開境界・回数制限・設定条件は
+[認証仕様](docs/frontend-authorization.md#公開環境の接続境界) を参照してください。
+
 ## 認可
 
 認可はRBACをベースにしています。ロール、権限、ロール権限はDBで管理し、初期値は `scripts.seed_rbac` で投入します。
