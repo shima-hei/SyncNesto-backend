@@ -218,5 +218,6 @@ docker/pgadmin/
 !/docs/frontend-notifications-api.md
 !/docs/frontend-home-api.md
 !/docs/frontend-file-upload.md
+!/docs/frontend-authorization.md
 .codex
 AGENTS.md

@@ -5,6 +5,7 @@ from uuid import uuid4
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -14,6 +15,7 @@ from app.core.csrf import (
     is_valid_csrf_request,
     should_check_csrf,
 )
+from app.core.ingress import IngressMiddleware
 from app.core.logging import (
     client_ip_context,
     request_id_context,
@@ -170,6 +172,10 @@ def register_middleware(app: FastAPI) -> None:
     app.add_middleware(CsrfMiddleware)
     app.add_middleware(RequestLoggingMiddleware)
     app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(IngressMiddleware)
+    if settings.app_env == "production":
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
+        return
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

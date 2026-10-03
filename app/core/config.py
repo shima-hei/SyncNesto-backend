@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
+from urllib.parse import parse_qs, urlsplit
 
 from dotenv import load_dotenv
 
@@ -111,6 +112,14 @@ class Settings:
 
     app_name: str = os.getenv("APP_NAME", "Syncnesto API")
     app_env: str = os.getenv("APP_ENV", "development")
+    bff_shared_secret: str = os.getenv("BFF_SHARED_SECRET", "")
+    allowed_hosts: list[str] = field(
+        default_factory=lambda: [
+            host.strip()
+            for host in os.getenv("ALLOWED_HOSTS", "").split(",")
+            if host.strip()
+        ]
+    )
     database_url: str = get_required_env("DATABASE_URL")
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
     log_format: str = os.getenv("LOG_FORMAT", "text")
@@ -190,6 +199,26 @@ class Settings:
             "http://localhost:5173",
         ]
     )
+
+    def validate_production(self) -> None:
+        """公開環境の設定漏れを起動時に拒否する。"""
+        if self.app_env != "production":
+            return
+        if len(self.bff_shared_secret) < 32:
+            raise RuntimeError("Production requires BFF_SHARED_SECRET >= 32 characters")
+        if len(self.secret_key) < 32 or self.secret_key.startswith("change-me"):
+            raise RuntimeError("Production requires a strong SECRET_KEY")
+        if not self.auth_cookie_secure or not self.csrf_cookie_secure:
+            raise RuntimeError("Production requires Secure auth and CSRF cookies")
+        if self.allow_bearer_token_response or self.allow_authorization_header:
+            raise RuntimeError("Production requires Cookie-only authentication")
+        if not self.allowed_hosts or any("*" in host for host in self.allowed_hosts):
+            raise RuntimeError("Production requires explicit ALLOWED_HOSTS")
+        connection = urlsplit(self.database_url)
+        if parse_qs(connection.query).get("sslmode") != ["verify-full"]:
+            raise RuntimeError("Production DATABASE_URL requires sslmode=verify-full")
+        if self.sql_echo:
+            raise RuntimeError("Production requires SQL_ECHO=false")
 
 
 settings = Settings()
