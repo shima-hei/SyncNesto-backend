@@ -473,11 +473,13 @@ LOGIN_LOCK_MINUTES=15
 `[tool.vercel]`、`.python-version`、`vercel.json` にビルド・実行設定があります。
 PostgreSQLドライバーはLinux向けwheelを利用できる `psycopg2-binary` を使います。
 秘密ファイル・テスト・ローカル仮想環境は `.vercelignore` で送信対象から外します。
+`vercel.json` の `excludeFiles` でもローカルの環境ファイル・DBデータ・開発メモをFunctionsの成果物から除外します。
 
 本番では上記に加えて強い `SECRET_KEY`・`BFF_SHARED_SECRET`、明示した
 `ALLOWED_HOSTS`、制限付きロールの `DATABASE_URL`（`sslmode=verify-full`）、
 S3互換接続先とサーバー専用のキーが必要です。環境変数はinfraの
-`terraform/portfolio/` と `runtime/` で管理します。
+`terraform/vercel/` と `terraform/vercel/runtime/` で管理します。
+公開APIのURLは `https://syncnesto-api.vercel.app` です。
 
 `FILE_UPLOAD_MODE=presigned` でファイル本体をストレージへ直接送信します。
 IPごとの回数はPostgreSQLの `request_limits` で共有し、Vercelのinstanceが

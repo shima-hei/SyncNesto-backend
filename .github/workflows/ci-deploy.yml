@@ -49,7 +49,7 @@ jobs:
     timeout-minutes: 20
     environment:
       name: production
-      url: https://syncnesto-portfolio-api.vercel.app
+      url: https://syncnesto-api.vercel.app
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -78,6 +78,6 @@ jobs:
       - run: vercel deploy --prebuilt --prod --yes --token="$VERCEL_TOKEN"
       - name: Verify public API boundary
         run: |
-          curl --fail --silent --show-error --retry 3 --retry-all-errors https://syncnesto-portfolio-api.vercel.app/ --output /dev/null
-          status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://syncnesto-portfolio-api.vercel.app/auth/me)
+          curl --fail --silent --show-error --retry 3 --retry-all-errors https://syncnesto-api.vercel.app/ --output /dev/null
+          status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://syncnesto-api.vercel.app/auth/me)
           test "$status" = 403
