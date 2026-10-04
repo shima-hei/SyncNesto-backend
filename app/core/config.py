@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
+from urllib.parse import parse_qs, urlsplit
 
 from dotenv import load_dotenv
 
@@ -64,6 +65,40 @@ def get_int_env(name: str, default: int) -> int:
 
 
 CookieSameSite = Literal["lax", "strict", "none"]
+FileUploadMode = Literal["server", "presigned"]
+
+
+def get_allowed_hosts() -> list[str]:
+    """設定したHostと、Vercelが発行する実デプロイのHostを取得する。"""
+    hosts = [
+        host.strip()
+        for host in os.getenv("ALLOWED_HOSTS", "").split(",")
+        if host.strip()
+    ]
+    if os.getenv("VERCEL") == "1":
+        for key in ("VERCEL_URL", "VERCEL_PROJECT_PRODUCTION_URL"):
+            host = os.getenv(key)
+            if host and host not in hosts:
+                hosts.append(host)
+    return hosts
+
+
+def get_file_upload_mode() -> FileUploadMode:
+    """アップロード方式を取得し、未対応の値は起動時に拒否する。"""
+    value = os.getenv("FILE_UPLOAD_MODE", "server")
+    if value == "server":
+        return "server"
+    if value == "presigned":
+        return "presigned"
+    raise RuntimeError("FILE_UPLOAD_MODE must be one of: server, presigned")
+
+
+def get_file_upload_url_expires_seconds() -> int:
+    """直接送信用URLの有効期間を起動時に検証する。"""
+    value = get_int_env("FILE_UPLOAD_URL_EXPIRES_SECONDS", 600)
+    if not 1 <= value <= 3600:
+        raise RuntimeError("FILE_UPLOAD_URL_EXPIRES_SECONDS must be 1..3600")
+    return value
 
 
 def get_cookie_samesite_env(name: str, default: CookieSameSite) -> CookieSameSite:
@@ -92,6 +127,8 @@ class Settings:
 
     app_name: str = os.getenv("APP_NAME", "Syncnesto API")
     app_env: str = os.getenv("APP_ENV", "development")
+    bff_shared_secret: str = os.getenv("BFF_SHARED_SECRET", "")
+    allowed_hosts: list[str] = field(default_factory=get_allowed_hosts)
     database_url: str = get_required_env("DATABASE_URL")
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
     log_format: str = os.getenv("LOG_FORMAT", "text")
@@ -148,6 +185,8 @@ class Settings:
         "AWS_REGION",
         os.getenv("AWS_DEFAULT_REGION", "ap-northeast-1"),
     )
+    file_upload_mode: FileUploadMode = get_file_upload_mode()
+    file_upload_url_expires_seconds: int = get_file_upload_url_expires_seconds()
     aws_access_key_id: str | None = os.getenv("AWS_ACCESS_KEY_ID")
     aws_secret_access_key: str | None = os.getenv("AWS_SECRET_ACCESS_KEY")
     aws_s3_bucket_name: str = os.getenv(
@@ -169,6 +208,26 @@ class Settings:
             "http://localhost:5173",
         ]
     )
+
+    def validate_production(self) -> None:
+        """公開環境の設定漏れを起動時に拒否する。"""
+        if self.app_env != "production":
+            return
+        if len(self.bff_shared_secret) < 32:
+            raise RuntimeError("Production requires BFF_SHARED_SECRET >= 32 characters")
+        if len(self.secret_key) < 32 or self.secret_key.startswith("change-me"):
+            raise RuntimeError("Production requires a strong SECRET_KEY")
+        if not self.auth_cookie_secure or not self.csrf_cookie_secure:
+            raise RuntimeError("Production requires Secure auth and CSRF cookies")
+        if self.allow_bearer_token_response or self.allow_authorization_header:
+            raise RuntimeError("Production requires Cookie-only authentication")
+        if not self.allowed_hosts or any("*" in host for host in self.allowed_hosts):
+            raise RuntimeError("Production requires explicit ALLOWED_HOSTS")
+        connection = urlsplit(self.database_url)
+        if parse_qs(connection.query).get("sslmode") != ["verify-full"]:
+            raise RuntimeError("Production DATABASE_URL requires sslmode=verify-full")
+        if self.sql_echo:
+            raise RuntimeError("Production requires SQL_ECHO=false")
 
 
 settings = Settings()

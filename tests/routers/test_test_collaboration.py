@@ -4,7 +4,10 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.config import settings
 from app.routers import test_collaboration as collaboration_router
+from app.services.storage import StorageService
+from tests.fakes.storage import MemoryS3Client
 from tests.helpers.auth import authorize_as
 
 
@@ -45,6 +48,187 @@ def context(client, create_test_user, create_test_project, assign_project_role):
     response = client.put(url, json=payload)
     assert response.status_code == 200, response.text
     return user, project, url, item_id, payload
+
+
+@pytest.fixture
+def direct_evidence(client, context, monkeypatch):
+    """実行履歴と直接送信用ストレージを用意する。"""
+    user, _, url, _, _ = context
+    monkeypatch.setattr(settings, "file_upload_mode", "presigned")
+    s3 = MemoryS3Client()
+    monkeypatch.setattr(
+        collaboration_router.evidence_service, "storage", StorageService(s3)
+    )
+    case = client.get(url + "/cases").json()[0]
+    result = client.patch(
+        url + f"/cases/{case['id']}",
+        json={
+            "version": case["version"],
+            "status": "failed",
+            "actual_result": "NG",
+        },
+    )
+    assert result.status_code == 200, result.text
+    runs_url = url + f"/cases/{case['id']}/executions"
+    execution = client.get(runs_url).json()[0]
+    return result.json(), runs_url + f"/{execution['id']}/evidence", s3
+
+
+def evidence_plan(
+    client, url, content=b"test", content_type="text/plain", filename="a.txt"
+):
+    """送信計画を取得する。"""
+    return client.post(
+        url + "/upload-plan",
+        json={
+            "filename": filename,
+            "content_type": content_type,
+            "byte_size": len(content),
+        },
+    )
+
+
+def test_direct_evidence_validates_and_promotes_file(client, direct_evidence):
+    """Vercelの上限より大きいファイルをJSONだけで登録する。"""
+    _, url, s3 = direct_evidence
+    content = b"x" * (5 * 1024 * 1024)
+    plan = evidence_plan(client, url, content).json()
+    key = s3.presigned_params["Key"]
+    s3.objects[key] = (content, "text/plain")
+    completed = client.post(
+        url + "/upload-complete", json={"upload_token": plan["upload_token"]}
+    )
+    assert completed.status_code == 201, completed.text
+    assert completed.json()["byte_size"] == len(content)
+    assert key not in s3.objects
+    assert len(s3.objects) == 1
+    stored_key = next(iter(s3.objects))
+    assert stored_key.startswith("projects/")
+    repeated = client.post(
+        url + "/upload-complete", json={"upload_token": plan["upload_token"]}
+    )
+    assert repeated.json()["id"] == completed.json()["id"]
+    assert len(client.get(url).json()) == 1
+    s3.objects[key] = (b"changed", "text/plain")
+    assert s3.objects[stored_key][0] == content
+    client.delete(url + "/" + completed.json()["id"])
+    assert (
+        client.post(
+            url + "/upload-complete", json={"upload_token": plan["upload_token"]}
+        ).status_code
+        == 404
+    )
+
+
+@pytest.mark.parametrize(
+    "content,content_type",
+    [
+        (b"bad!", "image/png"),
+        (b"wrong size", "text/plain"),
+        (b"test", "application/json"),
+    ],
+)
+def test_direct_evidence_rejects_bad_uploaded_file(
+    client, direct_evidence, content, content_type
+):
+    """実際の容量・形式・ファイル内容を再検証する。"""
+    _, url, s3 = direct_evidence
+    requested_type = "image/png" if content_type == "image/png" else "text/plain"
+    plan = evidence_plan(
+        client,
+        url,
+        b"test",
+        requested_type,
+        "a.png" if requested_type == "image/png" else "a.txt",
+    ).json()
+    s3.objects[s3.presigned_params["Key"]] = (content, content_type)
+    response = client.post(
+        url + "/upload-complete", json={"upload_token": plan["upload_token"]}
+    )
+    assert response.status_code == 400, response.text
+    assert client.get(url).json() == []
+    assert s3.objects == {}
+
+
+def test_direct_evidence_rechecks_permission(
+    client, direct_evidence, create_test_user, context
+):
+    """計画取得後でも権限のない利用者は完了できない。"""
+    _, url, s3 = direct_evidence
+    plan = evidence_plan(client, url).json()
+    s3.objects[s3.presigned_params["Key"]] = (b"test", "text/plain")
+    stranger = create_test_user(email="stranger@example.com")
+    authorize_as(client, stranger)
+    assert evidence_plan(client, url).status_code == 403
+    assert (
+        client.post(
+            url + "/upload-complete", json={"upload_token": plan["upload_token"]}
+        ).status_code
+        == 403
+    )
+
+
+def test_evidence_server_plan_and_missing_direct_object(
+    client, direct_evidence, monkeypatch
+):
+    """未送信の完了を拒否し、通常方式を案内できる。"""
+    _, url, _ = direct_evidence
+    plan = evidence_plan(client, url).json()
+    assert (
+        client.post(
+            url + "/upload-complete", json={"upload_token": plan["upload_token"]}
+        ).status_code
+        == 400
+    )
+    monkeypatch.setattr(settings, "file_upload_mode", "server")
+    assert evidence_plan(client, url).json()["mode"] == "server"
+    assert (
+        client.post(
+            url + "/upload-complete", json={"upload_token": plan["upload_token"]}
+        ).status_code
+        == 400
+    )
+
+
+def test_direct_evidence_token_is_execution_scoped(client, direct_evidence):
+    """別の実行への完了登録を拒否する。"""
+    case, url, s3 = direct_evidence
+    plan = evidence_plan(client, url).json()
+    s3.objects[s3.presigned_params["Key"]] = (b"test", "text/plain")
+    case_url = url.split("/executions/")[0]
+    response = client.patch(
+        case_url, json={"version": case["version"], "status": "passed"}
+    )
+    assert response.status_code == 200, response.text
+    execution = client.get(case_url + "/executions").json()[0]
+    other_url = case_url + f"/executions/{execution['id']}/evidence"
+    assert (
+        client.post(
+            other_url + "/upload-complete", json={"upload_token": plan["upload_token"]}
+        ).status_code
+        == 400
+    )
+
+
+def test_direct_evidence_enforces_file_count_at_completion(client, direct_evidence):
+    """計画後に添付枠が埋まった場合も21件目を拒否する。"""
+    _, url, s3 = direct_evidence
+    plan = evidence_plan(client, url).json()
+    pending_key = s3.presigned_params["Key"]
+    s3.objects[pending_key] = (b"test", "text/plain")
+    for index in range(20):
+        response = client.post(
+            url, files={"file": (f"{index}.txt", b"test", "text/plain")}
+        )
+        assert response.status_code == 201, response.text
+    assert evidence_plan(client, url).status_code == 400
+    assert (
+        client.post(
+            url + "/upload-complete", json={"upload_token": plan["upload_token"]}
+        ).status_code
+        == 400
+    )
+    assert len(client.get(url).json()) == 20
 
 
 def test_requirement_links_survive_renumber_and_archive(

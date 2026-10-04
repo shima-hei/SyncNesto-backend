@@ -20,8 +20,14 @@ def create_app() -> FastAPI:
         初期設定済みのFastAPIアプリケーション。
     """
     configure_logging()
-
-    fastapi_app = FastAPI(title=settings.app_name)
+    settings.validate_production()
+    production = settings.app_env == "production"
+    fastapi_app = FastAPI(
+        title=settings.app_name,
+        docs_url=None if production else "/docs",
+        redoc_url=None if production else "/redoc",
+        openapi_url=None if production else "/openapi.json",
+    )
 
     register_middleware(fastapi_app)
     register_exception_handlers(fastapi_app)

@@ -1,0 +1,83 @@
+name: CI and production deployment
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: 0.10.11
+          python-version: '3.14'
+      - run: uv sync --frozen --extra dev
+      - run: uv run --frozen ruff check .
+      - run: uv run --frozen pyright
+      - name: Configure isolated test database
+        run: |
+          cat > .env.test <<'ENV'
+          APP_ENV=development
+          DATABASE_URL=postgresql://admin:admin@localhost:5433/syncnesto_test
+          SECRET_KEY=ci-only-test-secret-not-for-production
+          AWS_ACCESS_KEY_ID=test
+          AWS_SECRET_ACCESS_KEY=test
+          AWS_REGION=ap-northeast-1
+          AWS_ENDPOINT_URL=http://localhost:4566
+          AWS_S3_BUCKET_NAME=syncnesto-local-app-bucket
+          ENV
+      - run: uv run --frozen pytest -q
+
+  deploy:
+    needs: checks
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://syncnesto-api.vercel.app
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: 0.10.11
+          python-version: '3.14'
+      - name: Require deployment secrets
+        run: test -n "$VERCEL_TOKEN" && test -n "$VERCEL_ORG_ID" && test -n "$VERCEL_PROJECT_ID"
+      - run: uv sync --frozen --no-dev
+      - run: npm install --global vercel@62.2.0
+      - run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+      - run: vercel build --prod --token="$VERCEL_TOKEN"
+      - name: Apply backward-compatible migrations
+        env:
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+        run: uv run --frozen --no-dev python scripts/migrate_production.py
+      - run: vercel deploy --prebuilt --prod --yes --token="$VERCEL_TOKEN"
+      - name: Verify public API boundary
+        run: |
+          curl --fail --silent --show-error --retry 3 --retry-all-errors https://syncnesto-api.vercel.app/ --output /dev/null
+          status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://syncnesto-api.vercel.app/auth/me)
+          test "$status" = 403

@@ -8,6 +8,11 @@ from sqlalchemy.orm import Session
 from app.core.auth import require_project_permission
 from app.db.session import get_db
 from app.models.user import User
+from app.schemas.file_upload import (
+    FileUploadComplete,
+    FileUploadPlan,
+    FileUploadRequest,
+)
 from app.schemas.test_collaboration import (
     RequirementCoverageRead,
     RequirementTestItemCreate,
@@ -271,6 +276,45 @@ def download_test_evidence(
         url=evidence_service.download_url(
             db, project_id, design_id, case_id, execution_id, evidence_id
         )
+    )
+
+
+@router.post(
+    "/test-designs/{design_id}/cases/{case_id}/executions/{execution_id}/evidence/upload-plan",
+    response_model=FileUploadPlan,
+)
+def plan_test_evidence_upload(
+    project_id: int,
+    design_id: int,
+    case_id: UUID,
+    execution_id: UUID,
+    data: FileUploadRequest,
+    user: User = Depends(require_project_permission("test_case:execute")),
+    db: Session = Depends(get_db),
+) -> FileUploadPlan:
+    """所属と権限を確認して証跡の送信方式を返す。"""
+    return evidence_service.plan_upload(
+        db, project_id, design_id, case_id, execution_id, data, user.id
+    )
+
+
+@router.post(
+    "/test-designs/{design_id}/cases/{case_id}/executions/{execution_id}/evidence/upload-complete",
+    response_model=TestEvidenceRead,
+    status_code=201,
+)
+def complete_test_evidence_upload(
+    project_id: int,
+    design_id: int,
+    case_id: UUID,
+    execution_id: UUID,
+    data: FileUploadComplete,
+    user: User = Depends(require_project_permission("test_case:execute")),
+    db: Session = Depends(get_db),
+) -> TestEvidenceRead:
+    """権限を再確認して直接送信された証跡を検証・登録する。"""
+    return evidence_service.complete_upload(
+        db, project_id, design_id, case_id, execution_id, data.upload_token, user.id
     )
 
 

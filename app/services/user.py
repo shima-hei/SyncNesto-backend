@@ -23,12 +23,18 @@ from app.models.rbac import Role
 from app.models.user import User, UserType
 from app.repositories.rbac import RbacRepository
 from app.repositories.user import UserRepository
+from app.schemas.file_upload import FileUploadPlan, FileUploadRequest
 from app.schemas.user import UserCreate, UserProfileUpdate, UserUpdate
 from app.services.audit_log import AuditLogService
 from app.services.conflict import build_conflict_current, raise_if_version_conflict
+from app.services.file_upload import FileUploadService
 from app.services.login_attempt import LoginAttemptService
 from app.services.session import SessionService
-from app.services.storage import StorageService
+from app.services.storage import (
+    ALLOWED_IMAGE_CONTENT_TYPES,
+    MAX_IMAGE_BYTES,
+    StorageService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -442,6 +448,52 @@ class UserService:
         db.commit()
         db.refresh(user)
         return user
+
+    def plan_avatar_upload(
+        self,
+        *,
+        current_user: User,
+        data: FileUploadRequest,
+        storage_service: StorageService,
+    ) -> FileUploadPlan:
+        """本人のアイコン用に容量・形式を確認して送信方式を返す。"""
+        self._validate_avatar_upload_metadata(data)
+        return FileUploadService(storage_service).plan(
+            data, user_id=current_user.id, scope="avatar"
+        )
+
+    def _validate_avatar_upload_metadata(self, data: FileUploadRequest) -> None:
+        """アイコンの送信情報を検証する。"""
+        if data.content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
+            raise BadRequestError(error_messages.UNSUPPORTED_IMAGE_CONTENT_TYPE)
+        if data.byte_size > MAX_IMAGE_BYTES:
+            raise BadRequestError(error_messages.IMAGE_FILE_TOO_LARGE)
+
+    def complete_avatar_upload(
+        self,
+        db: Session,
+        *,
+        current_user: User,
+        token: str,
+        storage_service: StorageService,
+    ) -> User:
+        """直接送信された本人のアイコンを検証して既存処理で更新する。"""
+        uploads = FileUploadService(storage_service)
+        _, data, key = uploads.verify(token, user_id=current_user.id, scope="avatar")
+        self._validate_avatar_upload_metadata(data)
+        try:
+            content = storage_service.read_uploaded_object(
+                key=key, content_type=data.content_type, byte_size=data.byte_size
+            )
+            return self.update_avatar(
+                db,
+                current_user=current_user,
+                content=content,
+                content_type=data.content_type,
+                storage_service=storage_service,
+            )
+        finally:
+            uploads.discard(key)
 
     def delete_avatar(
         self,

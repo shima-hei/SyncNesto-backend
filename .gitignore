@@ -210,11 +210,16 @@ __marimo__/
 docker/postgres/pgdata/
 docker/pgadmin/
 .env.*
+!.env.example
 .vscode/
+.vercel/
 
 # docs
 /docs/*
 !/docs/frontend-notifications-api.md
 !/docs/frontend-home-api.md
+!/docs/frontend-file-upload.md
+!/docs/frontend-authorization.md
+!/docs/deployment.md
 .codex
 AGENTS.md

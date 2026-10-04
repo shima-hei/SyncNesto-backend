@@ -16,8 +16,72 @@ from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.repositories.login_attempt import LoginAttemptRepository
 from app.repositories.session import UserSessionRepository
-from tests.fakes.storage import FakeStorageService
+from app.services.storage import StorageService
+from tests.fakes.storage import FakeStorageService, MemoryS3Client
 from tests.helpers.auth import authorize_as, create_session_token
+
+
+def test_direct_avatar_upload_and_server_plan(client, create_test_user, monkeypatch):
+    """アイコン送信方式を切り替え、一時ファイルから本人の画像を更新する。"""
+    from app.routers import auth
+    from tests.helpers.auth import authorize_as
+
+    user = create_test_user(email="direct-avatar@example.com")
+    authorize_as(client, user)
+    s3 = MemoryS3Client()
+    monkeypatch.setattr(auth, "storage_service", StorageService(s3))
+    metadata = {"filename": "avatar.png", "content_type": "image/png", "byte_size": 4}
+    monkeypatch.setattr(settings, "file_upload_mode", "server")
+    assert (
+        client.post("/auth/me/avatar/upload-plan", json=metadata).json()["mode"]
+        == "server"
+    )
+    monkeypatch.setattr(settings, "file_upload_mode", "presigned")
+    plan = client.post("/auth/me/avatar/upload-plan", json=metadata)
+    assert plan.status_code == 200, plan.text
+    pending = s3.presigned_params["Key"]
+    s3.objects[pending] = (b"test", "image/png")
+    response = client.post(
+        "/auth/me/avatar/upload-complete",
+        json={"upload_token": plan.json()["upload_token"]},
+    )
+    assert response.status_code == 200, response.text
+    assert pending not in s3.objects
+    assert s3.objects[f"users/{user.id}.png"] == (b"test", "image/png")
+    assert response.json()["avatar_url"].endswith(f"users/{user.id}.png")
+
+
+def test_avatar_upload_plan_rejects_large_file(client, create_test_user, monkeypatch):
+    """アイコンの2MB制限を送信許可にも適用する。"""
+    from tests.helpers.auth import authorize_as
+
+    user = create_test_user(email="large-avatar@example.com")
+    authorize_as(client, user)
+    monkeypatch.setattr(settings, "file_upload_mode", "presigned")
+    response = client.post(
+        "/auth/me/avatar/upload-plan",
+        json={
+            "filename": "a.png",
+            "content_type": "image/png",
+            "byte_size": 2 * 1024 * 1024 + 1,
+        },
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "path,data",
+    [
+        (
+            "/auth/me/avatar/upload-plan",
+            {"filename": "a.png", "content_type": "image/png", "byte_size": 4},
+        ),
+        ("/auth/me/avatar/upload-complete", {"upload_token": "invalid"}),
+    ],
+)
+def test_avatar_upload_flow_requires_login(client, path, data):
+    """計画と完了APIにも認証を要求する。"""
+    assert client.post(path, json=data).status_code == 401
 
 
 @pytest.fixture(autouse=True)
@@ -26,6 +90,7 @@ def use_fake_storage_service(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.routers import auth
 
     monkeypatch.setattr(auth, "storage_service", FakeStorageService())
+
 
 def test_login_user_returns_access_token_and_cookie_in_development(
     client: TestClient,
