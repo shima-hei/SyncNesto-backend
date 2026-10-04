@@ -31,6 +31,7 @@ from app.services.audit_log import AuditLogService
 from app.services.conflict import build_conflict_current, raise_if_version_conflict
 from app.services.file_upload import FileUploadService
 from app.services.login_attempt import LoginAttemptService
+from app.services.onboarding import check_initial_password_expiry, mark_initial_password
 from app.services.session import (
     SESSION_REVOKE_REASON_CREDENTIALS_CHANGED,
     SESSION_REVOKE_REASON_PERMISSION_CHANGED,
@@ -166,6 +167,8 @@ class UserService:
         self._validate_user_type_roles(user_type=user_in.user_type, roles=roles)
         hashed_password = get_password_hash(user_in.password)
         user = self.repository.create(db, user_in, hashed_password, actor_id=actor_id)
+        if actor_id is not None:
+            mark_initial_password(user)
         self.rbac_repository.replace_system_roles_for_user(db, user=user, roles=roles)
         db.commit()
         db.refresh(user)
@@ -323,6 +326,8 @@ class UserService:
         hashed_password = None
         if user_in.password is not None:
             hashed_password = get_password_hash(user_in.password)
+            if user.password_change_required:
+                mark_initial_password(user)
 
         roles_changed = "system_role_keys" in user_in.model_fields_set
         credentials_changed = (
@@ -659,6 +664,7 @@ class UserService:
             logger.warning("Invalid login attempt: email=%s", normalized_email)
             raise InvalidCredentialsError()
 
+        check_initial_password_expiry(user)
         self.login_attempt_service.reset(db, normalized_email, commit=False)
         logger.info("User authenticated: id=%s email=%s", user.id, user.email)
         return user

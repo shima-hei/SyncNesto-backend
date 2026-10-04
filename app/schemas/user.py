@@ -124,6 +124,17 @@ class UserListResponse(BaseModel):
 class CurrentUserRead(UserRead):
     """現在のログインユーザー読み取り時に返すschema。"""
 
+    password_change_required: bool = False
+    initial_password_expires_at: datetime | None = None
+
+
+class InitialPasswordConfirm(BaseModel):
+    """初回ログイン済みの本人が選ぶパスワード。"""
+
+    current_password: str = Field(min_length=1, max_length=128)
+    password: str = Field(min_length=12, max_length=128)
+    model_config = {"extra": "forbid"}
+
 
 class UserLogin(BaseModel):
     """
@@ -141,5 +152,6 @@ class UserLoginResponse(BaseModel):
     """
 
     message: str
+    password_change_required: bool = False
     access_token: str | None = None
     token_type: str | None = None

@@ -13,6 +13,8 @@ from app.schemas.account_action import AccountActionMessage, EmailChangeRequest
 from app.schemas.tenant import (
     TenantChoice,
     TenantCreate,
+    TenantIssue,
+    TenantIssued,
     TenantMemberAdd,
     TenantMemberRead,
     TenantMemberUpdate,
@@ -20,10 +22,12 @@ from app.schemas.tenant import (
     TenantUpdate,
     TenantUserCreate,
     TenantUserCreated,
+    TenantWelcomeRequest,
 )
 from app.services.account_action import AccountActionService
 from app.services.request_limit import consume_email_request_budget
 from app.services.tenant import TenantService
+from app.services.tenant_issuance import TenantIssuanceService
 
 router = APIRouter(prefix="/tenants", tags=["tenants"])
 service = TenantService()
@@ -55,6 +59,33 @@ def create_tenant(
 ):
     """運営者が組織と初期Ownerを作る。"""
     return service.create(db, data, user.id)
+
+
+@router.post("/issuance", response_model=TenantIssued, status_code=201)
+def issue_tenant(
+    data: TenantIssue,
+    user: User = Depends(require_system_permission("tenant:manage")),
+    db: Session = Depends(get_db),
+) -> TenantIssued:
+    """運営承認後に組織と初期Ownerを発行し、案内メールを送る。"""
+    consume_email_request_budget(
+        str(data.owner_email), client_ip_context.get() or "unknown"
+    )
+    return TenantIssuanceService().issue(db, data, user.id)
+
+
+@router.post("/{tenant_id}/welcome-email", response_model=TenantIssued)
+def resend_tenant_welcome(
+    tenant_id: int,
+    data: TenantWelcomeRequest,
+    user: User = Depends(require_system_permission("tenant:manage")),
+    db: Session = Depends(get_db),
+) -> TenantIssued:
+    """有効なOwnerへ案内を再送し、初回設定待ちの場合だけパスワードを再発行する。"""
+    consume_email_request_budget(
+        str(data.owner_email), client_ip_context.get() or "unknown"
+    )
+    return TenantIssuanceService().resend(db, tenant_id, str(data.owner_email), user.id)
 
 
 @router.get("/current", response_model=TenantChoice)

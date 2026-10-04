@@ -68,6 +68,27 @@ class CsrfTokenInvalidError(ForbiddenError):
     code = "CSRF_TOKEN_INVALID"
 
 
+class PasswordChangeRequiredError(ForbiddenError):
+    """本人の初回パスワード設定が必要な場合の例外。"""
+
+    message = error_messages.PASSWORD_CHANGE_REQUIRED
+    code = "PASSWORD_CHANGE_REQUIRED"
+
+
+class InitialPasswordExpiredError(ForbiddenError):
+    """初回パスワードの期限切れを通常のセッション失効と区別する。"""
+
+    message = error_messages.INITIAL_PASSWORD_EXPIRED
+    code = "INITIAL_PASSWORD_EXPIRED"
+
+
+class InitialPasswordReuseError(BadRequestError):
+    """本人の設定で初回パスワードを再使用する操作を拒否する。"""
+
+    message = error_messages.INITIAL_PASSWORD_REUSE
+    code = "INITIAL_PASSWORD_REUSE"
+
+
 class NotFoundError(AppError):
     """対象リソースが存在しない場合の例外。"""
 

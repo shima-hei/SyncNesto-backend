@@ -44,6 +44,26 @@ class TenantUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
 
 
+class TenantIssue(TenantCreate):
+    """承認済みの申込から組織と必要な初期Ownerを発行する。"""
+
+    owner_name: str = Field(min_length=1, max_length=255)
+
+
+class TenantIssued(BaseModel):
+    """メール送信失敗でも作成結果を保持し、二重発行を避ける。"""
+
+    tenant: TenantRead
+    email_delivery: Literal["sent", "failed"]
+
+
+class TenantWelcomeRequest(BaseModel):
+    """送信先を有効なOwnerの登録メール完全一致で限定する。"""
+
+    owner_email: EmailStr
+    model_config = ConfigDict(extra="forbid")
+
+
 class TenantMemberRead(BaseModel):
     """現在の組織に属するユーザーの組織内情報。"""
 

@@ -44,11 +44,12 @@ Set-Cookie: access_token=<JWT>; HttpOnly; Path=/; SameSite=Lax
 Set-Cookie: access_token=<JWT>; HttpOnly; Secure; Path=/; SameSite=Lax
 ```
 
-本番相当の `ALLOW_BEARER_TOKEN_RESPONSE=false` では、ログインレスポンスbodyには成功メッセージだけを返します。
+本番相当の `ALLOW_BEARER_TOKEN_RESPONSE=false` では、ログインレスポンスbodyに成功メッセージと初回設定の必要性を返します。JWTは返しません。
 
 ```json
 {
-  "message": "Login successful"
+  "message": "Login successful",
+  "password_change_required": false
 }
 ```
 
@@ -58,7 +59,19 @@ Cookie名:
 access_token
 ```
 
-Cookieに入るJWTには、ユーザー識別子 `sub` とDBセッションID `sid` が含まれます。バックエンドは `sid` を使って `sessions` テーブルの状態を確認します。
+Cookieに入るJWTには、ユーザー識別子 `sub` とDBセッションID `sid` が含まれます。バックエンドは `sid` を使って `sessions` テーブルの状態を確認します。初回ログインのJWTは署名付きの `password_setup_only` を保持し、本人の初回設定状態が変わっても業務セッションへ昇格しません。
+
+## 承認制の発行と初回パスワード設定
+
+公開の新規登録・組織作成は提供しません。運営者が申し込みを確認した後に `/tenants/issuance` で組織と初期Ownerを発行します。新規Identityの初回パスワードはランダム生成・7日間有効で、登録メールへ案内します。既存IdentityをOwnerに指定した場合は共有パスワード・氏名・System Roleを変更しません。
+
+ログイン結果の `password_change_required=true` は `/initial-password` へ誘導します。`GET /auth/me` にも `password_change_required` と `initial_password_expires_at` を追加します。既存ユーザーのmigration値はfalse/nullで、初回設定を要求しません。運営・組織管理者による新規登録にも初回設定を適用します。
+
+初回設定前に利用できる認証済みAPIは本人状態の参照・初回設定・ログアウトです。業務・組織・運営・プロフィール変更APIは `403 PASSWORD_CHANGE_REQUIRED`。FrontendのServer GuardとAPI clientの両方で設定画面へ誘導し、Backendの共通認証Dependencyが最終的に拒否します。
+
+`POST /auth/initial-password` は `{current_password,password}` を受け取り、ログインCookieとCSRFを要求します。新しいパスワードは12〜128文字・初回パスワードと異なることが必要です。Userロック下で初回パスワードを再検証し、本人の設定、全セッション・確認リンクの失効を原子的に保存します。成功時はCookieも削除し、新しいパスワードで再ログインします。
+
+期限切れの初回パスワードによるログイン・設定は `403 INITIAL_PASSWORD_EXPIRED`。本人は既存の `/forgot-password` からメール確認で再設定できます。この場合も初回設定状態を解除し、全セッションと確認リンクを失効します。
 
 ## CSRF対策
 

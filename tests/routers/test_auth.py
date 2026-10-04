@@ -220,8 +220,8 @@ def test_login_user_returns_access_token_and_cookie_in_development(
     assert response.json()["token_type"] == "bearer"
     assert response.cookies.get(settings.auth_cookie_name)
     assert "httponly" in response.headers["set-cookie"].lower()
-    assert "password" not in response.text
-    assert "hashed_password" not in response.text
+    assert "password" not in response.json()
+    assert "hashed_password" not in response.json()
 
 
 def test_login_user_does_not_return_access_token_in_production(
@@ -249,7 +249,10 @@ def test_login_user_does_not_return_access_token_in_production(
     )
 
     assert response.status_code == 200
-    assert response.json() == {"message": "Login successful"}
+    assert response.json() == {
+        "message": "Login successful",
+        "password_change_required": False,
+    }
     assert response.cookies.get(settings.auth_cookie_name)
     assert "httponly" in response.headers["set-cookie"].lower()
     assert "secure" in response.headers["set-cookie"].lower()
@@ -748,6 +751,8 @@ def test_get_me_returns_current_user_with_cookie_token(
         "created_by": None,
         "updated_by": None,
         "system_roles": [],
+        "password_change_required": False,
+        "initial_password_expires_at": None,
     }
 
 
@@ -785,6 +790,8 @@ def test_get_me_returns_current_user_with_authorization_header(
         "created_by": None,
         "updated_by": None,
         "system_roles": [],
+        "password_change_required": False,
+        "initial_password_expires_at": None,
     }
 
 
@@ -822,6 +829,8 @@ def test_get_me_returns_system_roles(
                 "name": "システム管理者",
             }
         ],
+        "password_change_required": False,
+        "initial_password_expires_at": None,
     }
 
 
@@ -861,6 +870,8 @@ def test_update_me_updates_current_user_profile(
         "created_by": None,
         "updated_by": user.id,
         "system_roles": [],
+        "password_change_required": False,
+        "initial_password_expires_at": None,
     }
     db.refresh(user)
     assert user.name == "After"

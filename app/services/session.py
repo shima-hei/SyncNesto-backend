@@ -58,6 +58,7 @@ class SessionService:
             subject=user.email,
             session_id=user_session.id,
             expires_at=user_session.expires_at,
+            password_setup_only=user.password_change_required,
         )
         return user_session, access_token
 

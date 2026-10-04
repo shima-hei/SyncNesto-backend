@@ -3,13 +3,14 @@
 from fastapi import APIRouter, Cookie, Depends, File, Response, UploadFile
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_user
+from app.core.auth import get_authenticated_user, get_current_user
 from app.core.auth_cookie import delete_auth_cookie, set_auth_cookie
 from app.core.config import settings
 from app.core.csrf import delete_csrf_cookie, generate_csrf_token, set_csrf_cookie
 from app.db.session import get_db
 from app.models.user import User
 from app.presenters.user import build_current_user_response
+from app.schemas.account_action import AccountActionMessage
 from app.schemas.file_upload import (
     FileUploadComplete,
     FileUploadPlan,
@@ -17,11 +18,13 @@ from app.schemas.file_upload import (
 )
 from app.schemas.user import (
     CurrentUserRead,
+    InitialPasswordConfirm,
     UserLogin,
     UserLoginResponse,
     UserProfileUpdate,
 )
 from app.services.audit_log import AuditLogService
+from app.services.onboarding import OnboardingService
 from app.services.session import SessionService
 from app.services.storage import MAX_IMAGE_BYTES, StorageService
 from app.services.user import UserService
@@ -73,11 +76,15 @@ def login_user(
     if settings.allow_bearer_token_response:
         return UserLoginResponse(
             message="Login successful",
+            password_change_required=user.password_change_required,
             access_token=access_token,
             token_type="bearer",
         )
 
-    return UserLoginResponse(message="Login successful")
+    return UserLoginResponse(
+        message="Login successful",
+        password_change_required=user.password_change_required,
+    )
 
 
 @router.post(
@@ -116,7 +123,7 @@ def logout_user(
     response_model=CurrentUserRead,
 )
 def read_current_user(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_authenticated_user),
     db: Session = Depends(get_db),
 ) -> CurrentUserRead:
     """現在のログインユーザーを取得する。
@@ -130,6 +137,22 @@ def read_current_user(
     """
     system_roles = user_service.list_system_roles_by_user(db, current_user.id)
     return build_current_user_response(current_user, system_roles, storage_service)
+
+
+@router.post("/initial-password", response_model=AccountActionMessage)
+def complete_initial_password(
+    data: InitialPasswordConfirm,
+    response: Response,
+    user: User = Depends(get_authenticated_user),
+    db: Session = Depends(get_db),
+) -> AccountActionMessage:
+    """初回ログインの本人が設定を完了し、全セッションを失効する。"""
+    OnboardingService().complete(db, user.id, data.current_password, data.password)
+    delete_auth_cookie(response)
+    delete_csrf_cookie(response)
+    return AccountActionMessage(
+        message="パスワードを設定しました。新しいパスワードでログインしてください"
+    )
 
 
 @router.patch(

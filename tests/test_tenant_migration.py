@@ -118,7 +118,19 @@ def test_legacy_data_survives_tenant_migration(fail):
                 assert result.returncode == 0, result.stderr
                 assert (
                     connection.scalar(text("SELECT version_num FROM alembic_version"))
-                    == "d28a41c7b902"
+                    == "e39b52d8c013"
+                )
+                assert (
+                    connection.scalar(
+                        text("SELECT password_change_required FROM users WHERE id=1")
+                    )
+                    is False
+                )
+                assert (
+                    connection.scalar(
+                        text("SELECT initial_password_expires_at FROM users WHERE id=1")
+                    )
+                    is None
                 )
                 assert (
                     connection.scalar(

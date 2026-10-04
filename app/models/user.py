@@ -50,6 +50,22 @@ class User(Base):
             "Argon2idでハッシュ化したパスワード",
         ),
     )
+    password_change_required: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment=db_comment(
+            "初回設定待ち", "本人のパスワード設定完了まで業務利用を制限する"
+        ),
+    )
+    initial_password_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment=db_comment(
+            "初回パスワード期限", "運営または組織管理者が発行したパスワードの期限"
+        ),
+    )
     department: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,

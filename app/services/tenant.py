@@ -34,6 +34,7 @@ from app.schemas.tenant import (
     TenantUserCreated,
 )
 from app.services.audit_log import AuditLogService
+from app.services.onboarding import mark_initial_password
 
 
 class TenantService:
@@ -280,6 +281,7 @@ class TenantService:
             hashed_password=get_password_hash(password),
             created_by=actor,
         )
+        mark_initial_password(user)
         db.add(user)
         try:
             db.flush()

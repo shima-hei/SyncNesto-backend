@@ -19,8 +19,9 @@ from app.core.exceptions import (
     EmailAlreadyRegisteredError,
     EmailUnavailableError,
     ForbiddenError,
+    InitialPasswordReuseError,
 )
-from app.core.security import get_password_hash
+from app.core.security import get_password_hash, verify_password
 from app.db.session import session_local
 from app.models.account_action import AccountAction, AccountActionPurpose
 from app.models.user import User
@@ -123,7 +124,13 @@ class AccountActionService:
         action, user = self._valid_action(
             db, token, AccountActionPurpose.PASSWORD_RESET
         )
+        if user.password_change_required and verify_password(
+            password, user.hashed_password
+        ):
+            raise InitialPasswordReuseError()
         user.hashed_password = get_password_hash(password)
+        user.password_change_required = False
+        user.initial_password_expires_at = None
         user.version += 1
         user.updated_by = user.id
         self._finish(db, action, user)

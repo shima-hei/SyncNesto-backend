@@ -95,3 +95,8 @@ FILE_UPLOAD_MISMATCH = "アップロードしたファイルの形式または�
 FILE_UPLOAD_MISSING = "アップロードしたファイルが見つかりません"
 FILE_UPLOAD_UNAVAILABLE = "直接アップロードは現在利用できません"
 FILE_UPLOAD_STORAGE_ERROR = "一時ファイルの削除に失敗しました"
+PASSWORD_CHANGE_REQUIRED = "利用を開始する前に、ご自身のパスワードを設定してください"
+INITIAL_PASSWORD_EXPIRED = (
+    "初回パスワードの有効期限が切れています。メールでパスワードを再設定してください"
+)
+INITIAL_PASSWORD_REUSE = "初回パスワードとは異なるパスワードを設定してください"

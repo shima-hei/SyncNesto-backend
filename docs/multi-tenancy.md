@@ -43,6 +43,8 @@ ORM取得・更新・削除へ共通の組織条件を適用する。業務子�
 
 ## APIと画面
 
+公開登録を行わない承認制の共有SaaSとして運用する。運営画面では申し込み確認後、`POST /tenants/issuance` によって組織と初期Ownerを発行し、案内メールを送る。既存の `POST /tenants` は登録済みOwnerとの組織作成APIとして維持する。追加の発行・再送・初回パスワード設定は `docs/email-approval.md` と `docs/frontend-authorization.md` を参照する。
+
 | 操作 | API | 権限 |
 | --- | --- | --- |
 | 本人の組織一覧 | GET /tenants | ログイン本人 |
