@@ -2,6 +2,8 @@
 
 このドキュメントは、フロントエンド実装で認証状態・認可状態を扱うための仕様です。
 
+組織境界と3階層Roleは [multi-tenancy.md](multi-tenancy.md)、メールによる承認とパスワード復旧は [email-approval.md](email-approval.md) を参照してください。system_adminは運営権限で、Projectの業務権限を自動取得しません。
+
 ## 公開環境の接続境界
 
 `APP_ENV=production` では、FastAPIは健康確認の `GET /`・`HEAD /` 以外に `X-Syncnesto-BFF-Key` を要求します。Next.jsのBFFとServer Guardが、サーバー専用の `BFF_SHARED_SECRET` をこのヘッダーに設定します。ブラウザから送られた同名ヘッダーは上書きします。キーを `NEXT_PUBLIC_` 変数、レスポンス、ログへ含めないでください。このキーは既存のユーザー認証・permission・CSRF検証を置き換えません。
@@ -130,7 +132,7 @@ Set-Cookie: access_token=; Max-Age=0; HttpOnly; Path=/; SameSite=Lax
 Set-Cookie: csrf_token=; Max-Age=0; Path=/; SameSite=Lax
 ```
 
-権限変更時も対象ユーザーの既存セッションを失効します。バックエンドでは `sessions.revoked_reason` に `permission_changed` を保存します。
+システム権限変更時は対象ユーザーの既存セッションを失効します。バックエンドでは `sessions.revoked_reason` に `permission_changed` を保存します。運営者が共通Identityのメール・パスワード・有効状態を変更した場合も、更新と同じトランザクションで全セッションと未使用の本人確認リンクを失効し、理由は `credentials_changed` を保存します。両方を変更した場合のセッション理由は `permission_changed` です。組織・Project所属の変更は次回のAPI認可で即時反映し、他組織のログインを終了しません。
 
 対象操作:
 
@@ -138,9 +140,6 @@ Set-Cookie: csrf_token=; Max-Age=0; Path=/; SameSite=Lax
 PATCH  /users/{user_id}
   system_role_keys を変更した場合
 
-POST   /projects/{project_id}/members
-PATCH  /projects/{project_id}/members/{user_id}
-DELETE /projects/{project_id}/members/{user_id}
 ```
 
 権限変更されたユーザーは、次回API呼び出し時に `401 INVALID_TOKEN` になります。BFFは削除用 `Set-Cookie` をブラウザへ中継し、ログイン画面へ誘導してください。
@@ -258,7 +257,7 @@ guest + project member なし:
 system_admin
 ```
 
-`system_admin` は全体管理者です。ユーザー管理、プロジェクト作成、全プロジェクト閲覧・更新・削除、全プロジェクトメンバー管理ができます。
+`system_admin` はシステム運営者です。共通Identityと組織メタデータを管理します。組織内の設定・所属管理はTenant Owner/Admin、業務内容の操作は本人のProject RoleとPermissionに基づきます。
 
 ## Project Role
 
@@ -288,7 +287,7 @@ viewer
 
 ### テスト設計・テストケース
 
-`/projects/{project_id}/test-designs`配下の設計書には既存の`test_plan:read/create/update/delete`を利用する。設計コメントの投稿・更新・削除・解決には`test_plan:comment`を要求し、閲覧と履歴取得には`test_plan:read`を要求する。`test_plan:comment`はproject_admin、manager、member、system_adminへ付与し、viewerには付与しない。コメント本文の編集・削除は投稿者本人またはシステム管理者に限る。要件と項目の関連追加・解除には`requirement:link`、関連閲覧にはそれぞれ`requirement:read`または`test_plan:read`を要求する。ケースの閲覧・生成・結果更新・設計取り込みにはそれぞれ`test_case:read/create/execute/update`を要求する。実行証跡の閲覧・ダウンロードは`test_case:read`、登録・削除は`test_case:execute`を要求する。すべてプロジェクトスコープを検証し、既存のCookie・CSRF・セッション管理を適用する。設計書、ケース、コメントはそれぞれ独立したversionで競合検知する。詳細は[テスト設計API仕様](frontend-test-design-api.md)を参照。
+`/projects/{project_id}/test-designs`配下の設計書には既存の`test_plan:read/create/update/delete`を利用する。設計コメントの投稿・更新・削除・解決には`test_plan:comment`を要求し、閲覧と履歴取得には`test_plan:read`を要求する。`test_plan:comment`はproject_admin、manager、memberへ付与し、viewerには付与しない。コメント本文の編集・削除は投稿者本人またはProject管理権限のあるユーザーに限る。要件と項目の関連追加・解除には`requirement:link`、関連閲覧にはそれぞれ`requirement:read`または`test_plan:read`を要求する。ケースの閲覧・生成・結果更新・設計取り込みにはそれぞれ`test_case:read/create/execute/update`を要求する。実行証跡の閲覧・ダウンロードは`test_case:read`、登録・削除は`test_case:execute`を要求する。すべてプロジェクトスコープを検証し、既存のCookie・CSRF・セッション管理を適用する。設計書、ケース、コメントはそれぞれ独立したversionで競合検知する。詳細は[テスト設計API仕様](frontend-test-design-api.md)を参照。
 
 ### Auth
 
@@ -389,11 +388,11 @@ PATCH  /projects/{project_id}   project:update, version必須
 DELETE /projects/{project_id}   project:delete
 ```
 
-`GET /projects` は、`project:read` を持つ system role のユーザーには全プロジェクトを返します。それ以外のログインユーザーには、所属プロジェクトのみ返します。
+`GET /projects` は現在組織の本人参加Projectを返します。Owner/Adminは管理メタデータの一覧を取得できます。`member_only=true` は権限にかかわらず本人参加Projectだけを返します。業務内容の閲覧にはProject所属を要求します。
 
-`project_code` は必須かつ一意のプロジェクト識別子です。一覧レスポンスには `version` を含めません。編集画面では `GET /projects/{project_id}` で詳細を取得してください。
+`project_code` は必須で、同じ組織内で一意のプロジェクト識別子です。一覧レスポンスには `version` を含めません。編集画面では `GET /projects/{project_id}` で詳細を取得してください。
 
-`GET /projects/{project_id}/me` は、現在ログイン中のユーザーが対象プロジェクトで持つproject roleと、system_admin判定を返します。プロジェクト配下画面のメニューやボタン表示制御に使います。API実行可否はバックエンドが各エンドポイントで再判定します。
+`GET /projects/{project_id}/me` は本人のProject Roleを返します。互換フィールド `is_system_admin` はfalseです。プロジェクト配下画面のメニューやボタン表示制御に使います。API実行可否はバックエンドが各エンドポイントで再判定します。
 
 プロジェクトメンバーの場合:
 
@@ -419,17 +418,7 @@ limit: 1-100。default 20
 
 レスポンス形式は `GET /projects/{project_id}/member-users` と同じです。
 
-`system_admin` で、対象プロジェクトのメンバーではない場合:
-
-```json
-{
-  "project_id": 1,
-  "role": null,
-  "is_system_admin": true
-}
-```
-
-未参加かつ `system_admin` でもない場合は `403 Forbidden`、プロジェクトが存在しない場合は `404 Not Found` を返します。
+未参加の場合はsystem_adminでも `403 Forbidden` です。存在しないProject・削除済みProjectから業務内容へアクセスすることもできません。
 
 `GET /projects/{project_id}/member-users` は、対象プロジェクトに所属するユーザーを担当者選択用に返します。
 
@@ -635,11 +624,10 @@ project_code が既に存在する
 
 ```text
 name
-password
 version
 ```
 
-`email`, `department`, `position`, `is_active` は本人プロフィール更新では変更できません。`email` はログインIDとして扱うため、将来的に変更を許可する場合はメール確認などの追加フローを入れてから対応します。
+`email`, `password`, `department`, `position`, `is_active` は本人プロフィール更新では変更できません。パスワードはメール再設定、メールアドレスは旧メール承認と新メール確認のAPIを使います。契約外の項目は422です。
 
 リクエスト例:
 
@@ -650,7 +638,6 @@ PATCH /auth/me
 ```json
 {
   "name": "Updated Name",
-  "password": "new-password",
   "version": 1
 }
 ```
@@ -723,10 +710,9 @@ const canManageUsers = me.system_roles.some(
 プロジェクト内メニューは、今後プロジェクトごとの role key を受け取って制御します。
 
 ```ts
-const canManageProject = ["system_admin", "project_admin"].includes(roleKey);
-const canEditProject = ["system_admin", "project_admin"].includes(roleKey);
+const canManageProject = roleKey === "project_admin";
+const canEditProject = roleKey === "project_admin";
 const canViewProject = [
-  "system_admin",
   "project_admin",
   "manager",
   "member",
@@ -844,3 +830,6 @@ CSRF token不正:
 ```
 
 フロントエンドでは、`401 INVALID_CREDENTIALS` はログイン画面の入力エラー、`401 AUTHENTICATION_REQUIRED` は未ログイン、`401 TOKEN_EXPIRED` はセッション期限切れ、`401 INVALID_TOKEN` はCookie破棄後の再ログイン誘導として扱ってください。`TOKEN_EXPIRED` / `INVALID_TOKEN` ではバックエンドの `Set-Cookie` をBFFからブラウザへ中継してください。`403 FORBIDDEN` は権限なし表示、`403 CSRF_TOKEN_INVALID` はCSRF tokenの再取得または再ログイン誘導として扱ってください。`409 VERSION_CONFLICT` は最新データの再表示、`409 DUPLICATE_RESOURCE` は入力値の重複エラーとして扱ってください。
+# マルチテナント対応
+
+現行の組織境界・3階層Role・変更されたsystem_adminの扱いは [multi-tenancy.md](multi-tenancy.md) を参照してください。業務APIには検証対象の `X-Tenant-ID` を送ります。運営者のsystem権限はProjectの業務権限を迂回しません。`/projects/{id}/me` の互換フィールド `is_system_admin` は常にfalseで、Project Roleを表示制御に使います。

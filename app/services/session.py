@@ -19,6 +19,7 @@ from app.services.audit_log import AuditLogService
 SESSION_REVOKE_REASON_EXPIRED = "expired"
 SESSION_REVOKE_REASON_ABSOLUTE_EXPIRED = "absolute_expired"
 SESSION_REVOKE_REASON_PERMISSION_CHANGED = "permission_changed"
+SESSION_REVOKE_REASON_CREDENTIALS_CHANGED = "credentials_changed"
 
 
 class SessionService:
@@ -223,6 +224,7 @@ class SessionService:
         reason: str = SESSION_REVOKE_REASON_PERMISSION_CHANGED,
         actor_user_id: int | None = None,
         project_id: int | None = None,
+        commit: bool = True,
     ) -> int:
         """ユーザーの有効セッションをすべて失効する。
 
@@ -232,6 +234,8 @@ class SessionService:
             reason: 失効理由。
             actor_user_id: 操作ユーザーID。
             project_id: 関連プロジェクトID。
+            commit: 失効を即時確定して監査を記録するか。Falseの場合は
+                呼び出し元が認証情報変更と同時に確定し、失効監査も記録する。
 
         Returns:
             失効したセッション件数。
@@ -240,8 +244,9 @@ class SessionService:
             db,
             user_id=user_id,
             reason=reason,
+            commit=commit,
         )
-        if revoked_count > 0:
+        if revoked_count > 0 and commit:
             self.audit_log_service.record_session_revoked(
                 db,
                 actor_user_id=actor_user_id,

@@ -5,7 +5,11 @@ from sqlalchemy.orm import Session
 from app.core import error_messages
 from app.core.exceptions import NotFoundError
 from app.models.requirement import (
+    Requirement,
+    RequirementDocument,
+    RequirementOpenIssue,
     RequirementRelation,
+    RequirementSection,
 )
 from app.schemas.requirement import (
     RequirementRelationCreate,
@@ -49,6 +53,36 @@ class RequirementRelationService(RequirementChildBaseService):
             project_id,
             requirement_id,
         )
+        models = {
+            "requirement_item": Requirement,
+            "section": RequirementSection,
+            "open_issue": RequirementOpenIssue,
+            "document": RequirementDocument,
+        }
+        model = models.get(relation_in.target_type)
+        if model is not None:
+            try:
+                target_id = int(relation_in.target_id)
+            except ValueError as exc:
+                raise NotFoundError(
+                    error_messages.REQUIREMENT_RELATION_NOT_FOUND
+                ) from exc
+            target = db.query(model).filter(model.id == target_id).first()
+            document_id = (
+                target.id
+                if isinstance(target, RequirementDocument)
+                else getattr(target, "document_id", None)
+            )
+            document = (
+                db.query(RequirementDocument)
+                .filter(
+                    RequirementDocument.id == document_id,
+                    RequirementDocument.project_id == project_id,
+                )
+                .first()
+            )
+            if target is None or document is None:
+                raise NotFoundError(error_messages.REQUIREMENT_RELATION_NOT_FOUND)
         relation = self.relation_repository.create(
             db,
             document_id=requirement.document_id,
@@ -66,6 +100,7 @@ class RequirementRelationService(RequirementChildBaseService):
             changed_by=actor_id,
         )
         return relation
+
     def list_relations(
         self,
         db: Session,
@@ -76,6 +111,7 @@ class RequirementRelationService(RequirementChildBaseService):
         """要件関連一覧を取得する。"""
         self._ensure_requirement_in_project(db, project_id, requirement_id)
         return self.relation_repository.list_by_requirement(db, requirement_id)
+
     def delete_relation(
         self,
         db: Session,
@@ -108,6 +144,7 @@ class RequirementRelationService(RequirementChildBaseService):
             old_value=before_value,
             changed_by=actor_id,
         )
+
     def _get_relation_in_requirement(
         self,
         db: Session,

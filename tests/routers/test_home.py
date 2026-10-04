@@ -159,7 +159,7 @@ def test_system_admin_still_needs_membership_in_home(client, db, home_context):
     ctx["task"](project=ctx["projects"][2], due=TODAY)
     assert client.get("/home/projects").json()["total"] == 2
     assert client.get("/home/tasks").json()["summary"]["total"] == 0
-    assert client.get("/projects").json()["total"] == 3
+    assert client.get("/projects").json()["total"] == 2
     assert client.get("/projects?member_only=true").json()["total"] == 2
 
 

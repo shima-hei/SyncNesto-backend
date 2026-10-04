@@ -96,6 +96,7 @@ class DraftService:
             return self.repository.create(
                 db,
                 draft=Draft(
+                    tenant_id=db.info["tenant_id"],
                     owner_user_id=current_user.id,
                     scope_key=scope_key,
                     resource_type=draft_in.resource_type,

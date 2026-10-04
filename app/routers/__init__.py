@@ -1,8 +1,10 @@
 """API routers."""
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
+from app.core.tenant import get_current_tenant
 from app.routers import (
+    account_actions,
     auth,
     drafts,
     health,
@@ -11,6 +13,7 @@ from app.routers import (
     projects,
     requirements,
     tasks,
+    tenants,
     test_collaboration,
     test_designs,
     test_issues,
@@ -25,14 +28,19 @@ def register_routers(app: FastAPI) -> None:
         app: ルーターを登録するFastAPIアプリケーション。
     """
     app.include_router(auth.router)
-    app.include_router(drafts.router)
+    app.include_router(account_actions.router)
+    app.include_router(drafts.router, dependencies=[Depends(get_current_tenant)])
     app.include_router(health.router)
-    app.include_router(home.router)
-    app.include_router(notifications.router)
-    app.include_router(projects.router)
-    app.include_router(requirements.router)
-    app.include_router(tasks.router)
-    app.include_router(test_designs.router)
-    app.include_router(test_collaboration.router)
-    app.include_router(test_issues.router)
+    for router in (
+        home.router,
+        notifications.router,
+        projects.router,
+        requirements.router,
+        tasks.router,
+        test_designs.router,
+        test_collaboration.router,
+        test_issues.router,
+    ):
+        app.include_router(router, dependencies=[Depends(get_current_tenant)])
     app.include_router(users.router)
+    app.include_router(tenants.router)

@@ -69,10 +69,7 @@ class LoginAttemptService:
         login_attempt = self.repository.get_or_create(db, normalized_email)
 
         failed_count = login_attempt.failed_count
-        if (
-            login_attempt.locked_until is not None
-            and login_attempt.locked_until <= now
-        ):
+        if login_attempt.locked_until is not None and login_attempt.locked_until <= now:
             failed_count = 0
 
         failed_count += 1
@@ -91,12 +88,13 @@ class LoginAttemptService:
         db.refresh(login_attempt)
         return login_attempt
 
-    def reset(self, db: Session, email: str) -> None:
+    def reset(self, db: Session, email: str, *, commit: bool = True) -> None:
         """ログイン試行情報をリセットする。
 
         Args:
             db: DBセッション。
             email: 入力されたメールアドレス。
+            commit: ログインセッション作成と同じトランザクションの場合はFalse。
         """
         normalized_email = self.normalize_email(email)
         login_attempt = self.repository.get_by_email(db, normalized_email)
@@ -104,4 +102,5 @@ class LoginAttemptService:
             return
 
         self.repository.reset(db, login_attempt)
-        db.commit()
+        if commit:
+            db.commit()

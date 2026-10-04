@@ -2,6 +2,8 @@
 
 import os
 from dataclasses import dataclass, field
+from email.headerregistry import Address
+from email.utils import getaddresses
 from pathlib import Path
 from typing import Literal
 from urllib.parse import parse_qs, urlsplit
@@ -181,6 +183,19 @@ class Settings:
     initial_admin_email: str | None = os.getenv("INITIAL_ADMIN_EMAIL")
     initial_admin_password: str | None = os.getenv("INITIAL_ADMIN_PASSWORD")
     initial_admin_name: str = os.getenv("INITIAL_ADMIN_NAME", "Initial Admin")
+    email_provider: str = os.getenv("EMAIL_PROVIDER", "disabled")
+    email_from: str = os.getenv("EMAIL_FROM", "")
+    frontend_public_url: str = os.getenv("FRONTEND_PUBLIC_URL", "http://localhost:3000")
+    resend_api_key: str = field(default=os.getenv("RESEND_API_KEY", ""), repr=False)
+    email_timeout_seconds: int = get_int_env("EMAIL_TIMEOUT_SECONDS", 10)
+    account_action_expire_seconds: int = get_int_env(
+        "ACCOUNT_ACTION_EXPIRE_SECONDS", 1800
+    )
+    smtp_host: str = os.getenv("SMTP_HOST", "127.0.0.1")
+    smtp_port: int = get_int_env("SMTP_PORT", 1025)
+    smtp_username: str = os.getenv("SMTP_USERNAME", "")
+    smtp_password: str = field(default=os.getenv("SMTP_PASSWORD", ""), repr=False)
+    smtp_starttls: bool = get_bool_env("SMTP_STARTTLS")
     aws_region: str = os.getenv(
         "AWS_REGION",
         os.getenv("AWS_DEFAULT_REGION", "ap-northeast-1"),
@@ -211,6 +226,41 @@ class Settings:
 
     def validate_production(self) -> None:
         """公開環境の設定漏れを起動時に拒否する。"""
+        if self.email_provider not in {"disabled", "smtp", "resend"}:
+            raise RuntimeError("EMAIL_PROVIDER must be disabled, smtp or resend")
+        if not 1 <= self.email_timeout_seconds <= 30:
+            raise RuntimeError("EMAIL_TIMEOUT_SECONDS must be between 1 and 30")
+        if not 300 <= self.account_action_expire_seconds <= 3600:
+            raise RuntimeError(
+                "ACCOUNT_ACTION_EXPIRE_SECONDS must be between 300 and 3600"
+            )
+        if self.email_provider != "disabled":
+            origin = urlsplit(self.frontend_public_url)
+            local_http = (
+                self.app_env != "production"
+                and origin.scheme == "http"
+                and origin.hostname in {"localhost", "127.0.0.1"}
+            )
+            if (
+                not origin.hostname
+                or (origin.scheme != "https" and not local_http)
+                or origin.username is not None
+                or origin.password is not None
+                or origin.path not in {"", "/"}
+                or origin.query
+                or origin.fragment
+            ):
+                raise RuntimeError("FRONTEND_PUBLIC_URL must be a trusted HTTPS origin")
+            if (
+                not self.email_from
+                or "\n" in self.email_from
+                or "\r" in self.email_from
+            ):
+                raise RuntimeError("EMAIL_FROM is required and must be a single line")
+            if self.email_provider == "resend" and not self.resend_api_key:
+                raise RuntimeError("RESEND_API_KEY is required for Resend")
+            if self.email_provider == "smtp":
+                self._validate_smtp()
         if self.app_env != "production":
             return
         if len(self.bff_shared_secret) < 32:
@@ -228,6 +278,56 @@ class Settings:
             raise RuntimeError("Production DATABASE_URL requires sslmode=verify-full")
         if self.sql_echo:
             raise RuntimeError("Production requires SQL_ECHO=false")
+
+    def _validate_smtp(self) -> None:
+        """SMTPの接続先と暗号化を検証し、本番ではGmailだけを許可する。"""
+        if (
+            not self.smtp_host
+            or any(character.isspace() for character in self.smtp_host)
+            or not 1 <= self.smtp_port <= 65535
+            or bool(self.smtp_username) != bool(self.smtp_password)
+        ):
+            raise RuntimeError(
+                "SMTP requires a valid host, port and paired credentials"
+            )
+        local_host = self.smtp_host.lower() in {
+            "localhost",
+            "127.0.0.1",
+            "::1",
+            "mailpit",
+        }
+        if (not local_host or self.smtp_username) and not self.smtp_starttls:
+            raise RuntimeError("Remote or authenticated SMTP requires STARTTLS")
+        gmail = self.smtp_host.lower() == "smtp.gmail.com"
+        if self.app_env == "production" and not gmail:
+            raise RuntimeError("Production SMTP requires smtp.gmail.com")
+        if not gmail:
+            return
+        if (
+            self.smtp_port != 587
+            or not self.smtp_starttls
+            or not self.smtp_username
+            or len(self.smtp_password) != 16
+            or not self.smtp_password.isascii()
+            or any(character.isspace() for character in self.smtp_password)
+        ):
+            raise RuntimeError(
+                "Gmail SMTP requires port 587, STARTTLS and a 16-character app password"
+            )
+        try:
+            username = Address(addr_spec=self.smtp_username)
+            senders = getaddresses([self.email_from])
+            if (
+                not username.username
+                or not username.domain
+                or len(senders) != 1
+                or senders[0][1].casefold() != self.smtp_username.casefold()
+            ):
+                raise ValueError
+        except ValueError:
+            raise RuntimeError(
+                "Gmail EMAIL_FROM must match the authenticated SMTP_USERNAME address"
+            ) from None
 
 
 settings = Settings()

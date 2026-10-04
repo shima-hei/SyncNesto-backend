@@ -145,8 +145,8 @@ def update_test_design_comment(
     db: Session = Depends(get_db),
 ) -> TestDesignCommentRead:
     """コメント本文または解決状態を更新する。"""
-    can_moderate = authorization.has_system_permission(
-        db, user=user, permission_code="test_plan:comment"
+    can_moderate = authorization.has_project_permission(
+        db, user=user, project_id=project_id, permission_code="project:update"
     )
     return service.update_comment(
         db, project_id, design_id, comment_id, data, user.id, can_moderate
@@ -166,8 +166,8 @@ def delete_test_design_comment(
     db: Session = Depends(get_db),
 ) -> TestDesignCommentRead:
     """投稿者またはモデレーターがコメントを論理削除する。"""
-    can_moderate = authorization.has_system_permission(
-        db, user=user, permission_code="test_plan:comment"
+    can_moderate = authorization.has_project_permission(
+        db, user=user, project_id=project_id, permission_code="project:update"
     )
     return service.update_comment(
         db,

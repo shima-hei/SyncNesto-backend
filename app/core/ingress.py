@@ -18,6 +18,19 @@ BFF_KEY_HEADER = "X-Syncnesto-BFF-Key"
 CLIENT_IP_HEADER = "X-Syncnesto-Client-IP"
 
 
+def trusted_client_ip(request: Request) -> str:
+    """共有キー検証済みBFFのIPだけを使い、外部からの偽装ヘッダーを信用しない。"""
+    if settings.bff_shared_secret and hmac.compare_digest(
+        request.headers.get(BFF_KEY_HEADER, "").encode(),
+        settings.bff_shared_secret.encode(),
+    ):
+        try:
+            return str(ip_address(request.headers.get(CLIENT_IP_HEADER, "")))
+        except ValueError:
+            pass
+    return request.client.host if request.client else "unknown"
+
+
 class IngressMiddleware(BaseHTTPMiddleware):
     """BFF以外の直接アクセスを拒否し、DBとプロセス内で回数を制限する。"""
 
@@ -47,11 +60,7 @@ class IngressMiddleware(BaseHTTPMiddleware):
         if settings.app_env != "production":
             return await call_next(request)
 
-        forwarded_ip = request.headers.get(CLIENT_IP_HEADER, "")
-        try:
-            client_ip = str(ip_address(forwarded_ip))
-        except ValueError:
-            client_ip = request.client.host if request.client else "unknown"
+        client_ip = trusted_client_ip(request)
         login = request.url.path.rstrip("/") == "/auth/login"
         key = (client_ip, login)
         now = monotonic()

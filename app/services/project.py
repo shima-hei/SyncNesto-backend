@@ -29,7 +29,6 @@ from app.services.conflict import (
     raise_duplicate_after_rollback,
     raise_if_version_conflict,
 )
-from app.services.session import SessionService
 
 PROJECT_CONFLICT_CURRENT_FIELDS = (
     "project_code",
@@ -111,11 +110,7 @@ class ProjectService:
         Returns:
             閲覧可能なプロジェクト一覧。
         """
-        if self.authorization_service.has_system_permission(
-            db,
-            user=current_user,
-            permission_code="project:read",
-        ):
+        if db.info.get("tenant_role") in {"tenant_owner", "tenant_admin"}:
             return self.repository.list(db)
 
         return self.repository.list_by_user(db, current_user.id)
@@ -145,12 +140,10 @@ class ProjectService:
         Returns:
             閲覧可能なプロジェクト一覧と総件数。
         """
-        system_read = self.authorization_service.has_system_permission(
-            db,
-            user=current_user,
-            permission_code="project:read",
-        )
-        if not member_only and system_read:
+        if not member_only and db.info.get("tenant_role") in {
+            "tenant_owner",
+            "tenant_admin",
+        }:
             return self.repository.list_paginated(
                 db,
                 page=page,
@@ -166,7 +159,7 @@ class ProjectService:
             page_size=page_size,
             q=q,
             status=status,
-            require_read_permission=member_only and not system_read,
+            require_read_permission=True,
         )
 
     def get_project(self, db: Session, project_id: int) -> Project:
@@ -291,11 +284,7 @@ class ProjectService:
             NotFoundError: プロジェクトが存在しない場合。
         """
         self.get_project(db, project_id)
-        is_system_admin = self.authorization_service.has_system_permission(
-            db,
-            user=current_user,
-            permission_code="project:read",
-        )
+        is_system_admin = False
         role = ProjectMemberRepository().get_role_by_project_user(
             db,
             project_id=project_id,
@@ -316,7 +305,6 @@ class ProjectMemberService:
         project_repository: ProjectRepository | None = None,
         rbac_repository: RbacRepository | None = None,
         user_repository: UserRepository | None = None,
-        session_service: SessionService | None = None,
         audit_log_service: AuditLogService | None = None,
     ) -> None:
         """ProjectMemberServiceを初期化する。
@@ -326,14 +314,12 @@ class ProjectMemberService:
             project_repository: プロジェクトRepository。
             rbac_repository: RBAC Repository。
             user_repository: ユーザーRepository。
-            session_service: 認証セッションサービス。
             audit_log_service: 監査ログサービス。
         """
         self.repository = repository or ProjectMemberRepository()
         self.project_repository = project_repository or ProjectRepository()
         self.rbac_repository = rbac_repository or RbacRepository()
         self.user_repository = user_repository or UserRepository()
-        self.session_service = session_service or SessionService()
         self.audit_log_service = audit_log_service or AuditLogService()
 
     def list_members(self, db: Session, project_id: int) -> list[ProjectMember]:
@@ -467,7 +453,7 @@ class ProjectMemberService:
         Raises:
             DuplicateResourceError: 既に所属している場合。
         """
-        self._ensure_project_exists(db, project_id)
+        self._ensure_project_exists(db, project_id, lock=True)
         self._ensure_user_exists(db, member_in.user_id)
         role = self._get_project_role_by_key(db, member_in.role_key)
         existing_member = self.repository.get_by_project_user(
@@ -490,12 +476,6 @@ class ProjectMemberService:
                 actor_user_id=actor_id,
                 member=member,
                 role_key=role.key,
-            )
-            self.session_service.revoke_user_sessions(
-                db,
-                user_id=member.user_id,
-                actor_user_id=actor_id,
-                project_id=project_id,
             )
             return member
         except IntegrityError as exc:
@@ -541,6 +521,7 @@ class ProjectMemberService:
         self._ensure_project_admin_remains(
             db,
             project_id=project_id,
+            target_user_id=member.user_id,
             target_role_key=before_role.key,
             next_role_key=role.key,
         )
@@ -551,12 +532,6 @@ class ProjectMemberService:
             member=updated_member,
             before_role_key=before_role.key,
             after_role_key=role.key,
-        )
-        self.session_service.revoke_user_sessions(
-            db,
-            user_id=updated_member.user_id,
-            actor_user_id=actor_id,
-            project_id=project_id,
         )
         return updated_member
 
@@ -581,6 +556,7 @@ class ProjectMemberService:
         self._ensure_project_admin_remains(
             db,
             project_id=project_id,
+            target_user_id=member.user_id,
             target_role_key=role.key,
             next_role_key=None,
         )
@@ -594,21 +570,30 @@ class ProjectMemberService:
             member_id=member_id,
             role_key=role.key,
         )
-        self.session_service.revoke_user_sessions(
-            db,
-            user_id=user_id,
-            actor_user_id=actor_id,
-            project_id=project_id,
-        )
 
-    def _ensure_project_exists(self, db: Session, project_id: int) -> None:
+    def _ensure_project_exists(
+        self, db: Session, project_id: int, *, lock: bool = False
+    ) -> None:
         """プロジェクトが存在することを確認する。"""
-        if self.project_repository.get_by_id(db, project_id) is None:
+        if self.project_repository.get_by_id(db, project_id, lock=lock) is None:
             raise NotFoundError(error_messages.PROJECT_NOT_FOUND)
 
     def _ensure_user_exists(self, db: Session, user_id: int) -> None:
         """ユーザーが存在することを確認する。"""
         if self.user_repository.get_by_id(db, user_id) is None:
+            raise NotFoundError(error_messages.USER_NOT_FOUND)
+        from app.models.tenant import TenantMember
+
+        if (
+            db.query(TenantMember.id)
+            .filter(
+                TenantMember.tenant_id == db.info["tenant_id"],
+                TenantMember.user_id == user_id,
+                TenantMember.status == "active",
+            )
+            .first()
+            is None
+        ):
             raise NotFoundError(error_messages.USER_NOT_FOUND)
 
     def _get_project_role_by_key(self, db: Session, role_key: str):
@@ -660,6 +645,7 @@ class ProjectMemberService:
         db: Session,
         *,
         project_id: int,
+        target_user_id: int,
         target_role_key: str,
         next_role_key: str | None,
     ) -> None:
@@ -667,7 +653,12 @@ class ProjectMemberService:
         if target_role_key != "project_admin" or next_role_key == "project_admin":
             return
 
-        if self.repository.count_project_admins(db, project_id=project_id) <= 1:
+        if (
+            self.repository.count_project_admins(
+                db, project_id=project_id, exclude_user_id=target_user_id
+            )
+            == 0
+        ):
             raise LastProjectAdminRequiredError()
 
     def _get_member(
@@ -678,7 +669,7 @@ class ProjectMemberService:
         user_id: int,
     ) -> ProjectMember:
         """プロジェクトメンバーを取得する。"""
-        self._ensure_project_exists(db, project_id)
+        self._ensure_project_exists(db, project_id, lock=True)
         member = self.repository.get_by_project_user(
             db,
             project_id=project_id,

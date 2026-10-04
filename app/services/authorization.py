@@ -2,6 +2,8 @@
 
 from sqlalchemy.orm import Session
 
+from app.models.project import Project
+from app.models.tenant import Tenant, TenantMember
 from app.models.user import User
 from app.repositories.rbac import RbacRepository
 
@@ -45,8 +47,9 @@ class AuthorizationService:
         db: Session,
         *,
         user: User,
+        project_id: int,
     ) -> bool:
-        """system adminとして要件コメントを管理できるか判定する。
+        """Project管理権限で要件コメントを管理できるか判定する。
 
         Args:
             db: DBセッション。
@@ -55,10 +58,11 @@ class AuthorizationService:
         Returns:
             要件コメントを管理できる場合はTrue。
         """
-        return self.has_system_permission(
+        return self.has_project_permission(
             db,
             user=user,
-            permission_code="requirement:comment",
+            project_id=project_id,
+            permission_code="project:update",
         )
 
     def has_project_permission(
@@ -80,12 +84,25 @@ class AuthorizationService:
         Returns:
             権限を持つ場合はTrue。
         """
-        if self.has_system_permission(
-            db,
-            user=user,
-            permission_code=permission_code,
+        tenant_id = db.info.get("tenant_id")
+        if tenant_id is None:
+            return False
+        if (
+            db.query(TenantMember.id)
+            .join(Tenant)
+            .join(Project, Project.tenant_id == Tenant.id)
+            .filter(
+                Project.id == project_id,
+                Project.deleted_at.is_(None),
+                Tenant.id == tenant_id,
+                Tenant.status == "active",
+                TenantMember.user_id == user.id,
+                TenantMember.status == "active",
+            )
+            .first()
+            is None
         ):
-            return True
+            return False
 
         return self.repository.project_member_has_permission(
             db,

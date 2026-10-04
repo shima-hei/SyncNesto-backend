@@ -986,6 +986,7 @@ dependencies = [
     { name = "certifi" },
     { name = "email-validator" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "psycopg2-binary" },
     { name = "pwdlib", extra = ["argon2"] },
     { name = "pydantic" },
@@ -998,7 +999,6 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
@@ -1016,7 +1016,7 @@ requires-dist = [
     { name = "certifi", specifier = ">=2025.1.31" },
     { name = "email-validator", specifier = ">=2.0.0" },
     { name = "fastapi", specifier = "==0.142.2" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.0" },
+    { name = "httpx", specifier = ">=0.28.0" },
     { name = "psycopg2-binary", specifier = "==2.9.12" },
     { name = "pwdlib", extras = ["argon2"], specifier = ">=0.3.0" },
     { name = "pydantic", specifier = "==2.12.4" },

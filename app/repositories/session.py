@@ -66,9 +66,7 @@ class UserSessionRepository:
             延長されたセッション。
         """
         now = datetime.now(UTC)
-        next_expires_at = now + timedelta(
-            minutes=settings.session_idle_timeout_minutes
-        )
+        next_expires_at = now + timedelta(minutes=settings.session_idle_timeout_minutes)
         if next_expires_at > user_session.absolute_expires_at:
             next_expires_at = user_session.absolute_expires_at
 
@@ -123,6 +121,7 @@ class UserSessionRepository:
         *,
         user_id: int,
         reason: str,
+        commit: bool = True,
     ) -> int:
         """ユーザーに紐づく有効セッションをすべて失効する。
 
@@ -130,6 +129,7 @@ class UserSessionRepository:
             db: DBセッション。
             user_id: セッションを失効する対象ユーザーID。
             reason: 失効理由。
+            commit: 即時確定するか。Falseの場合は呼び出し元が確定する。
 
         Returns:
             失効したセッション件数。
@@ -147,7 +147,7 @@ class UserSessionRepository:
             user_session.revoked_at = now
             user_session.revoked_reason = reason
 
-        if sessions:
+        if sessions and commit:
             db.commit()
 
         return len(sessions)

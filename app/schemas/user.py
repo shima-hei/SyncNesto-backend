@@ -53,7 +53,6 @@ class UserProfileUpdate(BaseModel):
 
     version: int
     name: str | None = None
-    password: str | None = None
 
     model_config = {"extra": "forbid"}
 

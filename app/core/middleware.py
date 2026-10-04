@@ -15,7 +15,7 @@ from app.core.csrf import (
     is_valid_csrf_request,
     should_check_csrf,
 )
-from app.core.ingress import IngressMiddleware
+from app.core.ingress import IngressMiddleware, trusted_client_ip
 from app.core.logging import (
     client_ip_context,
     request_id_context,
@@ -81,7 +81,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         request_id = request.headers.get("X-Request-ID", str(uuid4()))
         request_id_token = set_request_id(request_id)
         client_ip_token, user_agent_token = set_request_metadata(
-            client_ip=request.client.host if request.client is not None else None,
+            client_ip=trusted_client_ip(request),
             user_agent=request.headers.get("User-Agent"),
         )
 

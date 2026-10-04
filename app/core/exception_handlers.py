@@ -10,9 +10,11 @@ from app.core.auth_cookie import delete_auth_cookie
 from app.core.config import settings
 from app.core.csrf import delete_csrf_cookie
 from app.core.exceptions import (
+    AccountActionRateLimitedError,
     AppError,
     BadRequestError,
     ConflictError,
+    EmailUnavailableError,
     ForbiddenError,
     InvalidTokenError,
     NotFoundError,
@@ -24,6 +26,8 @@ from app.core.exceptions import (
 logger = logging.getLogger(__name__)
 
 ERROR_STATUS_MAP: dict[type[AppError], int] = {
+    EmailUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
+    AccountActionRateLimitedError: status.HTTP_429_TOO_MANY_REQUESTS,
     BadRequestError: status.HTTP_400_BAD_REQUEST,
     UnauthorizedError: status.HTTP_401_UNAUTHORIZED,
     ForbiddenError: status.HTTP_403_FORBIDDEN,
@@ -59,9 +63,8 @@ def should_delete_auth_cookie(request: Request, exc: AppError) -> bool:
     Returns:
         認証Cookieを削除すべき場合はTrue。
     """
-    return (
-        settings.auth_cookie_name in request.cookies
-        and isinstance(exc, TokenExpiredError | InvalidTokenError)
+    return settings.auth_cookie_name in request.cookies and isinstance(
+        exc, TokenExpiredError | InvalidTokenError
     )
 
 
@@ -103,6 +106,8 @@ def register_exception_handlers(app: FastAPI) -> None:
             content["current"] = jsonable_encoder(exc.current)
 
         response = JSONResponse(status_code=status_code, content=content)
+        if isinstance(exc, AccountActionRateLimitedError):
+            response.headers["Retry-After"] = "60"
         if should_delete_auth_cookie(request, exc):
             delete_auth_cookie(response)
             delete_csrf_cookie(response)

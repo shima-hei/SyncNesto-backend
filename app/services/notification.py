@@ -211,20 +211,29 @@ class NotificationService:
                     )
                 )
             status = "available"
-            if (item.target_type, item.target_id) not in available:
-                status = "deleted"
-            elif not permissions[key]:
+            if not permissions[key]:
                 status = "forbidden"
+            elif (item.target_type, item.target_id) not in available:
+                status = "deleted"
+            readable = permissions[key]
             result.append(
                 NotificationRead(
                     id=item.id,
                     type=NotificationType(item.type),
-                    actor_user_id=item.actor_user_id,
-                    project_id=item.project_id,
+                    actor_user_id=item.actor_user_id if readable else None,
+                    project_id=item.project_id if readable else None,
                     target_type=Target(item.target_type),
-                    target_id=item.target_id,
-                    snapshot=NotificationSnapshot.model_validate(item.snapshot),
-                    context=NotificationContext.model_validate(item.context),
+                    target_id=item.target_id if readable else "0",
+                    snapshot=NotificationSnapshot.model_validate(item.snapshot)
+                    if readable
+                    else NotificationSnapshot(
+                        actor_name="ユーザー",
+                        project_name="閲覧できないプロジェクト",
+                        target_title="閲覧できない通知",
+                    ),
+                    context=NotificationContext.model_validate(item.context)
+                    if readable
+                    else NotificationContext(),
                     target_status=status,
                     is_read=item.read_at is not None,
                     read_at=item.read_at,

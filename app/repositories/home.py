@@ -30,14 +30,13 @@ class HomeRepository:
             )
         )
         for code in ("project:read", "task:read") if tasks else ("project:read",):
-            if not system_permissions[code]:
-                allowed_roles = (
-                    select(RolePermission.role_id)
-                    .join(Role, Role.id == RolePermission.role_id)
-                    .join(Permission, Permission.id == RolePermission.permission_id)
-                    .where(Role.scope == "project", Permission.code == code)
-                )
-                scope = scope.where(ProjectMember.role_id.in_(allowed_roles))
+            allowed_roles = (
+                select(RolePermission.role_id)
+                .join(Role, Role.id == RolePermission.role_id)
+                .join(Permission, Permission.id == RolePermission.permission_id)
+                .where(Role.scope == "project", Permission.code == code)
+            )
+            scope = scope.where(ProjectMember.role_id.in_(allowed_roles))
         return scope
 
     def work(

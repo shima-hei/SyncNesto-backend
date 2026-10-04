@@ -17,6 +17,7 @@ class Draft(Base):
     __table_args__ = (
         UniqueConstraint(
             "owner_user_id",
+            "tenant_id",
             "scope_key",
             name="uq_drafts_owner_scope",
         ),
@@ -33,6 +34,7 @@ class Draft(Base):
         index=True,
         comment=db_comment("下書きID", "下書きを一意に識別するID"),
     )
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id"), index=True)
     owner_user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id"),
         nullable=False,

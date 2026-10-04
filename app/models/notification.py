@@ -35,6 +35,13 @@ class Notification(Base):
 
     __tablename__ = "notifications"
     __table_args__ = (
+        Index(
+            "ix_notifications_tenant_recipient_created",
+            "tenant_id",
+            "recipient_user_id",
+            "created_at",
+            "id",
+        ),
         UniqueConstraint(
             "event_key", "recipient_user_id", name="uq_notification_event_recipient"
         ),
@@ -65,6 +72,7 @@ class Notification(Base):
         },
     )
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), index=True)
     recipient_user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE")
     )

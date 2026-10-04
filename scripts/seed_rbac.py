@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 PERMISSIONS = [
+    ("tenant:manage", "運営者として組織を作成・管理する"),
     ("user:read", "ユーザーを閲覧する"),
     ("user:create", "ユーザーを作成する"),
     ("user:update", "ユーザーを更新する"),
@@ -53,6 +54,9 @@ PERMISSIONS = [
 ]
 
 ROLES = [
+    ("tenant_owner", "組織所有者", "tenant", "組織設定とOwner委譲を管理する"),
+    ("tenant_admin", "組織管理者", "tenant", "組織内ユーザーとProject作成を管理する"),
+    ("tenant_member", "組織メンバー", "tenant", "所属Projectで業務を行う"),
     ("system_admin", "システム管理者", "system", "システム全体の管理者"),
     ("project_admin", "プロジェクト管理者", "project", "プロジェクト管理者"),
     ("manager", "マネージャー", "project", "プロジェクト運用担当者"),

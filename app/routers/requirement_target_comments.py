@@ -133,6 +133,7 @@ def update_target_comment(
         can_moderate=authorization_service.can_moderate_requirement_comments(
             db,
             user=current_user,
+            project_id=project_id,
         ),
     )
     return build_requirement_target_comment_response(
@@ -167,6 +168,7 @@ def delete_target_comment(
         can_moderate=authorization_service.can_moderate_requirement_comments(
             db,
             user=current_user,
+            project_id=project_id,
         ),
     )
 

@@ -56,7 +56,7 @@ def login_user(
         ログイン成功レスポンス。
     """
     user = user_service.authenticate_user(db, user_in.email, user_in.password)
-    user_service.update_last_login_at(db, user)
+    user_service.update_last_login_at(db, user, commit=False)
     user_session, access_token = session_service.create_session_token(db, user)
     audit_log_service.record_login_success(
         db,

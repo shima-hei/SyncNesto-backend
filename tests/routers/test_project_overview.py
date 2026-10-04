@@ -101,6 +101,7 @@ def test_overview_counts_current_entities_and_shows_project_activity(
     db.flush()
     db.add(
         AuditLog(
+            tenant_id=project.tenant_id,
             event_type="test_design.updated",
             actor_user_id=user.id,
             project_id=project.id,

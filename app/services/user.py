@@ -7,6 +7,7 @@ Repository層を通じてデータアクセスを行う。
 """
 
 import logging
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -21,6 +22,7 @@ from app.core.exceptions import (
 from app.core.security import get_password_hash, verify_password
 from app.models.rbac import Role
 from app.models.user import User, UserType
+from app.repositories.account_action import AccountActionRepository
 from app.repositories.rbac import RbacRepository
 from app.repositories.user import UserRepository
 from app.schemas.file_upload import FileUploadPlan, FileUploadRequest
@@ -29,7 +31,11 @@ from app.services.audit_log import AuditLogService
 from app.services.conflict import build_conflict_current, raise_if_version_conflict
 from app.services.file_upload import FileUploadService
 from app.services.login_attempt import LoginAttemptService
-from app.services.session import SessionService
+from app.services.session import (
+    SESSION_REVOKE_REASON_CREDENTIALS_CHANGED,
+    SESSION_REVOKE_REASON_PERMISSION_CHANGED,
+    SessionService,
+)
 from app.services.storage import (
     ALLOWED_IMAGE_CONTENT_TYPES,
     MAX_IMAGE_BYTES,
@@ -251,12 +257,13 @@ class UserService:
         """
         return self.rbac_repository.list_system_roles_by_user(db, user_id)
 
-    def get_user(self, db: Session, user_id: int) -> User:
+    def get_user(self, db: Session, user_id: int, *, lock: bool = False) -> User:
         """ユーザーを取得する。
 
         Args:
             db: DBセッション。
             user_id: 取得対象ユーザーID。
+            lock: ログインと認証情報変更を直列化するか。
 
         Returns:
             取得されたユーザー。
@@ -264,7 +271,7 @@ class UserService:
         Raises:
             NotFoundError: ユーザーが存在しない場合。
         """
-        user = self.repository.get_by_id(db, user_id)
+        user = self.repository.get_by_id(db, user_id, lock=lock)
         if user is None:
             raise NotFoundError(error_messages.USER_NOT_FOUND)
 
@@ -293,7 +300,7 @@ class UserService:
             NotFoundError: ユーザーが存在しない場合。
             VersionConflictError: リクエストのversionが最新ではない場合。
         """
-        user = self.get_user(db, user_id)
+        user = self.get_user(db, user_id, lock=True)
         before_role_keys = [
             role.key
             for role in self.rbac_repository.list_system_roles_by_user(db, user.id)
@@ -317,8 +324,13 @@ class UserService:
         if user_in.password is not None:
             hashed_password = get_password_hash(user_in.password)
 
-        should_revoke_sessions = "system_role_keys" in user_in.model_fields_set
-        if should_revoke_sessions:
+        roles_changed = "system_role_keys" in user_in.model_fields_set
+        credentials_changed = (
+            hashed_password is not None
+            or (user_in.email is not None and user_in.email != user.email)
+            or (user_in.is_active is not None and user_in.is_active != user.is_active)
+        )
+        if roles_changed:
             roles = self._resolve_system_roles(db, user_in.system_role_keys or [])
         else:
             roles = self.rbac_repository.list_system_roles_by_user(db, user.id)
@@ -332,16 +344,33 @@ class UserService:
             hashed_password=hashed_password,
             actor_id=actor_id,
         )
-        if should_revoke_sessions:
+        if roles_changed:
             self.rbac_repository.replace_system_roles_for_user(
                 db,
                 user=user,
                 roles=roles,
             )
 
+        revoked_count = 0
+        revoke_reason = (
+            SESSION_REVOKE_REASON_PERMISSION_CHANGED
+            if roles_changed
+            else SESSION_REVOKE_REASON_CREDENTIALS_CHANGED
+        )
+        if roles_changed or credentials_changed:
+            revoked_count = self.session_service.revoke_user_sessions(
+                db,
+                user_id=user.id,
+                reason=revoke_reason,
+                actor_user_id=actor_id,
+                commit=False,
+            )
+        if credentials_changed:
+            AccountActionRepository().revoke_actions(db, user.id, datetime.now(UTC))
+
         db.commit()
         db.refresh(user)
-        if should_revoke_sessions:
+        if roles_changed:
             after_role_keys = [
                 role.key
                 for role in self.rbac_repository.list_system_roles_by_user(db, user.id)
@@ -353,17 +382,22 @@ class UserService:
                 before_role_keys=before_role_keys,
                 after_role_keys=after_role_keys,
             )
-            self.session_service.revoke_user_sessions(
-                db,
-                user_id=user.id,
-                actor_user_id=actor_id,
-            )
         else:
             self.audit_log_service.record_user_updated(
                 db,
                 actor_user_id=actor_id,
                 user=user,
                 updated_fields=user_in.model_fields_set,
+            )
+
+        if revoked_count > 0:
+            self.audit_log_service.record_session_revoked(
+                db,
+                actor_user_id=actor_id,
+                target_user_id=user.id,
+                project_id=None,
+                reason=revoke_reason,
+                revoked_count=revoked_count,
             )
 
         return user
@@ -398,15 +432,11 @@ class UserService:
             ),
         )
 
-        hashed_password = None
-        if user_in.password is not None:
-            hashed_password = get_password_hash(user_in.password)
-
         user = self.repository.update_profile(
             db,
             user=current_user,
             user_in=user_in,
-            hashed_password=hashed_password,
+            hashed_password=None,
             actor_id=current_user.id,
         )
         db.commit()
@@ -566,7 +596,7 @@ class UserService:
         )
 
     def authenticate_user(self, db: Session, email: str, password: str) -> User:
-        """ユーザーを認証する。
+        """Identityをロックして認証し、Session作成まで同じtransactionで保持する。
 
         Args:
             db: DBセッション。
@@ -589,8 +619,9 @@ class UserService:
             logger.warning("Locked login attempt: email=%s", normalized_email)
             raise InvalidCredentialsError()
 
-        user = self.repository.get_by_email(db, email)
+        user = self.repository.get_by_email(db, email, lock=True)
         if user is None:
+            db.rollback()
             self.login_attempt_service.record_failure(db, normalized_email)
             self.audit_log_service.record_login_failure(
                 db,
@@ -601,6 +632,7 @@ class UserService:
             raise InvalidCredentialsError()
 
         if not user.is_active:
+            db.rollback()
             self.login_attempt_service.record_failure(db, normalized_email)
             self.audit_log_service.record_login_failure(
                 db,
@@ -616,6 +648,7 @@ class UserService:
             raise InvalidCredentialsError()
 
         if not verify_password(password, user.hashed_password):
+            db.rollback()
             self.login_attempt_service.record_failure(db, normalized_email)
             self.audit_log_service.record_login_failure(
                 db,
@@ -626,21 +659,25 @@ class UserService:
             logger.warning("Invalid login attempt: email=%s", normalized_email)
             raise InvalidCredentialsError()
 
-        self.login_attempt_service.reset(db, normalized_email)
+        self.login_attempt_service.reset(db, normalized_email, commit=False)
         logger.info("User authenticated: id=%s email=%s", user.id, user.email)
         return user
 
-    def update_last_login_at(self, db: Session, user: User) -> User:
+    def update_last_login_at(
+        self, db: Session, user: User, *, commit: bool = True
+    ) -> User:
         """ユーザーの最終ログイン日時を更新する。
 
         Args:
             db: DBセッション。
             user: 更新対象ユーザー。
+            commit: Session作成と原子的に確定する場合はFalse。
 
         Returns:
             更新されたユーザー。
         """
         user = self.repository.update_last_login_at(db, user)
-        db.commit()
-        db.refresh(user)
+        if commit:
+            db.commit()
+            db.refresh(user)
         return user
