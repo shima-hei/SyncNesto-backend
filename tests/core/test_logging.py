@@ -3,7 +3,11 @@
 import json
 import logging
 
+import pytest
+
 from app.core.logging import JsonFormatter
+
+pytestmark = pytest.mark.no_db
 
 
 def test_json_formatter_includes_structured_log_fields() -> None:

@@ -35,6 +35,7 @@ def ingress_client(
     return TestClient(app)
 
 
+@pytest.mark.no_db
 def test_direct_request_and_host_spoofing_rejected(ingress_client: TestClient) -> None:
     """共有キーなし・不正キー・不正Hostでエンドポイントを呼ばない。"""
     assert ingress_client.get("/").status_code == 200
@@ -51,6 +52,7 @@ def test_direct_request_and_host_spoofing_rejected(ingress_client: TestClient) -
     assert ingress_client.get("/", headers={"Host": "evil.example"}).status_code == 400
 
 
+@pytest.mark.no_db
 def test_login_limit_precedes_db_and_recovers(
     ingress_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -70,6 +72,7 @@ def test_login_limit_precedes_db_and_recovers(
     assert ingress_client.post("/auth/login", headers=headers).status_code == 200
 
 
+@pytest.mark.no_db
 def test_valid_bff_does_not_bypass_csrf(ingress_client: TestClient) -> None:
     """共有キーはユーザーのCookie・CSRF検証を置き換えない。"""
     headers = {
@@ -81,6 +84,7 @@ def test_valid_bff_does_not_bypass_csrf(ingress_client: TestClient) -> None:
     assert ingress_client.post("/projects", headers=headers).status_code == 200
 
 
+@pytest.mark.no_db
 def test_bounded_rate_limit_cache(
     ingress_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -92,6 +96,7 @@ def test_bounded_rate_limit_cache(
     assert ingress_client.post("/auth/login", headers=headers).status_code == 429
 
 
+@pytest.mark.no_db
 def test_shared_budget_is_required(
     ingress_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -148,6 +153,7 @@ def production_settings(app_env: str = "production"):
     ],
 )
 @pytest.mark.parametrize("app_env", ["production", "demo"])
+@pytest.mark.no_db
 def test_insecure_production_settings_rejected(changes: dict, app_env: str) -> None:
     """本番とデモのどちらも危険な設定では起動しない。"""
     with pytest.raises(RuntimeError):
@@ -181,6 +187,7 @@ def test_production_docs_disabled(
 
 
 @pytest.mark.parametrize("app_env", ["Demo", "prod", "staging", "", "produciton"])
+@pytest.mark.no_db
 def test_unknown_environment_rejected(app_env: str) -> None:
     """環境名の誤記で公開保護を迂回させない。"""
     with pytest.raises(RuntimeError, match="APP_ENV must"):
@@ -188,6 +195,7 @@ def test_unknown_environment_rejected(app_env: str) -> None:
 
 
 @pytest.mark.parametrize("app_env", ["development", "test"])
+@pytest.mark.no_db
 def test_vercel_requires_public_environment(
     monkeypatch: pytest.MonkeyPatch, app_env: str
 ) -> None:
@@ -198,6 +206,7 @@ def test_vercel_requires_public_environment(
 
 
 @pytest.mark.parametrize("app_env", ["development", "test"])
+@pytest.mark.no_db
 def test_local_environment_keeps_development_settings(
     monkeypatch: pytest.MonkeyPatch, app_env: str
 ) -> None:
@@ -214,6 +223,7 @@ def test_local_environment_keeps_development_settings(
 
 
 @pytest.mark.parametrize("app_env", ["production"])
+@pytest.mark.no_db
 def test_public_email_rejects_local_origin_and_smtp(app_env: str) -> None:
     """デモでもHTTPメールリンク・ローカルSMTPを許可しない。"""
     secure = replace(
@@ -240,6 +250,7 @@ def test_public_email_rejects_local_origin_and_smtp(app_env: str) -> None:
         ({"frontend_public_url": "http://localhost:3000"}, "HTTPS"),
     ],
 )
+@pytest.mark.no_db
 def test_demo_requires_isolated_data_cleanup_secret_and_no_mail(changes, reason):
     """一般の公開保護に加え、デモ固有の誤設定も起動時に拒否する。"""
     with pytest.raises(RuntimeError, match=reason):

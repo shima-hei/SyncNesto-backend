@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 
+pytestmark = pytest.mark.no_db
+
 
 def test_request_logging_middleware_logs_completed_request(
     client: TestClient,

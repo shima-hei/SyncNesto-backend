@@ -48,6 +48,7 @@ select = ["E", "F", "I"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = ["no_db: DBを利用せず、DB起動・初期化を省略するテスト"]
 
 [dependency-groups]
 dev = [

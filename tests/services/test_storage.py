@@ -9,6 +9,8 @@ from app.core.config import settings
 from app.core.exceptions import BadRequestError
 from app.services.storage import StorageService
 
+pytestmark = pytest.mark.no_db
+
 
 class FakeS3Client:
     """テスト用S3クライアント。"""
