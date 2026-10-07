@@ -28,6 +28,10 @@ jobs:
       - run: uv sync --frozen --extra dev
       - run: uv run --frozen ruff check .
       - run: uv run --frozen pyright
+      - name: Audit locked runtime dependencies
+        run: |
+          uv export --frozen --no-dev --no-emit-project --no-hashes --output-file /tmp/runtime-requirements.txt --quiet
+          uvx --from pip-audit==2.10.1 pip-audit --no-deps --disable-pip --strict --progress-spinner off -r /tmp/runtime-requirements.txt
       - name: Configure isolated test database
         run: |
           cat > .env.test <<'ENV'
@@ -70,12 +74,13 @@ jobs:
       - run: uv sync --frozen --no-dev
       - run: npm install --global vercel@62.2.0
       - run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-      - run: vercel build --prod --token="$VERCEL_TOKEN"
+      - run: uv run --frozen --no-dev python scripts/configure_demo_deployment.py
+      - run: vercel build --prod --local-config=.vercel/deploy-config.json --token="$VERCEL_TOKEN"
       - name: Apply backward-compatible migrations
         env:
           MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
         run: uv run --frozen --no-dev python scripts/migrate_production.py
-      - run: vercel deploy --prebuilt --prod --yes --token="$VERCEL_TOKEN"
+      - run: vercel deploy --prebuilt --prod --yes --local-config=.vercel/deploy-config.json --token="$VERCEL_TOKEN"
       - name: Verify public API boundary
         run: |
           curl --fail --silent --show-error --retry 3 --retry-all-errors https://syncnesto-api.vercel.app/ --output /dev/null

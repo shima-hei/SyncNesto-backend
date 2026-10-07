@@ -1,10 +1,13 @@
 """S3ストレージ操作を提供するモジュール。"""
 
-from typing import Any, Protocol
+from datetime import UTC, datetime, timedelta
+from typing import Any, Protocol, cast
+from uuid import UUID, uuid4
 
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
+from sqlalchemy.orm import Session
 
 from app.core import error_messages
 from app.core.config import settings
@@ -43,6 +46,14 @@ class S3Client(Protocol):
         ...
 
 
+class PrefixS3Client(S3Client, Protocol):
+    """回収処理に必要な一覧API。通常の保存APIと型を分離する。"""
+
+    def list_objects_v2(self, **kwargs: object) -> dict[str, Any]:
+        """prefix配下のキーをページ単位で返す。"""
+        ...
+
+
 class StorageService:
     """S3を利用したファイル保存と署名付きURL生成を提供する。"""
 
@@ -67,6 +78,70 @@ class StorageService:
             s3_client_kwargs["aws_secret_access_key"] = settings.aws_secret_access_key
 
         self.s3_client = s3_client or boto3.client("s3", **s3_client_kwargs)
+        self.demo_db: Session | None = None
+
+    def for_demo(self, db: Session) -> "StorageService":
+        """共有インスタンスを書き換えず、request固有の容量管理を付ける。"""
+        if not db.info.get("demo_id"):
+            return self
+        bound = StorageService(s3_client=cast(S3Client, self.s3_client))
+        bound.demo_db = db
+        return bound
+
+    def object_key(self, key: str) -> str:
+        """全ファイルを回収可能な専用prefixへ置く。"""
+        if self.demo_db is None:
+            return key
+        prefix = f"demo/{self.demo_db.info['demo_id']}/"
+        return key if key.startswith(prefix) else prefix + key
+
+    def reserve(
+        self, key: str, byte_size: int, expires_in: int, upload_id: UUID | None = None
+    ) -> None:
+        """未完了URLも同じ回収台帳へ登録する。"""
+        if self.demo_db is not None:
+            from app.services.demo import DemoService
+
+            DemoService().reserve_upload(
+                self.demo_db,
+                key,
+                byte_size,
+                datetime.now(UTC) + timedelta(seconds=expires_in),
+                upload_id,
+            )
+
+    def download_ttl(self, key: str) -> int:
+        """デモのURLは最大60秒。認可失効後の残存時間を抑える。"""
+        ttl = settings.aws_s3_presigned_url_expires_seconds
+        if key.startswith("demo/"):
+            ttl = min(ttl, 60)
+            if self.demo_db is not None:
+                from app.db.demo_scope import lock_active_demo
+
+                remaining = (
+                    lock_active_demo(self.demo_db).expires_at - datetime.now(UTC)
+                ).total_seconds()
+                ttl = min(ttl, max(1, int(remaining)))
+        return ttl
+
+    def delete_prefix(self, prefix: str) -> None:
+        """予約以外の遅延PUTや登録失敗したファイルもprefix単位で回収する。"""
+        if not prefix.startswith("demo/") or len(prefix.split("/")) != 3:
+            raise ValueError("Only a single demo prefix may be deleted")
+        continuation = None
+        while True:
+            args: dict[str, Any] = {
+                "Bucket": settings.aws_s3_bucket_name,
+                "Prefix": prefix,
+            }
+            if continuation:
+                args["ContinuationToken"] = continuation
+            result = cast(PrefixS3Client, self.s3_client).list_objects_v2(**args)
+            for item in result.get("Contents", []):
+                self.delete_object(item["Key"])
+            if not result.get("IsTruncated"):
+                return
+            continuation = result["NextContinuationToken"]
 
     def upload_user_avatar(
         self,
@@ -90,7 +165,12 @@ class StorageService:
         """
         extension = self._get_image_extension(content_type)
         self._validate_image_size(content)
-        avatar_key = f"users/{user_id}.{extension}"
+        avatar_key = self.object_key(
+            f"users/{user_id}.{extension}"
+            if self.demo_db is None
+            else f"users/{user_id}/{uuid4()}.{extension}"
+        )
+        self.reserve(avatar_key, len(content), settings.file_upload_url_expires_seconds)
         self.s3_client.put_object(
             Bucket=settings.aws_s3_bucket_name,
             Key=avatar_key,
@@ -117,7 +197,7 @@ class StorageService:
                 "Bucket": settings.aws_s3_bucket_name,
                 "Key": avatar_key,
             },
-            ExpiresIn=settings.aws_s3_presigned_url_expires_seconds,
+            ExpiresIn=self.download_ttl(avatar_key),
         )
 
     def delete_object(self, key: str) -> None:
@@ -135,6 +215,7 @@ class StorageService:
         self, *, key: str, content: bytes, content_type: str
     ) -> None:
         """検証済みの用途固有ファイルを非公開S3オブジェクトとして保存する。"""
+        self.reserve(key, len(content), settings.file_upload_url_expires_seconds)
         self.s3_client.put_object(
             Bucket=settings.aws_s3_bucket_name,
             Key=key,
@@ -147,7 +228,7 @@ class StorageService:
         return self.s3_client.generate_presigned_url(
             "get_object",
             Params={"Bucket": settings.aws_s3_bucket_name, "Key": key},
-            ExpiresIn=settings.aws_s3_presigned_url_expires_seconds,
+            ExpiresIn=self.download_ttl(key),
         )
 
     def presigned_upload_url(

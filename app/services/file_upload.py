@@ -34,7 +34,8 @@ class FileUploadService:
         if not 1 <= expires_in <= 3600:
             raise RuntimeError("FILE_UPLOAD_URL_EXPIRES_SECONDS must be 1..3600")
         upload_id = uuid4()
-        key = f"pending-uploads/{user_id}/{upload_id}"
+        key = self.storage.object_key(f"pending-uploads/{user_id}/{upload_id}")
+        self.storage.reserve(key, data.byte_size, expires_in, upload_id)
         token = jwt.encode(
             {
                 "aud": UPLOAD_AUDIENCE,
@@ -86,7 +87,13 @@ class FileUploadService:
             ValidationError,
         ):
             raise BadRequestError(error_messages.FILE_UPLOAD_INVALID) from None
-        return upload_id, data, f"pending-uploads/{user_id}/{upload_id}"
+        if self.storage.demo_db is not None:
+            self.storage.demo_db.info["demo_upload_reservation"] = upload_id
+        return (
+            upload_id,
+            data,
+            self.storage.object_key(f"pending-uploads/{user_id}/{upload_id}"),
+        )
 
     def discard(self, key: str) -> None:
         """一時ファイルの削除失敗で登録結果を上書きしない。"""

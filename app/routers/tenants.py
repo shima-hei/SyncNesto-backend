@@ -193,7 +193,9 @@ def request_member_password_reset(
         db, user_id=user_id, actor_id=user.id, tenant_id=tenant.id
     )
     return AccountActionMessage(
-        message="登録済みメールアドレスに再設定メールを送信しました"
+        message="デモのためメールは送信しません"
+        if db.info.get("demo_id")
+        else "登録済みメールアドレスに再設定メールを送信しました"
     )
 
 
@@ -221,5 +223,7 @@ def request_member_email_change(
         new_email=str(data.new_email),
     )
     return AccountActionMessage(
-        message="現在のメールアドレスに承認メールを送信しました"
+        message="デモのためメールは送信しません"
+        if db.info.get("demo_id")
+        else "現在のメールアドレスに承認メールを送信しました"
     )

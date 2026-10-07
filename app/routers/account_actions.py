@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
+from app.core.config import settings
 from app.core.logging import client_ip_context
 from app.db.session import get_db
 from app.models.user import User
@@ -27,6 +28,8 @@ service = AccountActionService()
 )
 def request_password_reset(data: PasswordResetRequest, background: BackgroundTasks):
     """存在の有無に依存しない応答後、登録先メールへの案内を送信する。"""
+    if settings.app_env == "demo":
+        return AccountActionMessage(message="デモのためメールは送信しません")
     service.email_service.ensure_available()
     consume_email_request_budget(str(data.email), client_ip_context.get() or "unknown")
     background.add_task(service.public_password_reset, str(data.email))
@@ -71,7 +74,9 @@ def request_my_email_change(
         db, user_id=user.id, actor_id=user.id, new_email=str(data.new_email)
     )
     return AccountActionMessage(
-        message="現在のメールアドレスに承認メールを送信しました"
+        message="デモのためメールは送信しません"
+        if db.info.get("demo_id")
+        else "現在のメールアドレスに承認メールを送信しました"
     )
 
 

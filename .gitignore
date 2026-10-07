@@ -223,5 +223,8 @@ docker/pgadmin/
 !/docs/deployment.md
 !/docs/multi-tenancy.md
 !/docs/email-approval.md
+!/docs/security-hardening.md
+!/docs/portfolio-demo-design.md
+!/docs/portfolio-demo.md
 .codex
 AGENTS.md

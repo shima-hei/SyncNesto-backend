@@ -1,7 +1,7 @@
 """認証dependencyを定義するモジュール。"""
 
 import jwt
-from fastapi import Cookie, Depends, Header, Response
+from fastapi import Cookie, Depends, Header, Request, Response
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -42,6 +42,7 @@ def extract_bearer_token(authorization: str | None) -> str | None:
 
 def get_authenticated_user(
     response: Response,
+    request: Request,
     access_token: str | None = Cookie(default=None, alias=settings.auth_cookie_name),
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
@@ -75,6 +76,9 @@ def get_authenticated_user(
         raise InvalidTokenError() from exc
 
     user_session = session_service.validate_session(db, payload)
+    from app.services.demo import DemoService
+
+    DemoService().bind(db, user_session)
 
     email = payload.get("sub")
     if not isinstance(email, str):
@@ -89,6 +93,9 @@ def get_authenticated_user(
     if (
         access_token is not None
         and not db.info["password_setup_only"]
+        and not (
+            db.info.get("demo_id") and request.url.path in {"/auth/me", "/demo/status"}
+        )
         and session_service.should_refresh_session(user_session)
     ):
         session_service.refresh_session_cookie(db, response, user, user_session)
@@ -131,6 +138,8 @@ def require_system_permission(permission_code: str):
         Raises:
             ForbiddenError: 権限がない場合。
         """
+        if db.info.get("demo_id") is not None:
+            raise ForbiddenError()
         if not AuthorizationService().has_system_permission(
             db,
             user=current_user,

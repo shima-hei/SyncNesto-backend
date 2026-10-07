@@ -66,12 +66,27 @@ class UserSessionRepository:
             延長されたセッション。
         """
         now = datetime.now(UTC)
-        next_expires_at = now + timedelta(minutes=settings.session_idle_timeout_minutes)
+        from app.models.demo import DemoSession
+        from app.services.demo import IDLE_MINUTES
+
+        demo = (
+            db.query(DemoSession)
+            .filter(DemoSession.session_id == user_session.id)
+            .with_for_update()
+            .first()
+        )
+        next_expires_at = now + timedelta(
+            minutes=IDLE_MINUTES
+            if demo is not None
+            else settings.session_idle_timeout_minutes
+        )
         if next_expires_at > user_session.absolute_expires_at:
             next_expires_at = user_session.absolute_expires_at
 
         user_session.last_seen_at = now
         user_session.expires_at = next_expires_at
+        if demo is not None:
+            demo.expires_at = next_expires_at
         db.commit()
         db.refresh(user_session)
         return user_session

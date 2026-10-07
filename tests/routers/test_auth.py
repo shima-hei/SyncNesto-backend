@@ -753,6 +753,7 @@ def test_get_me_returns_current_user_with_cookie_token(
         "system_roles": [],
         "password_change_required": False,
         "initial_password_expires_at": None,
+        "demo": None,
     }
 
 
@@ -792,6 +793,7 @@ def test_get_me_returns_current_user_with_authorization_header(
         "system_roles": [],
         "password_change_required": False,
         "initial_password_expires_at": None,
+        "demo": None,
     }
 
 
@@ -831,6 +833,7 @@ def test_get_me_returns_system_roles(
         ],
         "password_change_required": False,
         "initial_password_expires_at": None,
+        "demo": None,
     }
 
 
@@ -872,6 +875,7 @@ def test_update_me_updates_current_user_profile(
         "system_roles": [],
         "password_change_required": False,
         "initial_password_expires_at": None,
+        "demo": None,
     }
     db.refresh(user)
     assert user.name == "After"

@@ -162,7 +162,7 @@ class TestEvidenceService:
         self._validate_metadata(data.filename, data.content_type, data.byte_size)
         if len(self.repository.evidence(db, execution_id)) >= MAX_FILES_PER_EXECUTION:
             raise BadRequestError("1回の実行に添付できるファイルは20件までです")
-        return FileUploadService(self.storage).plan(
+        return FileUploadService(self.storage.for_demo(db)).plan(
             data,
             user_id=actor_id,
             scope=f"evidence:{project_id}:{design_id}:{case_id}:{execution_id}",
@@ -180,7 +180,8 @@ class TestEvidenceService:
     ) -> TestEvidenceRead:
         """一時ファイルを検証し、再上書きできない保存先へ登録する。"""
         self._case_execution(db, project_id, design_id, case_id, execution_id)
-        uploads = FileUploadService(self.storage)
+        storage = self.storage.for_demo(db)
+        uploads = FileUploadService(storage)
         upload_id, data, key = uploads.verify(
             token,
             user_id=actor_id,
@@ -197,7 +198,7 @@ class TestEvidenceService:
             )
         self._validate_metadata(data.filename, data.content_type, data.byte_size)
         try:
-            content = self.storage.read_uploaded_object(
+            content = storage.read_uploaded_object(
                 key=key, content_type=data.content_type, byte_size=data.byte_size
             )
             return self.upload(
@@ -237,11 +238,12 @@ class TestEvidenceService:
             raise BadRequestError("1回の実行に添付できるファイルは20件までです")
         filename, extension = self._validate_file(filename, content_type, content)
         evidence_id = evidence_id or uuid4()
-        key = (
+        storage = self.storage.for_demo(db)
+        key = storage.object_key(
             f"projects/{project_id}/test-cases/{case_id}/executions/"
             f"{execution_id}/{evidence_id}{extension}"
         )
-        self.storage.upload_private_object(
+        storage.upload_private_object(
             key=key, content=content, content_type=content_type
         )
         evidence = TestEvidence(
@@ -294,7 +296,7 @@ class TestEvidenceService:
         evidence = self.get_evidence(
             db, project_id, design_id, case_id, execution_id, evidence_id
         )
-        return self.storage.private_object_url(evidence.storage_key)
+        return self.storage.for_demo(db).private_object_url(evidence.storage_key)
 
     def delete(
         self,

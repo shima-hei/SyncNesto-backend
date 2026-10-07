@@ -9,10 +9,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
-from app.db import tenant_scope  # noqa: F401
+from app.db import (
+    demo_scope,  # noqa: F401
+    tenant_scope,  # noqa: F401
+)
 
 connect_args = {}
-if settings.app_env == "production":
+if settings.is_public_environment:
     settings.validate_production()
     ca_file = (
         os.getenv("PGSSLROOTCERT")

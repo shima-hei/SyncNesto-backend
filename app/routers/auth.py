@@ -8,6 +8,7 @@ from app.core.auth_cookie import delete_auth_cookie, set_auth_cookie
 from app.core.config import settings
 from app.core.csrf import delete_csrf_cookie, generate_csrf_token, set_csrf_cookie
 from app.db.session import get_db
+from app.models.rbac import Role
 from app.models.user import User
 from app.presenters.user import build_current_user_response
 from app.schemas.account_action import AccountActionMessage
@@ -24,6 +25,7 @@ from app.schemas.user import (
     UserProfileUpdate,
 )
 from app.services.audit_log import AuditLogService
+from app.services.demo import DemoService
 from app.services.onboarding import OnboardingService
 from app.services.session import SessionService
 from app.services.storage import MAX_IMAGE_BYTES, StorageService
@@ -36,6 +38,18 @@ storage_service = StorageService()
 audit_log_service = AuditLogService()
 
 SESSION_REVOKE_REASON_LOGOUT = "logout"
+
+
+def current_user_response(
+    db: Session, user: User, roles: list[Role]
+) -> CurrentUserRead:
+    """本人更新でもデモの利用状態と短期URLを維持する。"""
+    result = build_current_user_response(user, roles, storage_service.for_demo(db))
+    if demo_id := db.info.get("demo_id"):
+        demo = DemoService().repository.lock(db, demo_id)
+        assert demo is not None
+        result.demo = DemoService().status(demo)
+    return result
 
 
 @router.post(
@@ -113,6 +127,8 @@ def logout_user(
             db,
             user_session=user_session,
         )
+        if demo_id := db.info.get("demo_cleanup_id"):
+            DemoService().cleanup(demo_id)
 
     delete_auth_cookie(response)
     delete_csrf_cookie(response)
@@ -136,7 +152,7 @@ def read_current_user(
         現在のログインユーザー情報。
     """
     system_roles = user_service.list_system_roles_by_user(db, current_user.id)
-    return build_current_user_response(current_user, system_roles, storage_service)
+    return current_user_response(db, current_user, system_roles)
 
 
 @router.post("/initial-password", response_model=AccountActionMessage)
@@ -176,7 +192,7 @@ def update_current_user(
     """
     user = user_service.update_profile(db, current_user=current_user, user_in=user_in)
     system_roles = user_service.list_system_roles_by_user(db, user.id)
-    return build_current_user_response(user, system_roles, storage_service)
+    return current_user_response(db, user, system_roles)
 
 
 @router.put(
@@ -206,17 +222,18 @@ def update_current_user_avatar(
         storage_service=storage_service,
     )
     system_roles = user_service.list_system_roles_by_user(db, user.id)
-    return build_current_user_response(user, system_roles, storage_service)
+    return current_user_response(db, user, system_roles)
 
 
 @router.post("/me/avatar/upload-plan", response_model=FileUploadPlan)
 def plan_current_user_avatar_upload(
     data: FileUploadRequest,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> FileUploadPlan:
     """本人のアイコン送信方式を返す。"""
     return user_service.plan_avatar_upload(
-        current_user=current_user, data=data, storage_service=storage_service
+        current_user=current_user, data=data, storage_service=storage_service, db=db
     )
 
 
@@ -234,7 +251,7 @@ def complete_current_user_avatar_upload(
         storage_service=storage_service,
     )
     system_roles = user_service.list_system_roles_by_user(db, user.id)
-    return build_current_user_response(user, system_roles, storage_service)
+    return current_user_response(db, user, system_roles)
 
 
 @router.delete(
@@ -260,4 +277,4 @@ def delete_current_user_avatar(
         storage_service=storage_service,
     )
     system_roles = user_service.list_system_roles_by_user(db, user.id)
-    return build_current_user_response(user, system_roles, storage_service)
+    return current_user_response(db, user, system_roles)

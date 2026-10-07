@@ -173,7 +173,7 @@ def register_middleware(app: FastAPI) -> None:
     app.add_middleware(RequestLoggingMiddleware)
     app.add_middleware(RequestIdMiddleware)
     app.add_middleware(IngressMiddleware)
-    if settings.app_env == "production":
+    if settings.is_public_environment:
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
         return
     app.add_middleware(
