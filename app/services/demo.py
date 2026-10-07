@@ -171,6 +171,17 @@ class DemoService:
                 updated_by=user.id,
             )
         )
+        from app.repositories.document import DocumentRepository
+
+        DocumentRepository().create(
+            db,
+            project.id,
+            "チームの作業ガイド",
+            "# チームの作業ガイド\n\n本文を編集し、版履歴を確認してみましょう。\n"
+            "要件・タスク・テスト設計を関連付け、PDFや画像を添付できます。\n\n"
+            "入力内容はデモ終了時に破棄されます。実際の機密情報は入力しないでください。",
+            user.id,
+        )
         db.commit()
         return self.status(demo), create_access_token(
             subject=user.email, session_id=session.id, expires_at=expires

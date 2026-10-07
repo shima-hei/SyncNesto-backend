@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.core.exceptions import ForbiddenError
 from app.db.tenant_scope import scoped_models
 from app.models.audit_log import AuditLog
+from app.models.document import DocumentAttachment, DocumentLink
 from app.models.notification import Notification
 from app.models.project import Project, ProjectMember
 from app.models.rbac import Role
@@ -19,6 +20,7 @@ from app.models.tenant import Tenant, TenantMember
 from app.models.test_design import TestCase as CaseModel
 from app.models.test_design import TestDesign as DesignModel
 from app.models.user import User
+from app.repositories.document import DocumentRepository
 from tests.helpers.auth import authorize_as
 
 
@@ -248,6 +250,21 @@ def tenant_context(
     )
     db.add_all([task, design])
     db.flush()
+    project_document = DocumentRepository().create(
+        db, pb.id, "Secret Project Document B", "Secret body B", user.id
+    )
+    document_attachment = DocumentAttachment(
+        document_id=project_document.id,
+        filename="secret.txt",
+        content_type="text/plain",
+        byte_size=6,
+        storage_key="test/secret-document",
+        uploaded_by=user.id,
+    )
+    document_link = DocumentLink(
+        document_id=project_document.id, task_id=task.id, created_by=user.id
+    )
+    db.add_all([document_attachment, document_link])
     comment = TaskComment(task_id=task.id, created_by=user.id, body="Secret Comment B")
     case = CaseModel(
         id=uuid4(), design_id=design.id, position=0, source={}, source_hash="x"
@@ -285,7 +302,31 @@ def tenant_context(
         comment=comment,
         case=case,
         notification=notification,
+        project_document=project_document,
+        document_attachment=document_attachment,
+        document_link=document_link,
     )
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        "",
+        "/{project_document}",
+        "/{project_document}/revisions/1",
+        "/{project_document}/links",
+        "/{project_document}/attachments",
+        "/{project_document}/attachments/{document_attachment}/download",
+    ],
+)
+def test_document_children_respect_current_tenant(client, tenant_context, suffix):
+    """両組織の管理者でも現在組織以外の文書・子資源を読めない。"""
+    ctx = tenant_context
+    identities = {key: value.id for key, value in ctx.items()}
+    url = f"/projects/{ctx['pb'].id}/documents" + suffix.format(**identities)
+    response = client.get(url)
+    assert response.status_code in (403, 404), response.text
+    assert "Secret" not in response.text
 
 
 def test_all_business_routes_require_tenant_context(client):
@@ -313,6 +354,22 @@ def test_all_business_routes_require_tenant_context(client):
         ("PATCH", "/projects/{pb}", {"version": 1, "name": "intrusion"}),
         ("DELETE", "/projects/{pb}", None),
         ("GET", "/projects/{pb}/overview", None),
+        ("GET", "/projects/{pb}/documents", None),
+        ("GET", "/projects/{pb}/documents/{project_document}", None),
+        ("POST", "/projects/{pb}/documents", {"title": "intrusion"}),
+        (
+            "PATCH",
+            "/projects/{pb}/documents/{project_document}",
+            {"title": "intrusion", "body": "intrusion", "version": 1},
+        ),
+        ("DELETE", "/projects/{pb}/documents/{project_document}?version=1", None),
+        ("GET", "/projects/{pb}/documents/{project_document}/revisions/1", None),
+        ("GET", "/projects/{pb}/documents/{project_document}/links", None),
+        (
+            "GET",
+            "/projects/{pb}/documents/{project_document}/attachments/{document_attachment}/download",
+            None,
+        ),
         ("GET", "/projects/{pb}/tasks?q=Secret", None),
         ("POST", "/projects/{pb}/tasks", {"title": "intrusion"}),
         ("GET", "/tasks/{task}", None),
