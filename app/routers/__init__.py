@@ -20,6 +20,7 @@ from app.routers import (
     test_collaboration,
     test_designs,
     test_issues,
+    trash,
     users,
 )
 
@@ -38,6 +39,7 @@ def register_routers(app: FastAPI) -> None:
     for router in (
         home.router,
         search.router,
+        trash.router,
         notifications.router,
         projects.router,
         documents.router,

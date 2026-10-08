@@ -161,6 +161,7 @@ class Settings:
     login_lock_minutes: int = get_int_env("LOGIN_LOCK_MINUTES", 15)
     audit_log_retention_days: int = get_int_env("AUDIT_LOG_RETENTION_DAYS", 1095)
     audit_log_cleanup_min_days: int = get_int_env("AUDIT_LOG_CLEANUP_MIN_DAYS", 30)
+    deleted_data_retention_days: int = get_int_env("DELETED_DATA_RETENTION_DAYS", 30)
     auth_cookie_name: str = os.getenv("AUTH_COOKIE_NAME", "access_token")
     auth_cookie_secure: bool = get_bool_env("AUTH_COOKIE_SECURE")
     auth_cookie_samesite: CookieSameSite = get_cookie_samesite_env(
@@ -233,6 +234,8 @@ class Settings:
 
     def validate_production(self) -> None:
         """公開環境の設定漏れを起動時に拒否する。"""
+        if not 0 <= self.deleted_data_retention_days <= 3650:
+            raise RuntimeError("DELETED_DATA_RETENTION_DAYS must be between 0 and 3650")
         if self.app_env not in {"development", "test", "production", "demo"}:
             raise RuntimeError(
                 "APP_ENV must be one of: development, test, production, demo"

@@ -228,5 +228,6 @@ docker/pgadmin/
 !/docs/portfolio-demo.md
 !/docs/frontend-documents-api.md
 !/docs/frontend-search-api.md
+!/docs/frontend-trash-api.md
 .codex
 AGENTS.md

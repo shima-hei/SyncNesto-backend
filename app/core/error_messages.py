@@ -108,3 +108,6 @@ DOCUMENT_FILE_INVALID = (
     "添付の名前・形式・内容・サイズが一致しません。"
     "PDF・PNG・JPEG・WebP・UTF-8テキスト・JSONを20MiB以下で指定してください"
 )
+TRASH_NOT_FOUND = "削除されたデータが見つかりません。最新の一覧を確認してください。"
+TRASH_EXPIRED = "保持期限を過ぎているため復元できません。"
+TRASH_PARENT_DELETED = "親のデータを先に復元してください。"
