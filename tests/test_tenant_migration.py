@@ -7,6 +7,8 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
@@ -32,6 +34,9 @@ def test_legacy_data_survives_tenant_migration(fail):
         "DATABASE_URL": legacy_url.render_as_string(hide_password=False),
     }
     root = Path(__file__).resolve().parents[1]
+    head = ScriptDirectory.from_config(
+        Config(str(root / "alembic.ini"))
+    ).get_current_head()
 
     def migrate(revision: str):
         return subprocess.run(
@@ -118,7 +123,7 @@ def test_legacy_data_survives_tenant_migration(fail):
                 assert result.returncode == 0, result.stderr
                 assert (
                     connection.scalar(text("SELECT version_num FROM alembic_version"))
-                    == "48bb3c9773b3"
+                    == head
                 )
                 assert (
                     connection.scalar(

@@ -195,7 +195,11 @@ class TestCollaborationService:
             raise NotFoundError()
         if target_type == "combination" and field and field.startswith("level:"):
             try:
-                factor_id = UUID(field.split(":", 1)[1])
+                parts = field.split(":")
+                if len(parts) not in {2, 3}:
+                    raise ValueError()
+                factor_id = UUID(parts[1])
+                cell_level_id = UUID(parts[2]) if len(parts) == 3 else None
             except ValueError as exc:
                 raise BadRequestError("対象因子が不正です") from exc
             factor = db.scalar(
@@ -207,6 +211,17 @@ class TestCollaborationService:
             )
             if factor is None:
                 raise NotFoundError()
+            cell_level = None
+            if cell_level_id is not None:
+                cell_level = db.scalar(
+                    select(FactorLevel).where(
+                        FactorLevel.id == cell_level_id,
+                        FactorLevel.factor_id == factor_id,
+                        FactorLevel.design_id == design_id,
+                    )
+                )
+                if cell_level is None:
+                    raise NotFoundError()
             selected = db.scalar(
                 select(TestPatternValue).where(
                     TestPatternValue.pattern_id == target_id,
@@ -220,6 +235,18 @@ class TestCollaborationService:
                 if selected and selected.level_id
                 else None
             )
+            if cell_level is not None:
+                return (
+                    {
+                        "label": f"{row.code} · {factor.name} · {cell_level.name}",
+                        "value": "selected"
+                        if selected and selected.level_id == cell_level.id
+                        else "",
+                    },
+                    row.deleted_at is not None
+                    or factor.deleted_at is not None
+                    or cell_level.deleted_at is not None,
+                )
             return {
                 "label": f"{row.code} · {factor.name}",
                 "value": (

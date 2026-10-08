@@ -100,6 +100,12 @@ class RequirementCommentAnchorValidator:
         if kind == RequirementCommentAnchorKind.REQUIREMENT_FIELD:
             self._ensure_anchor_target_is_requirement(target)
             return
+        if kind == "field" and target.target_type in {
+            "document",
+            "section",
+            "open_issue",
+        }:
+            return
         if kind == RequirementCommentAnchorKind.REQUIREMENT_DETAIL:
             self._validate_requirement_detail_anchor(db, target, target_anchor)
             return

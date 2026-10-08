@@ -23,6 +23,7 @@ from app.core.exceptions import (
     UnauthorizedError,
     VersionConflictError,
 )
+from app.core.mcp import McpOAuthError
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,12 @@ def register_exception_handlers(app: FastAPI) -> None:
         Returns:
             JSON形式のエラーレスポンス。
         """
+        if isinstance(exc, McpOAuthError):
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"error": exc.error, "error_description": exc.message},
+                headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+            )
         status_code = get_status_code(exc)
         if status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
             logger.error(
