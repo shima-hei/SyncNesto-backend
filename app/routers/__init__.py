@@ -7,6 +7,7 @@ from app.routers import (
     account_actions,
     audit_logs,
     auth,
+    deleted_data_cleanup,
     demo,
     documents,
     drafts,
@@ -34,6 +35,7 @@ def register_routers(app: FastAPI) -> None:
     """
     app.include_router(auth.router)
     app.include_router(demo.router)
+    app.include_router(deleted_data_cleanup.router)
     app.include_router(account_actions.router)
     app.include_router(drafts.router, dependencies=[Depends(get_current_tenant)])
     app.include_router(health.router)

@@ -218,6 +218,7 @@ docker/pgadmin/
 /docs/*
 !/docs/frontend-audit-logs-api.md
 !/docs/testing.md
+!/docs/deleted-data-cleanup.md
 !/docs/frontend-notifications-api.md
 !/docs/frontend-home-api.md
 !/docs/frontend-file-upload.md

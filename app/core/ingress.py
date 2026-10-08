@@ -48,7 +48,10 @@ class IngressMiddleware(BaseHTTPMiddleware):
         """健康確認以外は共有キーを確認してから後続処理へ渡す。"""
         if request.url.path == "/" and request.method in {"GET", "HEAD"}:
             return await call_next(request)
-        if request.url.path == "/internal/demo/cleanup" and request.method == "GET":
+        if (
+            request.url.path in {"/internal/demo/cleanup", "/internal/trash/cleanup"}
+            and request.method == "GET"
+        ):
             # CronはBFFを経由しない。専用秘密の検証はRouterで行う。
             return await call_next(request)
         if not settings.bff_shared_secret:

@@ -6,13 +6,25 @@ from pathlib import Path
 from dotenv import dotenv_values
 
 
-def deployment_config(config: dict, app_env: str) -> dict:
-    """通常環境にはCronを追加せず、デモだけ日次回収を登録する。"""
+def deployment_config(
+    config: dict, app_env: str, cleanup_mode: str = "disabled"
+) -> dict:
+    """環境ごとに明示した回収だけを日次登録し、秘密を含めない。"""
     if app_env not in {"production", "demo"}:
         raise ValueError("Vercel deployment requires APP_ENV=production or demo")
     result = dict(config)
+    if cleanup_mode not in {"disabled", "dry_run", "execute"}:
+        raise ValueError("Unknown DELETED_DATA_CLEANUP_MODE")
+    if app_env == "demo" and cleanup_mode != "disabled":
+        raise ValueError("Demo must use session cleanup")
+    # 前の環境向けCronを持ち込まない。
+    result.pop("crons", None)
     if app_env == "demo":
         result["crons"] = [{"path": "/internal/demo/cleanup", "schedule": "0 18 * * *"}]
+    elif cleanup_mode != "disabled":
+        result["crons"] = [
+            {"path": "/internal/trash/cleanup", "schedule": "0 18 * * *"}
+        ]
     return result
 
 
@@ -21,7 +33,9 @@ def main() -> None:
     root = Path(__file__).resolve().parents[1]
     pulled = dotenv_values(root / ".vercel/.env.production.local")
     config = deployment_config(
-        json.loads((root / "vercel.json").read_text()), pulled.get("APP_ENV") or ""
+        json.loads((root / "vercel.json").read_text()),
+        pulled.get("APP_ENV") or "",
+        pulled.get("DELETED_DATA_CLEANUP_MODE") or "disabled",
     )
     (root / ".vercel/deploy-config.json").write_text(
         json.dumps(config, indent=2) + "\n"

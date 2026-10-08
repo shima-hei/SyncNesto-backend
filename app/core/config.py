@@ -162,6 +162,14 @@ class Settings:
     audit_log_retention_days: int = get_int_env("AUDIT_LOG_RETENTION_DAYS", 1095)
     audit_log_cleanup_min_days: int = get_int_env("AUDIT_LOG_CLEANUP_MIN_DAYS", 30)
     deleted_data_retention_days: int = get_int_env("DELETED_DATA_RETENTION_DAYS", 30)
+    deleted_data_cleanup_mode: str = os.getenv("DELETED_DATA_CLEANUP_MODE", "disabled")
+    deleted_data_cleanup_tenant_ids: str = os.getenv(
+        "DELETED_DATA_CLEANUP_TENANT_IDS", ""
+    )
+    deleted_data_cleanup_limit: int = get_int_env("DELETED_DATA_CLEANUP_LIMIT", 20)
+    deleted_data_cleanup_budget_seconds: int = get_int_env(
+        "DELETED_DATA_CLEANUP_BUDGET_SECONDS", 20
+    )
     auth_cookie_name: str = os.getenv("AUTH_COOKIE_NAME", "access_token")
     auth_cookie_secure: bool = get_bool_env("AUTH_COOKIE_SECURE")
     auth_cookie_samesite: CookieSameSite = get_cookie_samesite_env(
@@ -232,6 +240,58 @@ class Settings:
         """ポートフォリオ用デモにも本番と同じ公開境界を適用する。"""
         return self.app_env in {"production", "demo"}
 
+    def cleanup_tenant_ids(self) -> tuple[int, ...]:
+        """定期回収で明示的に許可した組織だけを返す。"""
+        raw = self.deleted_data_cleanup_tenant_ids.strip()
+        if not raw:
+            return ()
+        parts = [value.strip() for value in raw.split(",")]
+        if len(parts) > 20 or any(
+            not value.isascii()
+            or not value.isdigit()
+            or len(value) > 10
+            or not 1 <= int(value) <= 2**31 - 1
+            for value in parts
+        ):
+            raise RuntimeError(
+                "DELETED_DATA_CLEANUP_TENANT_IDS requires 1..20 positive IDs"
+            )
+        return tuple(dict.fromkeys(int(value) for value in parts))
+
+    def validate_cleanup(self) -> None:
+        """誤設定による全組織への回収やデモとの混在を起動時に拒否する。"""
+        if self.deleted_data_cleanup_mode not in {"disabled", "dry_run", "execute"}:
+            raise RuntimeError(
+                "DELETED_DATA_CLEANUP_MODE must be disabled, dry_run or execute"
+            )
+        if not 1 <= self.deleted_data_cleanup_limit <= 100:
+            raise RuntimeError("DELETED_DATA_CLEANUP_LIMIT must be between 1 and 100")
+        if not 1 <= self.deleted_data_cleanup_budget_seconds <= 40:
+            raise RuntimeError(
+                "DELETED_DATA_CLEANUP_BUDGET_SECONDS must be between 1 and 40"
+            )
+        tenant_ids = self.cleanup_tenant_ids()
+        if self.deleted_data_cleanup_mode == "disabled":
+            return
+        if self.app_env == "demo":
+            raise RuntimeError(
+                "Demo must use session cleanup, not deleted data retention"
+            )
+        if not tenant_ids:
+            raise RuntimeError(
+                "Scheduled cleanup requires DELETED_DATA_CLEANUP_TENANT_IDS"
+            )
+        if not 1 <= self.deleted_data_retention_days <= 3650:
+            raise RuntimeError("Scheduled cleanup requires a finite positive retention")
+        if (
+            len(self.demo_cron_secret) < 32
+            or self.demo_cron_secret == self.bff_shared_secret
+        ):
+            raise RuntimeError(
+                "Scheduled cleanup requires a separate CRON_SECRET "
+                "of at least 32 characters"
+            )
+
     def validate_production(self) -> None:
         """公開環境の設定漏れを起動時に拒否する。"""
         if not 0 <= self.deleted_data_retention_days <= 3650:
@@ -240,6 +300,7 @@ class Settings:
             raise RuntimeError(
                 "APP_ENV must be one of: development, test, production, demo"
             )
+        self.validate_cleanup()
         if os.getenv("VERCEL") == "1" and not self.is_public_environment:
             raise RuntimeError("Vercel requires APP_ENV=production or demo")
         if self.app_env == "demo":

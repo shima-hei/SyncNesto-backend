@@ -57,7 +57,12 @@ class PrefixS3Client(S3Client, Protocol):
 class StorageService:
     """S3を利用したファイル保存と署名付きURL生成を提供する。"""
 
-    def __init__(self, s3_client: S3Client | None = None) -> None:
+    def __init__(
+        self,
+        s3_client: S3Client | None = None,
+        *,
+        request_timeout_seconds: int | None = None,
+    ) -> None:
         """StorageServiceを初期化する。
 
         Args:
@@ -73,6 +78,14 @@ class StorageService:
                 response_checksum_validation="when_required",
             ),
         }
+        if request_timeout_seconds is not None:
+            s3_client_kwargs["config"] = cast(Config, s3_client_kwargs["config"]).merge(
+                Config(
+                    connect_timeout=request_timeout_seconds,
+                    read_timeout=request_timeout_seconds,
+                    retries={"total_max_attempts": 1},
+                )
+            )
         if settings.aws_access_key_id and settings.aws_secret_access_key:
             s3_client_kwargs["aws_access_key_id"] = settings.aws_access_key_id
             s3_client_kwargs["aws_secret_access_key"] = settings.aws_secret_access_key
