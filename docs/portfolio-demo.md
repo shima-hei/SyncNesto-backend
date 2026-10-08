@@ -3,6 +3,7 @@
 公開環境は通常・デモともに `APP_ENV=production` とする。
 `DEMO_MODE=true` のときだけ、ログイン画面から登録不要で体験できる。
 未設定時はデモ無効。環境と機能の分離方針は[決定記録](decisions/2026-10-08-demo-mode.md)を参照する。
+2026-10-08に通常利用との共存を公開済み。最新のデプロイ・CI・公開検証と制限は同じ決定記録を正とする。
 訪問者ごとに一時User・Tenant・Projectと要件・タスク・テスト設計書のサンプルを作る。
 通常業務と組織内管理を公開し、`tenant_owner` / `project_admin` を使う。
 System Roleは付与せず、Backendで運営権限を拒否する。

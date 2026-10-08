@@ -21,7 +21,7 @@ DBありのテストが初めて必要になった時にPostgreSQLを起動し�
 
 `APP_ENV=production` + `DEMO_MODE`への修正では、まず設定・公開境界・Cron生成をDBなしで確認する。
 OpenAPI非公開のケースは共有カウンターをstubにしてルーティングを確認し、実カウンターの拒否・障害は既存の専用ケースで検証する。
-デモの組織分離、失効、DB・ファイルの破棄、通常回収との排他は引き続きPostgreSQLを使用する。
+デモの組織分離、失効、DB・ファイルの破棄、通常回収との接続先分離・併用は引き続きPostgreSQLを使用する。
 
 ```sh
 uv run pytest tests/core/test_ingress.py tests/test_demo_deployment.py tests/routers/test_demo.py tests/routers/test_deleted_data_cleanup.py -m no_db -q
