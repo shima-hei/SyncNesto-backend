@@ -1,6 +1,7 @@
 """既存RBACで保護するごみ箱と保持期限後の回収。"""
 
 from datetime import UTC, datetime, timedelta
+from time import monotonic
 
 from sqlalchemy.orm import Session
 
@@ -187,7 +188,9 @@ class TrashService:
             return []
         return self.repository.due(db, tenant_id, now - timedelta(days=days), limit)
 
-    def purge_one(self, db: Session, target: dict, now: datetime) -> bool:
+    def purge_one(
+        self, db: Session, target: dict, now: datetime, *, deadline: float | None = None
+    ) -> bool:
         """期限・状態を再確認し、ファイル削除成功後だけDB行を回収する。"""
         if db.info.get("demo_id") or settings.deleted_data_retention_days == 0:
             raise ForbiddenError()
@@ -203,13 +206,18 @@ class TrashService:
             db.rollback()
             return False
         targets = self.repository.purge_plan(db, row.__tablename__, row.id)
+        resource_id = row.id if isinstance(row.id, int) else None
         detachments = self.repository.detachments(db, targets)
         # 期限後は復元できないため、途中のS3失敗・DB rollbackは次回安全に再試行できる。
         keys = self.repository.storage_keys(db, targets)
         if keys:
             storage = self.storage or StorageService()
             for key in keys:
+                if deadline is not None and monotonic() >= deadline:
+                    raise TimeoutError("Cleanup time budget reached")
                 storage.delete_object(key)
+        if deadline is not None and monotonic() >= deadline:
+            raise TimeoutError("Cleanup time budget reached")
         self.repository.purge(db, targets, detachments)
         db.commit()
         self.audit.record(
@@ -217,6 +225,7 @@ class TrashService:
             event_type=f"{target['kind']}.purged",
             project_id=target["project_id"],
             resource_type=target["kind"],
+            resource_id=resource_id,
             metadata={
                 "id": target["id"],
                 "retention_days": settings.deleted_data_retention_days,

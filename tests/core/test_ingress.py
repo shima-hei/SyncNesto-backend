@@ -230,6 +230,11 @@ def test_public_email_rejects_local_origin_and_smtp(app_env: str) -> None:
         production_settings(app_env),
         email_provider="smtp",
         email_from="app@example.com",
+        smtp_host="127.0.0.1",
+        smtp_port=1025,
+        smtp_username="",
+        smtp_password="",
+        smtp_starttls=False,
     )
     with pytest.raises(RuntimeError, match="trusted HTTPS"):
         replace(

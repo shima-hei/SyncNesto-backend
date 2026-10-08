@@ -77,10 +77,14 @@ def safe_details(
         "retention_days",
         "count",
         "purged_count",
+        "failed_count",
     ):
         value = metadata.get(key)
         if type(value) is int and 0 <= value <= 2**31 - 1:
             result[key] = value
+    mode = metadata.get("mode")
+    if isinstance(mode, str) and mode in {"dry_run", "execute"}:
+        result["mode"] = mode
     return result
 
 

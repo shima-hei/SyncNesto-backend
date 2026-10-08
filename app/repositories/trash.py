@@ -25,6 +25,7 @@ from app.models.document import DocumentAttachment, ProjectDocument
 from app.models.project import Project
 from app.models.requirement import Requirement, RequirementDocument, RequirementSection
 from app.models.task import Task
+from app.models.tenant import Tenant
 from app.models.test_design import TestDesign
 
 
@@ -72,6 +73,21 @@ RESOURCES = {
 
 class TrashRepository:
     """全種類をページングしてから取得し、本文はロードしない。"""
+
+    def cleanup_tenant_ids(self, db: Session, allowed: tuple[int, ...]) -> list[int]:
+        """明示した組織のうち、Demo台帳を持たない組織だけを取得する。"""
+        return list(
+            db.scalars(
+                select(Tenant.id)
+                .where(
+                    Tenant.id.in_(allowed),
+                    ~select(DemoSession.id)
+                    .where(DemoSession.tenant_id == Tenant.id)
+                    .exists(),
+                )
+                .order_by(Tenant.id)
+            )
+        )
 
     def due(
         self, db: Session, tenant_id: int, cutoff: datetime, limit: int

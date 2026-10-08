@@ -18,8 +18,18 @@ def test_metadata_only_allows_known_structural_values():
             "version": True,
             "count": -1,
             "purged_count": 4,
+            "failed_count": 1,
+            "mode": "execute",
             "body": "SECRET",
             "url": "signed-SECRET",
         }
-    ) == {"id": target, "updated_fields": ["title"], "purged_count": 4}
+    ) == {
+        "id": target,
+        "updated_fields": ["title"],
+        "purged_count": 4,
+        "failed_count": 1,
+        "mode": "execute",
+    }
     assert safe_details({"id": "SECRET", "after_role_key": "<script>"}) == {}
+    assert safe_details({"mode": ["SECRET"], "failed_count": True}) == {}
+    assert safe_details({"mode": "SECRET"}) == {}

@@ -9,7 +9,9 @@ system権限だけでは閲覧できません。詳細は `frontend-audit-logs-a
 
 ## 公開環境の接続境界
 
-`APP_ENV=production` / `demo` では、FastAPIは健康確認の `GET /`・`HEAD /` 以外に `X-Syncnesto-BFF-Key` を要求します。Next.jsのBFFとServer Guardが、サーバー専用の `BFF_SHARED_SECRET` をこのヘッダーに設定します。ブラウザから送られた同名ヘッダーは上書きします。キーを `NEXT_PUBLIC_` 変数、レスポンス、ログへ含めないでください。このキーは既存のユーザー認証・permission・CSRF検証を置き換えません。
+`APP_ENV=production` / `demo` では、FastAPIの業務APIは `X-Syncnesto-BFF-Key` を要求します。Next.jsのBFFとServer Guardが、サーバー専用の `BFF_SHARED_SECRET` をこのヘッダーに設定します。ブラウザから送られた同名ヘッダーは上書きします。キーを `NEXT_PUBLIC_` 変数、レスポンス、ログへ含めないでください。このキーは既存のユーザー認証・permission・CSRF検証を置き換えません。
+
+健康確認の `GET /`・`HEAD /` は共有キーを要求しません。内部運用の `GET /internal/demo/cleanup`・`GET /internal/trash/cleanup` は専用 `CRON_SECRET` のBearer認証を要求し、Cookie・BFF共有キーでは実行できません。通常データの定期回収は既定で無効で、対象組織の指定と対象確認を経て運用者が有効化します。詳細は [deleted-data-cleanup.md](deleted-data-cleanup.md) を参照してください。
 
 環境名は `development` / `test` / `production` / `demo` のみ許可します。
 Vercel上ではPreviewも含め `production` / `demo` が必須です。`demo` にも
