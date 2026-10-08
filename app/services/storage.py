@@ -223,11 +223,19 @@ class StorageService:
             ContentType=content_type,
         )
 
-    def private_object_url(self, key: str) -> str:
+    def private_object_url(self, key: str, download_filename: str | None = None) -> str:
         """権限検証後に呼び出す短期有効な非公開オブジェクトURL。"""
+        from urllib.parse import quote
+
+        params = {"Bucket": settings.aws_s3_bucket_name, "Key": key}
+        if download_filename is not None:
+            params["ResponseContentDisposition"] = (
+                "attachment; filename*=UTF-8''" + quote(download_filename, safe="")
+            )
+            params["ResponseContentType"] = "application/octet-stream"
         return self.s3_client.generate_presigned_url(
             "get_object",
-            Params={"Bucket": settings.aws_s3_bucket_name, "Key": key},
+            Params=params,
             ExpiresIn=self.download_ttl(key),
         )
 

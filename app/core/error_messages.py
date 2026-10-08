@@ -100,3 +100,11 @@ INITIAL_PASSWORD_EXPIRED = (
     "初回パスワードの有効期限が切れています。メールでパスワードを再設定してください"
 )
 INITIAL_PASSWORD_REUSE = "初回パスワードとは異なるパスワードを設定してください"
+DOCUMENT_NOT_FOUND = "ドキュメントが見つかりません"
+DOCUMENT_TARGET_NOT_FOUND = "このプロジェクトの有効な関連先が見つかりません"
+DOCUMENT_LINK_LIMIT = "1文書の関連付けは50件までです"
+DOCUMENT_ATTACHMENT_LIMIT = "1文書の添付は20件までです"
+DOCUMENT_FILE_INVALID = (
+    "添付の名前・形式・内容・サイズが一致しません。"
+    "PDF・PNG・JPEG・WebP・UTF-8テキスト・JSONを20MiB以下で指定してください"
+)

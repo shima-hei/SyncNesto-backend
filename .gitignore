@@ -226,5 +226,6 @@ docker/pgadmin/
 !/docs/security-hardening.md
 !/docs/portfolio-demo-design.md
 !/docs/portfolio-demo.md
+!/docs/frontend-documents-api.md
 .codex
 AGENTS.md

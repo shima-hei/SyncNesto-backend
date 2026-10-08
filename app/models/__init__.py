@@ -4,6 +4,12 @@ from app.models.account_action import AccountAction
 from app.models.audit_log import AuditLog
 from app.models.comment_mention import CommentMention
 from app.models.demo import DemoOwnedUser, DemoSession, DemoStartBudget, DemoUpload
+from app.models.document import (
+    DocumentAttachment,
+    DocumentLink,
+    DocumentRevision,
+    ProjectDocument,
+)
 from app.models.draft import Draft
 from app.models.login_attempt import LoginAttempt
 from app.models.notification import Notification
@@ -61,6 +67,10 @@ from app.models.test_design import (
 from app.models.user import User
 
 __all__ = [
+    "ProjectDocument",
+    "DocumentRevision",
+    "DocumentAttachment",
+    "DocumentLink",
     "DemoOwnedUser",
     "DemoSession",
     "DemoStartBudget",

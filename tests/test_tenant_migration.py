@@ -118,7 +118,7 @@ def test_legacy_data_survives_tenant_migration(fail):
                 assert result.returncode == 0, result.stderr
                 assert (
                     connection.scalar(text("SELECT version_num FROM alembic_version"))
-                    == "4c7c0372061a"
+                    == "48bb3c9773b3"
                 )
                 assert (
                     connection.scalar(
