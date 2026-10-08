@@ -22,7 +22,7 @@ from tests.fakes.storage import MemoryS3Client
 
 
 @pytest.fixture
-def demo_client(client, monkeypatch):
+def demo_client(client, monkeypatch, demo_settings):
     """起動設定は既存test環境、機能設定だけをデモにする。"""
     monkeypatch.setattr(settings, "demo_mode", True)
     monkeypatch.setattr(settings, "frontend_public_url", "http://testserver")
@@ -57,7 +57,6 @@ def test_disabling_demo_mode_rejects_existing_demo_cookie(demo_client, monkeypat
     assert demo_client.get("/demo/csrf").status_code == 404
 
 
-@pytest.mark.no_db
 def test_demo_password_reset_never_sends_mail(demo_client, monkeypatch):
     """メール抑止も環境名ではなくフラグで切り替える。"""
 
@@ -68,6 +67,7 @@ def test_demo_password_reset_never_sends_mail(demo_client, monkeypatch):
         "app.routers.account_actions.service.email_service.ensure_available",
         unexpected_mail,
     )
+    start(demo_client)
     response = demo_client.post(
         "/auth/password-reset/request", json={"email": "real@example.com"}
     )
@@ -242,13 +242,13 @@ def test_expired_session_cannot_read_or_write_and_cron_cleans(demo_client, db, k
         demo_client.cookies.set(
             "access_token",
             create_access_token(
-                subject=user.email, session_id=session.id, expires_at=before
+                subject=user.email, session_id=session.id, expires_at=before, demo=True
             ),
         )
     db.commit()
     assert demo_client.get("/auth/me").status_code == 401
     db.expire_all()
-    assert db.get(DemoSession, demo.id).status == "cleanup_pending"
+    assert db.get(DemoSession, demo.id).status == "cleaned"
     assert DemoService().cleanup(demo.id)
     db.expire_all()
     assert db.get(Tenant, status["tenant_id"]) is None

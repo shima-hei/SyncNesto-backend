@@ -130,6 +130,14 @@ class Settings:
     app_name: str = os.getenv("APP_NAME", "Syncnesto API")
     app_env: str = os.getenv("APP_ENV", "development")
     demo_mode: bool = get_bool_env("DEMO_MODE")
+    demo_database_url: str = os.getenv("DEMO_DATABASE_URL", "")
+    demo_secret_key: str = os.getenv("DEMO_SECRET_KEY", "")
+    demo_aws_region: str = os.getenv("DEMO_AWS_REGION", "")
+    demo_aws_access_key_id: str = os.getenv("DEMO_AWS_ACCESS_KEY_ID", "")
+    demo_aws_secret_access_key: str = os.getenv("DEMO_AWS_SECRET_ACCESS_KEY", "")
+    demo_aws_s3_bucket_name: str = os.getenv("DEMO_AWS_S3_BUCKET_NAME", "")
+    demo_aws_s3_endpoint_url: str = os.getenv("DEMO_AWS_S3_ENDPOINT_URL", "")
+    # Vercelは同じProject内のCronへCRON_SECRETを送る。接続先は各処理で固定する。
     demo_cron_secret: str = os.getenv("CRON_SECRET", "")
     demo_data_isolated: bool = get_bool_env("DEMO_DATA_ISOLATED")
     bff_shared_secret: str = os.getenv("BFF_SHARED_SECRET", "")
@@ -259,6 +267,69 @@ class Settings:
             )
         return tuple(dict.fromkeys(int(value) for value in parts))
 
+    def validate_demo_database(self) -> None:
+        """通常接続をデモへ流用せず、同じDBへの別資格情報も拒否する。"""
+        from sqlalchemy.engine import make_url
+
+        if not self.demo_data_isolated or not self.demo_database_url:
+            raise RuntimeError(
+                "Demo requires a dedicated database: "
+                "DEMO_DATABASE_URL and DEMO_DATA_ISOLATED=true"
+            )
+        normal, demo = make_url(self.database_url), make_url(self.demo_database_url)
+        if (
+            demo.get_backend_name() != "postgresql"
+            or not demo.host
+            or not demo.database
+        ):
+            raise RuntimeError("DEMO_DATABASE_URL requires a PostgreSQL database host")
+
+        def target(url):
+            return (
+                (url.host or "").lower().removesuffix(".").replace("-pooler.", "."),
+                url.port or 5432,
+                url.database,
+            )
+
+        if target(normal) == target(demo):
+            raise RuntimeError(
+                "DEMO_DATABASE_URL must not point to the normal database"
+            )
+        if self.is_public_environment and demo.query.get("sslmode") != "verify-full":
+            raise RuntimeError("DEMO_DATABASE_URL requires sslmode=verify-full")
+
+    def validate_demo_storage(self) -> None:
+        """受付停止後の回収でも通常Storageへの誤接続を拒否する。"""
+        if not all(
+            (
+                self.demo_aws_region,
+                self.demo_aws_access_key_id,
+                self.demo_aws_secret_access_key,
+                self.demo_aws_s3_bucket_name,
+                self.demo_aws_s3_endpoint_url,
+            )
+        ):
+            raise RuntimeError("Demo requires dedicated DEMO_AWS_* storage settings")
+        normal_endpoint = (
+            (urlsplit(self.aws_s3_endpoint_url or "").hostname or "")
+            .lower()
+            .replace(".storage.supabase.co", ".supabase.co")
+        )
+        demo_endpoint = urlsplit(self.demo_aws_s3_endpoint_url)
+        if (
+            (demo_endpoint.hostname or "")
+            .lower()
+            .replace(".storage.supabase.co", ".supabase.co")
+            == normal_endpoint
+            or self.demo_aws_access_key_id == self.aws_access_key_id
+            or self.demo_aws_secret_access_key == self.aws_secret_access_key
+        ):
+            raise RuntimeError(
+                "Demo storage must use a separate Project and credentials"
+            )
+        if demo_endpoint.scheme != "https":
+            raise RuntimeError("Demo storage requires HTTPS")
+
     def validate_cleanup(self) -> None:
         """誤設定による全組織への回収やデモとの混在を起動時に拒否する。"""
         if self.deleted_data_cleanup_mode not in {"disabled", "dry_run", "execute"}:
@@ -274,10 +345,6 @@ class Settings:
         tenant_ids = self.cleanup_tenant_ids()
         if self.deleted_data_cleanup_mode == "disabled":
             return
-        if self.demo_mode:
-            raise RuntimeError(
-                "Demo must use session cleanup, not deleted data retention"
-            )
         if not tenant_ids:
             raise RuntimeError(
                 "Scheduled cleanup requires DELETED_DATA_CLEANUP_TENANT_IDS"
@@ -306,17 +373,20 @@ class Settings:
         if os.getenv("VERCEL") == "1" and not self.is_public_environment:
             raise RuntimeError("Vercel requires APP_ENV=production")
         if self.demo_mode:
-            if not self.demo_data_isolated:
+            self.validate_demo_database()
+            if len(self.demo_secret_key) < 32 or self.demo_secret_key in {
+                self.secret_key,
+                self.bff_shared_secret,
+                self.demo_cron_secret,
+            }:
                 raise RuntimeError(
-                    "Demo requires a dedicated database and private bucket: "
-                    "DEMO_DATA_ISOLATED=true"
+                    "Demo requires a separate DEMO_SECRET_KEY of at least 32 characters"
                 )
+            self.validate_demo_storage()
             if len(self.demo_cron_secret) < 32:
                 raise RuntimeError(
                     "Demo requires CRON_SECRET with at least 32 characters"
                 )
-            if self.email_provider != "disabled":
-                raise RuntimeError("Demo requires EMAIL_PROVIDER=disabled")
             origin = urlsplit(self.frontend_public_url)
             if (
                 origin.scheme != "https"

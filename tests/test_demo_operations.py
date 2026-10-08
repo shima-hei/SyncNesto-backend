@@ -63,7 +63,9 @@ def test_cleanup_refuses_unverified_database_before_access(monkeypatch):
             cleanup_demo.cleanup_demo(execute=execute)
 
 
-def test_cleanup_runs_with_demo_disabled_and_preserves_dry_run(db, monkeypatch):
+def test_cleanup_runs_with_demo_disabled_and_preserves_dry_run(
+    db, monkeypatch, demo_settings
+):
     """受付停止中も確認でき、実行後に期限切れの台帳だけが完了する。"""
     now = datetime.now(UTC)
     record = DemoSession(
@@ -89,7 +91,9 @@ def test_cleanup_runs_with_demo_disabled_and_preserves_dry_run(db, monkeypatch):
     assert record.status == "cleaned"
 
 
-def test_cleanup_summary_includes_deferred_receipts(db, monkeypatch, capsys):
+def test_cleanup_summary_includes_deferred_receipts(
+    db, monkeypatch, capsys, demo_settings
+):
     """今回の対象が0でも、遅延PUT待ちの残件を完了と誤認させない。"""
     now = datetime.now(UTC)
     db.add(

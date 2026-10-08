@@ -62,15 +62,38 @@ class StorageService:
         s3_client: S3Client | None = None,
         *,
         request_timeout_seconds: int | None = None,
+        demo: bool = False,
     ) -> None:
         """StorageServiceを初期化する。
 
         Args:
             s3_client: boto3 S3クライアント。
         """
+        if demo:
+            settings.validate_demo_storage()
+        self.bucket_name = (
+            settings.demo_aws_s3_bucket_name if demo else settings.aws_s3_bucket_name
+        )
+        access_key = (
+            settings.demo_aws_access_key_id if demo else settings.aws_access_key_id
+        )
+        secret_key = (
+            settings.demo_aws_secret_access_key
+            if demo
+            else settings.aws_secret_access_key
+        )
+        endpoint = (
+            settings.demo_aws_s3_endpoint_url if demo else settings.aws_s3_endpoint_url
+        )
+        region = settings.demo_aws_region if demo else settings.aws_region
+        if demo and not all(
+            (self.bucket_name, access_key, secret_key, endpoint, region)
+        ):
+            raise RuntimeError("Dedicated DEMO_AWS_* storage settings are required")
+        self._injected_client = s3_client
         s3_client_kwargs: dict[str, object] = {
-            "region_name": settings.aws_region,
-            "endpoint_url": settings.aws_s3_endpoint_url,
+            "region_name": region,
+            "endpoint_url": endpoint,
             "config": Config(
                 signature_version="s3v4",
                 s3={"addressing_style": "path"},
@@ -86,9 +109,9 @@ class StorageService:
                     retries={"total_max_attempts": 1},
                 )
             )
-        if settings.aws_access_key_id and settings.aws_secret_access_key:
-            s3_client_kwargs["aws_access_key_id"] = settings.aws_access_key_id
-            s3_client_kwargs["aws_secret_access_key"] = settings.aws_secret_access_key
+        if access_key and secret_key:
+            s3_client_kwargs["aws_access_key_id"] = access_key
+            s3_client_kwargs["aws_secret_access_key"] = secret_key
 
         self.s3_client = s3_client or boto3.client("s3", **s3_client_kwargs)
         self.demo_db: Session | None = None
@@ -97,7 +120,7 @@ class StorageService:
         """共有インスタンスを書き換えず、request固有の容量管理を付ける。"""
         if not db.info.get("demo_id"):
             return self
-        bound = StorageService(s3_client=cast(S3Client, self.s3_client))
+        bound = StorageService(s3_client=self._injected_client, demo=True)
         bound.demo_db = db
         return bound
 
@@ -144,7 +167,7 @@ class StorageService:
         continuation = None
         while True:
             args: dict[str, Any] = {
-                "Bucket": settings.aws_s3_bucket_name,
+                "Bucket": self.bucket_name,
                 "Prefix": prefix,
             }
             if continuation:
@@ -185,7 +208,7 @@ class StorageService:
         )
         self.reserve(avatar_key, len(content), settings.file_upload_url_expires_seconds)
         self.s3_client.put_object(
-            Bucket=settings.aws_s3_bucket_name,
+            Bucket=self.bucket_name,
             Key=avatar_key,
             Body=content,
             ContentType=content_type,
@@ -207,7 +230,7 @@ class StorageService:
         return self.s3_client.generate_presigned_url(
             "get_object",
             Params={
-                "Bucket": settings.aws_s3_bucket_name,
+                "Bucket": self.bucket_name,
                 "Key": avatar_key,
             },
             ExpiresIn=self.download_ttl(avatar_key),
@@ -220,7 +243,7 @@ class StorageService:
             key: 削除対象のS3オブジェクトキー。
         """
         self.s3_client.delete_object(
-            Bucket=settings.aws_s3_bucket_name,
+            Bucket=self.bucket_name,
             Key=key,
         )
 
@@ -230,7 +253,7 @@ class StorageService:
         """検証済みの用途固有ファイルを非公開S3オブジェクトとして保存する。"""
         self.reserve(key, len(content), settings.file_upload_url_expires_seconds)
         self.s3_client.put_object(
-            Bucket=settings.aws_s3_bucket_name,
+            Bucket=self.bucket_name,
             Key=key,
             Body=content,
             ContentType=content_type,
@@ -240,7 +263,7 @@ class StorageService:
         """権限検証後に呼び出す短期有効な非公開オブジェクトURL。"""
         from urllib.parse import quote
 
-        params = {"Bucket": settings.aws_s3_bucket_name, "Key": key}
+        params = {"Bucket": self.bucket_name, "Key": key}
         if download_filename is not None:
             params["ResponseContentDisposition"] = (
                 "attachment; filename*=UTF-8''" + quote(download_filename, safe="")
@@ -259,7 +282,7 @@ class StorageService:
         return self.s3_client.generate_presigned_url(
             "put_object",
             Params={
-                "Bucket": settings.aws_s3_bucket_name,
+                "Bucket": self.bucket_name,
                 "Key": key,
                 "ContentType": content_type,
                 "ContentLength": byte_size,
@@ -272,9 +295,7 @@ class StorageService:
     ) -> bytes:
         """許可された容量まで読み込み、実際のメタデータを検証する。"""
         try:
-            result = self.s3_client.get_object(
-                Bucket=settings.aws_s3_bucket_name, Key=key
-            )
+            result = self.s3_client.get_object(Bucket=self.bucket_name, Key=key)
         except ClientError as exc:
             if exc.response["Error"]["Code"] in {"NoSuchKey", "404"}:
                 raise BadRequestError(error_messages.FILE_UPLOAD_MISSING) from exc

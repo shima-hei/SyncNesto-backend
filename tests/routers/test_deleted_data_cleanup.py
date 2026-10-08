@@ -65,7 +65,7 @@ def test_cron_secret_is_required_before_any_database_work(client, monkeypatch):
     assert client.get(PATH, headers=HEADERS).status_code == 404
     configure(monkeypatch)
     monkeypatch.setattr(settings, "demo_mode", True)
-    assert client.get(PATH, headers=HEADERS).status_code == 404
+    assert client.get(PATH, headers=HEADERS).status_code == 200
     assert PATH not in client.app.openapi()["paths"]
 
 
@@ -84,7 +84,6 @@ def test_cron_secret_is_required_before_any_database_work(client, monkeypatch):
         {"deleted_data_retention_days": 0},
         {"demo_cron_secret": "short"},
         {"demo_cron_secret": "bff-secret" * 5},
-        {"demo_mode": True},
     ],
 )
 def test_unsafe_schedule_configuration_fails_closed(changes):

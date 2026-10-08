@@ -123,6 +123,13 @@ def production_settings(app_env: str = "production", *, demo_mode: bool = False)
         app_env=app_env,
         demo_mode=demo_mode,
         demo_data_isolated=True,
+        demo_database_url="postgresql://app:password@demo.example.com/app?sslmode=verify-full",
+        demo_secret_key="d" * 48,
+        demo_aws_region="ap-southeast-1",
+        demo_aws_access_key_id="demo-access",
+        demo_aws_secret_access_key="demo-secret",
+        demo_aws_s3_bucket_name="demo",
+        demo_aws_s3_endpoint_url="https://demo-storage.example.com",
         email_provider="disabled",
         demo_cron_secret="c" * 48,
         frontend_public_url="https://app.example.com",
@@ -261,12 +268,33 @@ def test_public_email_rejects_local_origin_and_smtp(app_env: str) -> None:
     [
         ({"demo_data_isolated": False}, "dedicated"),
         ({"demo_cron_secret": "short"}, "CRON_SECRET"),
-        ({"email_provider": "smtp"}, "EMAIL_PROVIDER=disabled"),
+        ({"demo_secret_key": "j" * 48}, "DEMO_SECRET_KEY"),
+        ({"demo_database_url": ""}, "DEMO_DATABASE_URL"),
+        ({"demo_aws_access_key_id": ""}, "DEMO_AWS"),
+        (
+            {
+                "demo_database_url": "postgresql://other:other@DB.EXAMPLE.COM:5432/app?sslmode=verify-full"
+            },
+            "normal database",
+        ),
+        (
+            {
+                "demo_database_url": "postgresql://other:other@db-pooler.example.com/app?sslmode=verify-full"
+            },
+            "normal database",
+        ),
+        (
+            {
+                "aws_s3_endpoint_url": "https://same.supabase.co/storage/v1/s3",
+                "demo_aws_s3_endpoint_url": "https://same.storage.supabase.co/storage/v1/s3",
+            },
+            "separate Project",
+        ),
         ({"frontend_public_url": "http://localhost:3000"}, "HTTPS"),
     ],
 )
 @pytest.mark.no_db
-def test_demo_requires_isolated_data_cleanup_secret_and_no_mail(changes, reason):
+def test_demo_requires_isolated_resources_and_separate_secrets(changes, reason):
     """一般の公開保護に加え、デモ固有の誤設定も起動時に拒否する。"""
     with pytest.raises(RuntimeError, match=reason):
         replace(production_settings(demo_mode=True), **changes).validate_production()
@@ -282,9 +310,24 @@ def test_production_security_and_demo_mode_are_independent(demo_mode: bool) -> N
 
 
 @pytest.mark.no_db
+def test_demo_availability_keeps_normal_email_and_retention_configuration():
+    """デモ有効時も通常メールと30日保持を同時に使える。"""
+    secure = replace(
+        production_settings(demo_mode=True),
+        email_provider="resend",
+        email_from="app@example.com",
+        resend_api_key="test-resend-key",
+        deleted_data_cleanup_mode="dry_run",
+        deleted_data_cleanup_tenant_ids="1",
+        deleted_data_retention_days=30,
+    )
+    secure.validate_production()
+
+
+@pytest.mark.no_db
 def test_disabled_demo_endpoints_stay_closed_in_production(monkeypatch) -> None:
-    """productionであってもデモフラグなしでは匿名発行・回収を公開しない。"""
-    secure = production_settings()
+    """専用接続未設定なら匿名発行・回収を公開しない。"""
+    secure = replace(production_settings(), demo_database_url="")
     for name in secure.__dataclass_fields__:
         monkeypatch.setattr(settings, name, getattr(secure, name))
     monkeypatch.setattr("app.core.ingress.consume_request_budget", lambda *_args: 0)

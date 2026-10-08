@@ -102,3 +102,29 @@ def test_presigned_url_signs_content_type_and_length(uploads):
     assert data.byte_size == 4
     assert uploads.storage.s3_client.presigned_params["ContentLength"] == 4
     assert plan.headers == {"Content-Type": "text/plain"}
+
+
+def test_upload_permission_is_bound_to_database_and_demo_session(
+    uploads, demo_settings, monkeypatch
+):
+    """同じ数値IDでも通常・デモ・リセット前の許可を相互利用できない。"""
+    from sqlalchemy.orm import Session
+
+    storage = StorageService(MemoryS3Client(), demo=True)
+    storage.demo_db = Session(info={"demo_id": "first"})
+    monkeypatch.setattr(storage, "reserve", lambda *_args: None)
+    visitor = FileUploadService(storage)
+    normal_plan = uploads.plan(request(), user_id=1, scope="avatar")
+    demo_plan = visitor.plan(request(), user_id=1, scope="avatar")
+    assert demo_plan.upload_token is not None
+    assert normal_plan.upload_token is not None
+    with pytest.raises(BadRequestError):
+        visitor.verify(normal_plan.upload_token, user_id=1, scope="avatar")
+    with pytest.raises(BadRequestError):
+        uploads.verify(demo_plan.upload_token, user_id=1, scope="avatar")
+    assert visitor.verify(demo_plan.upload_token, user_id=1, scope="avatar")[
+        2
+    ].startswith("demo/first/")
+    storage.demo_db.info["demo_id"] = "second"
+    with pytest.raises(BadRequestError):
+        visitor.verify(demo_plan.upload_token, user_id=1, scope="avatar")

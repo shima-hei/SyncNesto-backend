@@ -7,6 +7,9 @@ UNAUTHORIZED = "Unauthorized"
 AUTHENTICATION_REQUIRED = "Authentication required"
 TOKEN_EXPIRED = "Token expired"
 INVALID_TOKEN = "Invalid token"
+AUTHENTICATION_CONTEXT_CHANGED = (
+    "ログイン状態が変わりました。ページを再読み込みしてください"
+)
 INVALID_CSRF_TOKEN = "Invalid CSRF token"
 FORBIDDEN = "Forbidden"
 NOT_FOUND = "Not found"

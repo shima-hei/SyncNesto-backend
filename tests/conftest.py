@@ -116,6 +116,34 @@ def client() -> TestClient:
     return TestClient(create_app())
 
 
+@pytest.fixture
+def demo_settings(monkeypatch):
+    """既存の所有範囲テストに専用接続のfakeを明示して使う。"""
+    from app.core.config import settings
+    from app.db import session as sessions
+
+    def factory():
+        db = sessions.session_local()
+        db.info["data_realm"] = "demo"
+        return db
+
+    monkeypatch.setattr(
+        settings, "demo_database_url", "postgresql://test@localhost/demo"
+    )
+    monkeypatch.setattr(settings, "demo_secret_key", "d" * 48)
+    monkeypatch.setattr(settings, "demo_data_isolated", True)
+    for key, value in {
+        "demo_aws_region": "ap-southeast-1",
+        "demo_aws_access_key_id": "demo-test-access",
+        "demo_aws_secret_access_key": "demo-test-secret",
+        "demo_aws_s3_bucket_name": "demo-test",
+        "demo_aws_s3_endpoint_url": "https://demo-storage.example",
+    }.items():
+        monkeypatch.setattr(settings, key, value)
+    monkeypatch.setattr(sessions, "demo_session_local", factory)
+    monkeypatch.setattr("scripts.cleanup_demo.demo_session_local", factory)
+
+
 @pytest.fixture(autouse=True)
 def clean_database(request: pytest.FixtureRequest) -> None:
     """各テストの前にDB内のデータと採番をリセットする。"""

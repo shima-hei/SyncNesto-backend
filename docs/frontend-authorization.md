@@ -1,5 +1,14 @@
 # Syncnesto Frontend Authorization Guide
 
+通常ログインは既存DB・Storageを継続し、デモ開始と検証済みデモJWTだけを専用DB・Storageへ向けます。
+JWTの署名鍵も分離します。`DEMO_MODE`はデモ機能の可否であり、通常ユーザーの接続先・メール・30日保持を切り替えません。
+最新の合意と検証は [決定記録](decisions/2026-10-08-demo-mode.md) を参照してください。
+
+ブラウザは既知のログイン状態を`X-Syncnesto-Data-Realm: normal | demo`で送ります。
+Backendは署名検証したCookieと一致しない操作を403で拒否し、通常/デモを別タブで切り替えた後の旧画面からの更新・logoutを防ぎます。
+このヘッダーを接続先選択や認可に使いません。`GET /auth/me`はヘッダーを付けず、新しいCookieの本人状態を再確認します。
+既存APIクライアントのためヘッダーなしも許可し、通常の認証・所有範囲検証を適用します。
+
 監査ログの `GET /tenants/current/audit-logs` は現在組織のOwner・管理者に限定します。
 system権限だけでは閲覧できません。詳細は `frontend-audit-logs-api.md` を参照してください。
 

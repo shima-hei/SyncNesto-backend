@@ -43,9 +43,14 @@ class FileUploadService:
                 "scope": scope,
                 "upload_id": str(upload_id),
                 "file": data.model_dump(),
+                "demo_id": str(self.storage.demo_db.info["demo_id"])
+                if self.storage.demo_db is not None
+                else None,
                 "exp": datetime.now(UTC) + timedelta(seconds=expires_in),
             },
-            settings.secret_key,
+            settings.demo_secret_key
+            if self.storage.demo_db is not None
+            else settings.secret_key,
             algorithm=settings.algorithm,
         )
         return FileUploadPlan(
@@ -70,13 +75,22 @@ class FileUploadService:
         try:
             payload = jwt.decode(
                 token,
-                settings.secret_key,
+                settings.demo_secret_key
+                if self.storage.demo_db is not None
+                else settings.secret_key,
                 algorithms=[settings.algorithm],
                 audience=UPLOAD_AUDIENCE,
                 options={"require": ["exp", "sub", "aud"]},
             )
             if payload["sub"] != str(user_id) or payload["scope"] != scope:
                 raise ValueError("upload scope mismatch")
+            expected_demo = (
+                str(self.storage.demo_db.info["demo_id"])
+                if self.storage.demo_db is not None
+                else None
+            )
+            if payload.get("demo_id") != expected_demo:
+                raise ValueError("upload session mismatch")
             upload_id = UUID(payload["upload_id"])
             data = FileUploadRequest.model_validate(payload["file"])
         except (

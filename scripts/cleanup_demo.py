@@ -5,7 +5,7 @@ import json
 from datetime import UTC, datetime
 
 from app.core.config import settings
-from app.db.session import session_local
+from app.db.session import demo_session_local
 from app.repositories.demo import DemoRepository
 from app.schemas.demo import DemoCleanupResult
 from app.services.demo import DemoService
@@ -17,7 +17,7 @@ def cleanup_demo(*, execute: bool = False) -> DemoCleanupResult:
         raise ValueError("Demo cleanup requires a verified dedicated database")
     if execute:
         return DemoService().sweep()
-    with session_local() as db:
+    with demo_session_local() as db:
         count = len(DemoRepository().due_ids(db, datetime.now(UTC)))
     return DemoCleanupResult(processed=0, pending=count)
 
@@ -32,7 +32,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         result = cleanup_demo(execute=args.execute)
-        with session_local() as db:
+        with demo_session_local() as db:
             remaining = DemoRepository().unfinished_count(db)
     except Exception:
         print("Demo cleanup failed; pending data remains for retry.")

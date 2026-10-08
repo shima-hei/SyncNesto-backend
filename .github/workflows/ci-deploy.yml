@@ -80,6 +80,7 @@ jobs:
       - name: Apply backward-compatible migrations
         env:
           MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+          DEMO_MIGRATION_DATABASE_URL: ${{ secrets.DEMO_MIGRATION_DATABASE_URL }}
         run: uv run --frozen --no-dev python scripts/migrate_production.py
       - run: vercel deploy --prebuilt --prod --yes --local-config=.vercel/deploy-config.json --token="$VERCEL_TOKEN"
       - name: Verify public API boundary

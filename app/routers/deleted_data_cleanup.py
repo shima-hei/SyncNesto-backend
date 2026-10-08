@@ -23,7 +23,7 @@ def cleanup_deleted_data(
     request: Request, response: Response
 ) -> DeletedDataCleanupResult:
     """Vercel CronのGETだけを受け付け、利用者のCookieを権限に使わない。"""
-    if settings.demo_mode or settings.deleted_data_cleanup_mode == "disabled":
+    if settings.deleted_data_cleanup_mode == "disabled":
         raise NotFoundError()
     expected = f"Bearer {settings.demo_cron_secret}"
     if len(settings.demo_cron_secret) < 32 or not hmac.compare_digest(

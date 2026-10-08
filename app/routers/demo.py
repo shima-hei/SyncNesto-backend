@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.core.csrf import generate_csrf_token, set_csrf_cookie
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.core.ingress import trusted_client_ip
-from app.db.session import get_db
+from app.db.session import get_db, get_demo_db
 from app.models.user import User
 from app.schemas.demo import DemoCleanupResult, DemoStatus
 from app.services.demo import IDLE_MINUTES, DemoService
@@ -45,7 +45,7 @@ def start_demo(
     request: Request,
     response: Response,
     access_token: str | None = Cookie(default=None, alias=settings.auth_cookie_name),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_demo_db),
 ) -> DemoStatus:
     """別タブや通常ログインの有効Cookieを匿名操作で置き換えない。"""
     if not settings.demo_mode:
@@ -83,6 +83,7 @@ def reset_demo(
     service.cleanup(demo_id)
     # 旧組織のORM取得条件を新規発行へ持ち込まない。
     db.info.clear()
+    db.info["data_realm"] = "demo"
     return start_response(db, request, response)
 
 
@@ -91,10 +92,10 @@ def reset_demo(
 )
 def cleanup_demo(request: Request) -> DemoCleanupResult:
     """Vercel Cronの専用秘密のみ受け付け、Cookie・BFF権限は使わない。"""
-    if not settings.demo_mode:
+    if not settings.demo_database_url or not settings.demo_data_isolated:
         raise NotFoundError()
     expected = f"Bearer {settings.demo_cron_secret}"
-    if not settings.demo_cron_secret or not hmac.compare_digest(
+    if len(settings.demo_cron_secret) < 32 or not hmac.compare_digest(
         request.headers.get("authorization", "").encode(), expected.encode()
     ):
         raise ForbiddenError()

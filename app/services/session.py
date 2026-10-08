@@ -161,6 +161,7 @@ class SessionService:
         demo = service.repository.by_session(db, user_session.id)
         if demo is not None:
             service.revoke(db, demo.id, reason)
+            service.cleanup(demo.id)
         else:
             self.repository.revoke(db, user_session, reason)
 
@@ -197,6 +198,7 @@ class SessionService:
             subject=user.email,
             session_id=refreshed_session.id,
             expires_at=refreshed_session.expires_at,
+            demo=bool(db.info.get("demo_id")),
         )
         max_age_seconds = max(
             0,

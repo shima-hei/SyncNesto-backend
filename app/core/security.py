@@ -12,6 +12,7 @@ from pwdlib import PasswordHash
 from app.core.config import settings
 
 password_hash = PasswordHash.recommended()
+DEMO_AUDIENCE = "syncnesto-demo"
 
 
 def get_password_hash(password: str) -> str:
@@ -44,6 +45,7 @@ def create_access_token(
     session_id: UUID | str | None = None,
     expires_at: datetime | None = None,
     password_setup_only: bool = False,
+    demo: bool = False,
 ) -> str:
     """アクセストークンを作成する。
 
@@ -70,10 +72,17 @@ def create_access_token(
         payload["sid"] = str(session_id)
     if password_setup_only:
         payload["password_setup_only"] = True
+    if demo:
+        if (
+            not settings.demo_secret_key
+            or settings.demo_secret_key == settings.secret_key
+        ):
+            raise RuntimeError("A separate DEMO_SECRET_KEY is required")
+        payload["aud"] = DEMO_AUDIENCE
 
     return jwt.encode(
         payload,
-        settings.secret_key,
+        settings.demo_secret_key if demo else settings.secret_key,
         algorithm=settings.algorithm,
     )
 
@@ -88,9 +97,27 @@ def decode_access_token(token: str, verify_exp: bool = True) -> dict[str, Any]:
     Returns:
         デコードされたJWT payload。
     """
-    return jwt.decode(
-        token,
-        settings.secret_key,
-        algorithms=[settings.algorithm],
-        options={"verify_exp": verify_exp},
-    )
+    try:
+        return jwt.decode(
+            token,
+            settings.secret_key,
+            algorithms=[settings.algorithm],
+            options={"verify_exp": verify_exp},
+        )
+    except jwt.InvalidSignatureError:
+        if (
+            not settings.demo_secret_key
+            or settings.demo_secret_key == settings.secret_key
+        ):
+            raise
+        return jwt.decode(
+            token,
+            settings.demo_secret_key,
+            algorithms=[settings.algorithm],
+            audience=DEMO_AUDIENCE,
+            options={
+                "verify_exp": verify_exp,
+                "require": ["aud", "sub", "sid", "exp", "iat"],
+                "strict_aud": True,
+            },
+        )
