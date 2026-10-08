@@ -28,10 +28,7 @@ class DeletedDataCleanupService:
     def run(self) -> DeletedDataCleanupResult:
         """DBのトランザクションロックを、各対象のcommitとは別に保持する。"""
         settings.validate_cleanup()
-        if (
-            settings.app_env == "demo"
-            or settings.deleted_data_cleanup_mode == "disabled"
-        ):
+        if settings.deleted_data_cleanup_mode == "disabled":
             raise RuntimeError("Scheduled deleted data cleanup is disabled")
         result = DeletedDataCleanupResult(
             mode="execute"

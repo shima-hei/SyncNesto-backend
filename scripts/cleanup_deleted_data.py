@@ -19,8 +19,6 @@ def cleanup_deleted_data(
         raise ValueError(
             "tenant-id must be positive and limit must be between 1 and 100"
         )
-    if settings.app_env == "demo":
-        raise ValueError("Demo data must use the session cleanup, not trash retention")
     if not 0 <= settings.deleted_data_retention_days <= 3650:
         raise ValueError("DELETED_DATA_RETENTION_DAYS must be between 0 and 3650")
     service = TrashService()

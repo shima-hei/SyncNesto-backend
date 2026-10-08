@@ -11,7 +11,7 @@ from app.core.exceptions import (
     InvalidTokenError,
     PasswordChangeRequiredError,
 )
-from app.core.security import decode_access_token
+from app.core.security import DEMO_AUDIENCE, decode_access_token
 from app.db.session import get_db
 from app.models.user import User
 from app.repositories.user import UserRepository
@@ -75,10 +75,15 @@ def get_authenticated_user(
     except jwt.PyJWTError as exc:
         raise InvalidTokenError() from exc
 
+    if (payload.get("aud") == DEMO_AUDIENCE) != (db.info.get("data_realm") == "demo"):
+        raise InvalidTokenError()
+
     user_session = session_service.validate_session(db, payload)
     from app.services.demo import DemoService
 
     DemoService().bind(db, user_session)
+    if payload.get("aud") == DEMO_AUDIENCE and not db.info.get("demo_id"):
+        raise InvalidTokenError()
 
     email = payload.get("sub")
     if not isinstance(email, str):

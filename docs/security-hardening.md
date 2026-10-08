@@ -1,19 +1,21 @@
 # ポートフォリオ公開環境の保護
 
-この変更は未コミットのAI支援から分離したworktreeで行う。
+初期の保護実装はAI支援から分離したworktreeで行い、本体へ統合済み。以降はユーザー指示に従い本体で作業する。
 DB schemaとAPIレスポンスの変更、現在のVercel設定・公開環境へのデプロイは含まない。
 
 ## 環境設定による迂回を防ぐ
 
-`Settings.is_public_environment` に公開判定を集約し、`production` / `demo` に
+`Settings.is_public_environment` に公開判定を集約し、`APP_ENV=production` に
 BFF共有キー、Secure Cookie、Cookie-only認証、明示的なHost、DB TLS検証、
 SQLログ無効、メールorigin/SMTP検証、レート制限、OpenAPI非公開を適用する。
 
 `development` / `test` はローカル互換を維持する。未対応環境名は拒否し、Vercel上では
-`production` / `demo` 以外を拒否する。Previewでも公開用の安全な設定を用意する。
+`production` 以外を拒否する。Previewでも公開用の安全な設定を用意する。
 Terraformの現在の `APP_ENV=production` は変更不要。
+デモは `APP_ENV=production` + `DEMO_MODE=true` とし、公開保護と機能設定を分離する。
+2026-10-08の修正理由と検証は[決定記録](decisions/2026-10-08-demo-mode.md)に残す。
 
-`tests/core/test_ingress.py` で両公開環境の共有キー・Host・CSRF・回数制限・
+`tests/core/test_ingress.py` でproductionの通常・デモ両モードの共有キー・Host・CSRF・回数制限・
 共有カウンター障害・起動設定・メール設定・API docs非公開を確認する。
 他の認証・認可・tenancyテストも実行し、変更の影響を検証する。
 
@@ -39,7 +41,7 @@ Frontendの `docs/deployment.md` に記録する。既知脆弱性の監査は�
 backupからの復元確認はクラウドアカウント設定・運用の確認として別に扱う。
 コードだけの変更で、これらを設定済みとは扱わない。
 
-AI支援とEveへの変更検討は後続課題で、今回の変更・監査対象に含めない。
+AI支援とEveへの変更は取りやめ。既存stashを保持し、Codex向けMCPで要件定義・テスト設計の作成を扱う検討は後続課題とする。
 
 ## ローカル検証結果（2026-10-07）
 

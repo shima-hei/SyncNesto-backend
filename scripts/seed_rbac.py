@@ -1,5 +1,6 @@
 """RBAC初期データを作成するseedスクリプト。"""
 
+import argparse
 import logging
 
 from app.core.config import settings
@@ -251,13 +252,22 @@ def seed_initial_admin(repository: RbacRepository) -> None:
         logger.info("Initial system_admin ensured: email=%s", user.email)
 
 
-def seed_rbac() -> None:
-    """RBAC初期データと初期管理者ユーザーを作成する。"""
+def seed_rbac(*, roles_only: bool = False) -> None:
+    """RBACを作成し、通常の初期化時だけ初期管理者も作成する。"""
     repository = RbacRepository()
     seed_roles_and_permissions(repository)
-    seed_initial_admin(repository)
+    if not roles_only:
+        seed_initial_admin(repository)
+
+
+def main() -> None:
+    """デモDBでは明示的なroles-only指定で通常Identityを作らない。"""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--roles-only", action="store_true")
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO)
+    seed_rbac(roles_only=args.roles_only)
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    seed_rbac()
+    main()

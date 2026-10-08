@@ -36,6 +36,7 @@ jobs:
         run: |
           cat > .env.test <<'ENV'
           APP_ENV=development
+          DEMO_MODE=false
           DATABASE_URL=postgresql://admin:admin@localhost:5433/syncnesto_test
           SECRET_KEY=ci-only-test-secret-not-for-production
           AWS_ACCESS_KEY_ID=test
@@ -79,6 +80,7 @@ jobs:
       - name: Apply backward-compatible migrations
         env:
           MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+          DEMO_MIGRATION_DATABASE_URL: ${{ secrets.DEMO_MIGRATION_DATABASE_URL }}
         run: uv run --frozen --no-dev python scripts/migrate_production.py
       - run: vercel deploy --prebuilt --prod --yes --local-config=.vercel/deploy-config.json --token="$VERCEL_TOKEN"
       - name: Verify public API boundary

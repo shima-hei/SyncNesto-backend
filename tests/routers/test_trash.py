@@ -380,12 +380,14 @@ def test_test_design_graph_evidence_and_related_task_purge(
     assert "trash/evidence.png" not in s3.objects
 
 
-def test_demo_restore_and_expiry_keep_session_cleanup(client, db, monkeypatch):
+def test_demo_restore_and_expiry_keep_session_cleanup(
+    client, db, monkeypatch, demo_settings
+):
     """デモの復元を一時組織に限定し、30日保持へ延長しない。"""
     from app.models.demo import DemoSession
     from tests.routers.test_demo import start
 
-    monkeypatch.setattr(settings, "app_env", "demo")
+    monkeypatch.setattr(settings, "demo_mode", True)
     monkeypatch.setattr(settings, "frontend_public_url", "http://testserver")
     monkeypatch.setattr(settings, "demo_cron_secret", "c" * 48)
     status = start(client)

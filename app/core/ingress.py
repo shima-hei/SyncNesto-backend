@@ -12,6 +12,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from app.core.config import settings
+from app.db.session import request_is_demo
 from app.services.request_limit import consume_request_budget
 
 BFF_KEY_HEADER = "X-Syncnesto-BFF-Key"
@@ -86,7 +87,17 @@ class IngressMiddleware(BaseHTTPMiddleware):
         self.buckets[key] = (start, count + 1)
         try:
             retry_after = await run_in_threadpool(
-                consume_request_budget, client_ip, login
+                consume_request_budget,
+                client_ip,
+                login,
+                not login
+                and (
+                    request_is_demo(request)
+                    or (
+                        settings.demo_mode
+                        and request.url.path in {"/demo/start", "/demo/csrf"}
+                    )
+                ),
             )
         except SQLAlchemyError:
             return JSONResponse(

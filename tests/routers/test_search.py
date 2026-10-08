@@ -358,9 +358,11 @@ def test_more_projects_do_not_add_queries(
         event.remove(db.get_bind(), "before_cursor_execute", record)
 
 
-def test_demo_search_is_private_and_closes_on_expiry(client, db, monkeypatch):
+def test_demo_search_is_private_and_closes_on_expiry(
+    client, db, monkeypatch, demo_settings
+):
     """デモ利用者ごとの検索境界と期限切れ時の拒否を実Cookieで確認する。"""
-    monkeypatch.setattr(settings, "app_env", "demo")
+    monkeypatch.setattr(settings, "demo_mode", True)
     monkeypatch.setattr(settings, "frontend_public_url", "http://testserver")
 
     def start_demo(visitor):

@@ -216,6 +216,9 @@ docker/pgadmin/
 
 # docs
 /docs/*
+!/docs/decisions/
+/docs/decisions/*
+!/docs/decisions/2026-10-08-demo-mode.md
 !/docs/frontend-audit-logs-api.md
 !/docs/testing.md
 !/docs/deleted-data-cleanup.md

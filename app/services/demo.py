@@ -45,12 +45,12 @@ class DemoService:
 
     def start(self, db: Session, client_ip: str) -> tuple[DemoStatus, str]:
         """既存セッションの上書きはRouterで拒否し、全発行を一度に確定する。"""
-        if settings.app_env != "demo":
+        if not settings.demo_mode:
             raise NotFoundError()
         now = datetime.now(UTC)
         self.repository.lock_admission(db)
         digest = hmac.new(
-            settings.secret_key.encode(), client_ip.encode(), hashlib.sha256
+            settings.demo_secret_key.encode(), client_ip.encode(), hashlib.sha256
         ).hexdigest()
         if not self.repository.consume_start(db, digest, now):
             db.rollback()
@@ -184,7 +184,7 @@ class DemoService:
         )
         db.commit()
         return self.status(demo), create_access_token(
-            subject=user.email, session_id=session.id, expires_at=expires
+            subject=user.email, session_id=session.id, expires_at=expires, demo=True
         )
 
     def status(self, demo: DemoSession) -> DemoStatus:
@@ -204,10 +204,11 @@ class DemoService:
             if db.get(DemoOwnedUser, session.user_id) is not None:
                 raise InvalidTokenError()
             return
-        if settings.app_env != "demo" or demo.status != "active":
+        if not settings.demo_mode or demo.status != "active":
             raise InvalidTokenError()
         if demo.expires_at <= datetime.now(UTC):
             self.revoke(db, demo.id, "expired")
+            self.cleanup(demo.id)
             raise TokenExpiredError()
         db.info.update(
             demo_id=demo.id, tenant_id=demo.tenant_id, demo_user_id=demo.user_id
@@ -296,9 +297,9 @@ class DemoService:
 
     def _cleanup(self, demo_id: UUID, storage: StorageService | None = None) -> bool:
         """DB行ロックをleaseとして使い、障害時にはconnection終了で解放する。"""
-        from app.db.session import session_local
+        from app.db.session import demo_session_local
 
-        with session_local() as db:
+        with demo_session_local() as db:
             demo = db.scalar(
                 select(DemoSession)
                 .where(DemoSession.id == demo_id)
@@ -317,7 +318,9 @@ class DemoService:
                     db.scalars(select(DemoUpload).where(DemoUpload.demo_id == demo_id))
                 )
                 if uploads:
-                    (storage or StorageService()).delete_prefix(f"demo/{demo_id}/")
+                    (storage or StorageService(demo=True)).delete_prefix(
+                        f"demo/{demo_id}/"
+                    )
                 latest_put = max(
                     (u.expires_at for u in uploads), default=datetime.now(UTC)
                 )
@@ -348,11 +351,11 @@ class DemoService:
 
     def sweep(self) -> DemoCleanupResult:
         """公開Cookieを受け付けないCron経由で期限切れと失敗を回収する。"""
-        from app.db.session import session_local
+        from app.db.session import demo_session_local
 
-        with session_local() as db:
+        with demo_session_local() as db:
             ids = self.repository.due_ids(db, datetime.now(UTC))
         completed = sum(self.cleanup(demo_id) for demo_id in ids)
-        with session_local() as db:
+        with demo_session_local() as db:
             self.repository.prune_receipts(db)
         return DemoCleanupResult(processed=len(ids), pending=len(ids) - completed)

@@ -17,7 +17,8 @@ Demoはログアウト・セッション期限で全破棄する既存回収を�
 5. 対象が正しいことを確認して `execute` へ変更する。停止は `disabled` と再デプロイ。
 
 `CRON_SECRET` は32文字以上でBFFキーと別にする。Backend専用で、ブラウザ・公開設定JSONには含めない。
-有効化には有限の正の保持期間・対象組織指定を必須とし、誤記・Demoとの併用を起動時に拒否する。
+有効化には有限の正の保持期間・対象組織指定を必須とし、誤記を起動時に拒否する。
+通常DBに固定するため、専用DBのデモ回収と併用できる。
 DB上のDemo台帳を持つ組織・存在しない組織は対象に含めない。
 
 ## 実行境界
@@ -28,8 +29,9 @@ Cookie、運営者・組織管理者権限、BFFキー、queryの組織ID・exec
 内部運用の入口なのでOpenAPIには公開しない。
 
 Vercelの取得済み環境設定からCronを生成する。通常環境ではmode有効時だけこの入口を日次登録し、
-Demoでは既存 `/internal/demo/cleanup` だけを登録する。前の環境のCronは生成設定へ持ち込まない。
-UTC 18時（日本時間03時台）。Hobbyは日次まで・時刻に幅がある。
+`DEMO_MODE=true`では専用DB向けの `/internal/demo/cleanup` も別の日次Cronとして登録する。
+公開環境の`APP_ENV=production`は通常・Demoともに維持する。前のモードのCronは生成設定へ持ち込まない。
+通常ごみ箱はUTC 19時（日本時間04時台）、デモはUTC 18時。Hobbyは日次まで・時刻に幅がある。
 [Vercel Cronの制限](https://vercel.com/docs/cron-jobs/usage-and-pricing)。
 
 ## 件数・失敗・結果

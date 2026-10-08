@@ -1,15 +1,23 @@
 # ポートフォリオ用デモ
 
-`APP_ENV=demo` のときだけ、ログイン画面から登録不要で体験できる。
+公開環境は通常・デモともに `APP_ENV=production` とする。
+`DEMO_MODE=true` のときだけ、ログイン画面から登録不要で体験できる。
+未設定時はデモ無効。環境と機能の分離方針は[決定記録](decisions/2026-10-08-demo-mode.md)を参照する。
 訪問者ごとに一時User・Tenant・Projectと要件・タスク・テスト設計書のサンプルを作る。
 通常業務と組織内管理を公開し、`tenant_owner` / `project_admin` を使う。
 System Roleは付与せず、Backendで運営権限を拒否する。
 既存の共有Identity・通常組織・Role・Permission・デフォルトアバターは保持する。
-AI支援はこの変更の対象外。ドキュメント管理は次段階で同じ所有経路・回収へ追加する。
+ドキュメント管理・版履歴・添付も同じ所有経路と回収に対応済み。
+AI支援・Eveへの変更は取りやめ。将来のCodex向けMCPで要件定義・テスト設計の作成を扱う。
 
 ## 認証とデータの境界
 
 既存のHttpOnly Cookie・JWT・DB session・CSRF・tenant ORM guardを使用する。
+通常ログインと本人確認メールのリンクは既存DB、通常Storageと通常の署名鍵を継続する。
+デモ開始は`DEMO_DATABASE_URL`、デモファイルは`DEMO_AWS_*`へ固定する。
+デモJWTは独立した`DEMO_SECRET_KEY`と固定audienceで署名・検証し、検証後にだけ専用DBを選ぶ。
+数値ID・未検証claim・利用者指定の接続先で切り替えず、通常DBへのfallbackもしない。
+通常とデモのファイル登録用トークンも署名鍵を分け、デモUUIDに紐付ける。
 デモのsidと一時組織を一対一で結び付け、組織の切り替えを許可しない。
 業務データは既存のProject所属とpermissionで認可する。
 共通User・Tenant・所属・Session検索にもデモの所有範囲を追加するため、
@@ -18,7 +26,7 @@ AI支援はこの変更の対象外。ドキュメント管理は次段階で同
 組織内で追加するUserのメールはサーバー側で架空アドレスへ置き換える。
 入力したメールは保存・検索に使わない。デモのIdentityは通常ログインから利用できない。
 パスワード再設定・メール変更申請は送信せず、既存Identityの認証情報を変更しない。
-メール送信providerは起動時に`disabled`を要求する。
+通常メールのprovider設定は維持し、デモセッションの申請だけを抑止する。
 利用者には実情報を入力しない案内を出す。
 
 同じブラウザのタブは同じCookieで同じ環境を利用する。
@@ -39,7 +47,7 @@ BFCacheから戻った業務画面は再読み込みして認証を確認する�
 
 ログアウト・期限切れ・リセットは、まずsessionの失効と`cleanup_pending`を同時にcommitする。
 業務更新は各commit直前にデモ行をロックして再検証するため、失効後の書き込みも拒否する。
-ログアウト・リセットではその後に物理回収を試みる。接続・S3・DB削除失敗でも失効を戻さない。
+ログアウト・リセット・期限切れを検知したリクエストではその後に物理回収を試みる。接続・S3・DB削除失敗でも失効を戻さない。
 失敗は回収待ち台帳に残し、再試行時刻と固定のエラー種別だけを保存する。
 
 回収はPostgreSQL行ロック`FOR UPDATE SKIP LOCKED`で重複処理を防ぐ。
@@ -106,22 +114,27 @@ Alembic `4c7c0372061a`はこの4表だけを追加する。既存データの更
 通常Userはnull。OrvalはBackend OpenAPIから再生成する。
 BFFは`/demo`だけを追加公開し、`/internal`は公開しない。
 
-公開切り替え前に、専用DB・制限付きruntime role・専用非公開バケットを用意する。
+デモ公開前に、専用DB・制限付きruntime role・専用非公開バケットを用意する。
 本番データを複製しない。既存のNeon・S3互換接続の構成は維持する。
-Backendには`APP_ENV=demo`、`DEMO_DATA_ISOLATED=true`、`EMAIL_PROVIDER=disabled`、
+Backendには`APP_ENV=production`、`DEMO_MODE=true`、`DEMO_DATA_ISOLATED=true`、
+通常設定と別の`DEMO_DATABASE_URL`・`DEMO_SECRET_KEY`・`DEMO_AWS_*`、
 HTTPSの`FRONTEND_PUBLIC_URL`、32文字以上の`CRON_SECRET`が必要。
 一般の公開設定検証も同時に適用する。
-Frontendはserver専用`APP_ENV=demo`で開始ボタンを出す。秘密は`NEXT_PUBLIC_*`に置かない。
+Frontendも`APP_ENV=production`を維持し、server専用`DEMO_MODE=true`で開始ボタンを出す。
+秘密は`NEXT_PUBLIC_*`に置かない。旧`APP_ENV=demo`は起動・デプロイ設定生成時に拒否する。
 
-Terraformの`app_env`は既定`production`、`demo_data_isolated`は既定false。
-切り替え時に両者を明示し、runtime設定が専用資源を参照していることを確認する。
+Terraformの`app_env`は`production`のみを許可し、`demo_mode`と`demo_data_isolated`は既定false。
+デモ接続を追加してから`demo_mode = true`と`demo_data_isolated = true`を明示し、
+通常runtime設定を変更せず、デモ専用設定が専用資源を参照することを確認する。
 Terraformはバケットの実際の分離を検証・作成しないため、このフラグを設定確認の代用にしない。
 `CRON_SECRET`はBFFキーと別のBackend専用秘密を生成する。
 
 CIは`vercel pull`後に`scripts/configure_demo_deployment.py`を実行し、
 秘密を含まない`.vercel/deploy-config.json`を生成する。
-`APP_ENV=demo`のときだけ日次Cronを追加してbuild/deployする。
-通常環境ではCronを追加しない。ローカルの手動リリースも同じ手順を使う。
+`APP_ENV=production`を確認し、デモ受付が有効、または分離確認済み専用接続が残っている間はデモの日次Cronを追加する。
+明示した`DELETED_DATA_CLEANUP_MODE`が有効なら、通常DB向けのごみ箱の日次Cronも追加する。
+デモを無効にしても専用接続を残し、回収Cron・APIと専用CLIで未回収データを回収する。
+デモ受付・専用接続・通常回収がすべて無効ならCronを追加しない。ローカルの手動リリースも同じ手順を使う。
 この変更のローカル検証ではcloud apply・Production migration・デプロイを行っていない。
 
 ## 検証

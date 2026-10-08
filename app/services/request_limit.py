@@ -5,17 +5,19 @@ import hmac
 
 from app.core.config import settings
 from app.core.exceptions import AccountActionRateLimitedError
-from app.db.session import session_local
+from app.db.session import demo_session_local, session_local
 from app.repositories.request_limit import RequestLimitRepository
 
 
-def consume_request_budget(client_ip: str, login: bool) -> int:
+def consume_request_budget(client_ip: str, login: bool, demo: bool = False) -> int:
     """IPを保存せず、用途別上限を短い独立トランザクションで確認する。"""
     scope = "login" if login else "api"
     digest = hmac.new(
-        settings.secret_key.encode(), client_ip.encode(), hashlib.sha256
+        (settings.demo_secret_key if demo else settings.secret_key).encode(),
+        client_ip.encode(),
+        hashlib.sha256,
     ).hexdigest()
-    with session_local() as db:
+    with demo_session_local() if demo else session_local() as db:
         return RequestLimitRepository(db).consume(
             f"{scope}:{digest}", 10 if login else 240
         )

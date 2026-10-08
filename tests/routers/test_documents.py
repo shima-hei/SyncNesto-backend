@@ -304,9 +304,9 @@ def test_attachment_competing_completion_preserves_committed_file(
     assert stored is not None and stored.storage_key == winner_key
 
 
-def test_demo_document_children_are_recovered(client, db, monkeypatch):
+def test_demo_document_children_are_recovered(client, db, monkeypatch, demo_settings):
     """サンプルと追加文書、版、関連、添付もデモ終了で物理回収する。"""
-    monkeypatch.setattr(settings, "app_env", "demo")
+    monkeypatch.setattr(settings, "demo_mode", True)
     monkeypatch.setattr(settings, "frontend_public_url", "http://testserver")
     monkeypatch.setattr(settings, "file_upload_mode", "server")
     client.get("/demo/csrf")
