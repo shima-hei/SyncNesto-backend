@@ -19,6 +19,7 @@ dependencies = [
     "pwdlib[argon2]>=0.3.0",
     "boto3>=1.43.9",
     "python-multipart>=0.0.32",
+    "mcp==2.3.0",
 ]
 
 [project.optional-dependencies]
@@ -27,9 +28,7 @@ dev = [
     "pytest>=8.0.0",
     "ruff>=0.15.15",
 ]
-mcp = [
-    "mcp==2.3.0",
-]
+mcp = [] # 旧ローカル起動コマンドの--extra mcpとの互換性を維持する。
 
 [tool.pyright]
 venvPath = "."

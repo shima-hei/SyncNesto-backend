@@ -24,7 +24,7 @@ class McpOAuthError(AppError):
 
 
 def require_mcp_enabled() -> None:
-    """設定済みのループバックresourceだけを有効にする。"""
+    """公開環境は同一originのHTTPS resource、開発時はloopbackを許可する。"""
     if not settings.mcp_enabled:
         raise NotFoundError()
     try:
@@ -34,11 +34,16 @@ def require_mcp_enabled() -> None:
         issuer.port
     except ValueError as exc:
         raise NotFoundError() from exc
+    embedded = resource.scheme == issuer.scheme and resource.netloc == issuer.netloc
+    local = (
+        not settings.is_public_environment
+        and resource.scheme == "http"
+        and resource.hostname == "127.0.0.1"
+        and resource_port is not None
+    )
     if (
-        resource.scheme != "http"
-        or resource.hostname != "127.0.0.1"
+        not (embedded or local)
         or resource.path != "/mcp"
-        or resource_port is None
         or resource.username
         or resource.password
         or resource.query
@@ -84,6 +89,10 @@ def digest(value: str) -> str:
 def is_direct_mcp_request(path: str, method: str) -> bool:
     """BFF必須の例外を専用経路とメソッドに限定する。"""
     return settings.mcp_enabled and (method, path) in {
+        ("GET", "/.well-known/oauth-protected-resource/mcp"),
+        ("POST", "/mcp"),
+        ("GET", "/mcp"),
+        ("DELETE", "/mcp"),
         ("GET", "/.well-known/oauth-authorization-server"),
         ("GET", "/oauth/authorize"),
         ("POST", "/oauth/token"),
