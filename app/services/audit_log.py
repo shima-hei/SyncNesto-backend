@@ -105,7 +105,19 @@ class AuditLogService:
                 ip_address=client_ip_context.get(),
                 user_agent=user_agent_context.get(),
                 request_id=request_id_context.get(),
-                metadata=self._sanitize_metadata(metadata or {}),
+                metadata=self._sanitize_metadata(
+                    {
+                        **(metadata or {}),
+                        **(
+                            {
+                                "source": "mcp",
+                                "connection_id": db.info["mcp_connection_id"],
+                            }
+                            if db.info.get("mcp_connection_id")
+                            else {}
+                        ),
+                    }
+                ),
             )
         except Exception:
             db.rollback()

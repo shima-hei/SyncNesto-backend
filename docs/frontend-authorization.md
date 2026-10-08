@@ -1,5 +1,9 @@
 # Syncnesto Frontend Authorization Guide
 
+MCPは通常Cookie認証と別のOAuth委任を使用します。接続本人の現在のProject権限と許可Projectの積集合で毎回認可します。
+`mcp:connect` に加えて業務の編集権限が必要で、閲覧専用・テスト実行専用は対象外、編集権限のあるguestは利用可能です。
+Cookie/BFF/CSRFは同意・接続管理に維持し、通常APIのAuthorization headerを有効にしません。詳細は [MCP仕様・接続手順](mcp.md) を参照してください。
+
 通常ログインは既存DB・Storageを継続し、デモ開始と検証済みデモJWTだけを専用DB・Storageへ向けます。
 JWTの署名鍵も分離します。`DEMO_MODE`はデモ機能の可否であり、通常ユーザーの接続先・メール・30日保持を切り替えません。
 最新の合意と検証は [決定記録](decisions/2026-10-08-demo-mode.md) を参照してください。

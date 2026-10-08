@@ -25,12 +25,12 @@ jobs:
         with:
           version: 0.10.11
           python-version: '3.14'
-      - run: uv sync --frozen --extra dev
+      - run: uv sync --frozen --extra dev --extra mcp
       - run: uv run --frozen ruff check .
       - run: uv run --frozen pyright
       - name: Audit locked runtime dependencies
         run: |
-          uv export --frozen --no-dev --no-emit-project --no-hashes --output-file /tmp/runtime-requirements.txt --quiet
+          uv export --frozen --no-dev --extra mcp --no-emit-project --no-hashes --output-file /tmp/runtime-requirements.txt --quiet
           uvx --from pip-audit==2.10.1 pip-audit --no-deps --disable-pip --strict --progress-spinner off -r /tmp/runtime-requirements.txt
       - name: Configure isolated test database
         run: |

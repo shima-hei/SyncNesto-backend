@@ -23,6 +23,16 @@ from app.models.user import User
 from app.repositories.document import DocumentRepository
 from tests.helpers.auth import authorize_as
 
+# 接続の同意・管理は組織選択ではなく本人のIdentityを認証する。
+# 業務操作のcatalog/operationsはOpenAPI外で、委任に固定した組織を検証する。
+MCP_IDENTITY_OPERATIONS = {
+    ("get", "/integrations/mcp/connections"),
+    ("delete", "/integrations/mcp/connections/{connection_id}"),
+    ("get", "/integrations/mcp/authorization-requests/{request_id}"),
+    ("post", "/integrations/mcp/authorization-requests/{request_id}/approve"),
+    ("post", "/integrations/mcp/authorization-requests/{request_id}/deny"),
+}
+
 
 @pytest.mark.parametrize("action", ["add", "change", "remove"])
 def test_project_membership_changes_preserve_other_tenant_sessions(
@@ -331,20 +341,42 @@ def test_document_children_respect_current_tenant(client, tenant_context, suffix
 
 def test_all_business_routes_require_tenant_context(client):
     """新しい業務APIにも共通Dependencyを必須とし、手書きチェックの抜けを防ぐ。"""
+    from fastapi.routing import APIRoute
+
+    from app.core.auth import get_current_user
+    from app.routers.mcp import router as mcp_router
+
+    def has_current_user(dependency):
+        return dependency.call is get_current_user or any(
+            has_current_user(child) for child in dependency.dependencies
+        )
 
     count = 0
+    identity_count = 0
     for path, operations in client.app.openapi()["paths"].items():
         if path == "/" or path.startswith(
             ("/auth", "/users", "/health", "/tenants", "/demo")
         ):
             continue
-        for operation in operations.values():
+        for method, operation in operations.items():
+            if (method, path) in MCP_IDENTITY_OPERATIONS:
+                route = next(
+                    route
+                    for route in mcp_router.routes
+                    if isinstance(route, APIRoute)
+                    and route.path == path
+                    and method.upper() in route.methods
+                )
+                assert has_current_user(route.dependant), (method, path)
+                identity_count += 1
+                continue
             assert any(
                 parameter["name"] == "X-Tenant-ID" and parameter["in"] == "header"
                 for parameter in operation.get("parameters", [])
             ), path
             count += 1
     assert count >= 130
+    assert identity_count == len(MCP_IDENTITY_OPERATIONS)
 
 
 @pytest.mark.parametrize(
@@ -666,6 +698,8 @@ def test_every_business_operation_rejects_unowned_tenant(client, create_test_use
         ):
             continue
         for method, operation in operations.items():
+            if (method, path) in MCP_IDENTITY_OPERATIONS:
+                continue
             url = path
             for parameter in operation.get("parameters", []):
                 if parameter["in"] == "path":

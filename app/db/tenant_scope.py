@@ -10,6 +10,10 @@ from app.db.base import Base
 
 # 所有関係は一箇所で定義する。認証Identityへの参照は所有関係に含めない。
 OWNERS = {
+    "mcp_connections": [],
+    "mcp_authorization_requests": [("connection_id", "mcp_connections", "id")],
+    "mcp_credentials": [("connection_id", "mcp_connections", "id")],
+    "mcp_operation_receipts": [("connection_id", "mcp_connections", "id")],
     "project_documents": [("project_id", "projects", "id")],
     "document_revisions": [("document_id", "project_documents", "id")],
     "document_attachments": [("document_id", "project_documents", "id")],
@@ -85,6 +89,13 @@ MENTION_OWNERS = {
 def ownership_filter(name: str, tenant_id: int, user_id: int | None = None):
     """テーブルから組織までの所有経路をSQL式で返す。"""
     table = Base.metadata.tables[name]
+    if name == "mcp_connections":
+        condition = table.c.tenant_id == tenant_id
+        return (
+            and_(condition, table.c.user_id == user_id)
+            if user_id is not None
+            else condition
+        )
     if name == "projects":
         condition = table.c.tenant_id == tenant_id
         if user_id is not None:

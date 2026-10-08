@@ -12,6 +12,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from app.core.config import settings
+from app.core.mcp import is_direct_mcp_request
 from app.db.session import request_is_demo
 from app.services.request_limit import consume_request_budget
 
@@ -58,7 +59,9 @@ class IngressMiddleware(BaseHTTPMiddleware):
         if not settings.bff_shared_secret:
             return await call_next(request)
         supplied = request.headers.get(BFF_KEY_HEADER, "")
-        if not hmac.compare_digest(
+        if not is_direct_mcp_request(
+            request.url.path, request.method
+        ) and not hmac.compare_digest(
             supplied.encode(), settings.bff_shared_secret.encode()
         ):
             return JSONResponse(
@@ -68,7 +71,11 @@ class IngressMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         client_ip = trusted_client_ip(request)
-        login = request.url.path.rstrip("/") == "/auth/login"
+        login = request.url.path.rstrip("/") in {
+            "/auth/login",
+            "/oauth/authorize",
+            "/oauth/token",
+        }
         key = (client_ip, login)
         now = monotonic()
         start, count = self.buckets.get(key, (now, 0))
@@ -91,6 +98,7 @@ class IngressMiddleware(BaseHTTPMiddleware):
                 client_ip,
                 login,
                 not login
+                and not is_direct_mcp_request(request.url.path, request.method)
                 and (
                     request_is_demo(request)
                     or (

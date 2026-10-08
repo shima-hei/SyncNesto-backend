@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 PERMISSIONS = [
+    ("mcp:connect", "本人の権限でMCPを利用する"),
     ("tenant:manage", "運営者として組織を作成・管理する"),
     ("user:read", "ユーザーを閲覧する"),
     ("user:create", "ユーザーを作成する"),
@@ -68,6 +69,7 @@ ROLES = [
 ROLE_PERMISSIONS = {
     "system_admin": [code for code, _ in PERMISSIONS],
     "project_admin": [
+        "mcp:connect",
         "project:read",
         "project:update",
         "project:delete",
@@ -102,6 +104,7 @@ ROLE_PERMISSIONS = {
         "requirement:link",
     ],
     "manager": [
+        "mcp:connect",
         "project:read",
         "task:read",
         "task:create",
@@ -127,6 +130,7 @@ ROLE_PERMISSIONS = {
         "requirement:link",
     ],
     "member": [
+        "mcp:connect",
         "project:read",
         "task:read",
         "task:create",
