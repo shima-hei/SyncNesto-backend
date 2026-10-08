@@ -16,3 +16,16 @@ DBありのテストが初めて必要になった時にPostgreSQLを起動し�
 
 2026-10-08の簡易棚卸しで完全一致するテスト本文の重複はなかった。意味上の重複を網羅的に調査した結果ではない。
 認証、CSRF、組織分離、権限、競合、セッション失効、削除復元のケースは削減していない。
+
+## デモ設定の回帰確認（2026-10-08）
+
+`APP_ENV=production` + `DEMO_MODE`への修正では、まず設定・公開境界・Cron生成をDBなしで確認する。
+OpenAPI非公開のケースは共有カウンターをstubにしてルーティングを確認し、実カウンターの拒否・障害は既存の専用ケースで検証する。
+デモの組織分離、失効、DB・ファイルの破棄、通常回収との排他は引き続きPostgreSQLを使用する。
+
+```sh
+uv run pytest tests/core/test_ingress.py tests/test_demo_deployment.py tests/routers/test_demo.py tests/routers/test_deleted_data_cleanup.py -m no_db -q
+uv run pytest -q --durations=10
+```
+
+結果と公開反映の状態は[決定記録](decisions/2026-10-08-demo-mode.md)へ追記する。

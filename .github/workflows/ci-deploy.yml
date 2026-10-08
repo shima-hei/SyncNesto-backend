@@ -36,6 +36,7 @@ jobs:
         run: |
           cat > .env.test <<'ENV'
           APP_ENV=development
+          DEMO_MODE=false
           DATABASE_URL=postgresql://admin:admin@localhost:5433/syncnesto_test
           SECRET_KEY=ci-only-test-secret-not-for-production
           AWS_ACCESS_KEY_ID=test

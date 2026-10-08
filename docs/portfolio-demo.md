@@ -1,6 +1,8 @@
 # ポートフォリオ用デモ
 
-`APP_ENV=demo` のときだけ、ログイン画面から登録不要で体験できる。
+公開環境は通常・デモともに `APP_ENV=production` とする。
+`DEMO_MODE=true` のときだけ、ログイン画面から登録不要で体験できる。
+未設定時はデモ無効。環境と機能の分離方針は[決定記録](decisions/2026-10-08-demo-mode.md)を参照する。
 訪問者ごとに一時User・Tenant・Projectと要件・タスク・テスト設計書のサンプルを作る。
 通常業務と組織内管理を公開し、`tenant_owner` / `project_admin` を使う。
 System Roleは付与せず、Backendで運営権限を拒否する。
@@ -108,20 +110,24 @@ BFFは`/demo`だけを追加公開し、`/internal`は公開しない。
 
 公開切り替え前に、専用DB・制限付きruntime role・専用非公開バケットを用意する。
 本番データを複製しない。既存のNeon・S3互換接続の構成は維持する。
-Backendには`APP_ENV=demo`、`DEMO_DATA_ISOLATED=true`、`EMAIL_PROVIDER=disabled`、
+Backendには`APP_ENV=production`、`DEMO_MODE=true`、`DEMO_DATA_ISOLATED=true`、`EMAIL_PROVIDER=disabled`、
 HTTPSの`FRONTEND_PUBLIC_URL`、32文字以上の`CRON_SECRET`が必要。
 一般の公開設定検証も同時に適用する。
-Frontendはserver専用`APP_ENV=demo`で開始ボタンを出す。秘密は`NEXT_PUBLIC_*`に置かない。
+Frontendも`APP_ENV=production`を維持し、server専用`DEMO_MODE=true`で開始ボタンを出す。
+秘密は`NEXT_PUBLIC_*`に置かない。旧`APP_ENV=demo`は起動・デプロイ設定生成時に拒否する。
 
-Terraformの`app_env`は既定`production`、`demo_data_isolated`は既定false。
-切り替え時に両者を明示し、runtime設定が専用資源を参照していることを確認する。
+Terraformの`app_env`は`production`のみを許可し、`demo_mode`と`demo_data_isolated`は既定false。
+切り替え時に`demo_mode = true`と`demo_data_isolated = true`を明示し、
+runtime設定が専用資源を参照していることを確認する。
 Terraformはバケットの実際の分離を検証・作成しないため、このフラグを設定確認の代用にしない。
 `CRON_SECRET`はBFFキーと別のBackend専用秘密を生成する。
 
 CIは`vercel pull`後に`scripts/configure_demo_deployment.py`を実行し、
 秘密を含まない`.vercel/deploy-config.json`を生成する。
-`APP_ENV=demo`のときだけ日次Cronを追加してbuild/deployする。
-通常環境ではCronを追加しない。ローカルの手動リリースも同じ手順を使う。
+`APP_ENV=production`を確認し、`DEMO_MODE=true`のときだけデモの日次Cronを追加する。
+デモでは通常のごみ箱回収を併用できない。
+通常環境では明示した`DELETED_DATA_CLEANUP_MODE`が有効な場合だけ、ごみ箱の日次Cronを追加する。
+両方とも無効の場合はCronを追加しない。ローカルの手動リリースも同じ手順を使う。
 この変更のローカル検証ではcloud apply・Production migration・デプロイを行っていない。
 
 ## 検証

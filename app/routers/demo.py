@@ -23,7 +23,7 @@ service = DemoService()
 @router.get("/demo/csrf", status_code=204)
 def demo_csrf(response: Response) -> None:
     """匿名開始でもdouble-submit tokenを要求する。"""
-    if settings.app_env != "demo":
+    if not settings.demo_mode:
         raise NotFoundError()
     set_csrf_cookie(response, generate_csrf_token())
     response.headers["Cache-Control"] = "private, no-store"
@@ -48,7 +48,7 @@ def start_demo(
     db: Session = Depends(get_db),
 ) -> DemoStatus:
     """別タブや通常ログインの有効Cookieを匿名操作で置き換えない。"""
-    if settings.app_env != "demo":
+    if not settings.demo_mode:
         raise NotFoundError()
     if access_token:
         raise ConflictError("ログアウトしてからデモを開始してください")
@@ -91,7 +91,7 @@ def reset_demo(
 )
 def cleanup_demo(request: Request) -> DemoCleanupResult:
     """Vercel Cronの専用秘密のみ受け付け、Cookie・BFF権限は使わない。"""
-    if settings.app_env != "demo":
+    if not settings.demo_mode:
         raise NotFoundError()
     expected = f"Bearer {settings.demo_cron_secret}"
     if not settings.demo_cron_secret or not hmac.compare_digest(

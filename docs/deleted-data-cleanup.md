@@ -28,7 +28,8 @@ Cookie、運営者・組織管理者権限、BFFキー、queryの組織ID・exec
 内部運用の入口なのでOpenAPIには公開しない。
 
 Vercelの取得済み環境設定からCronを生成する。通常環境ではmode有効時だけこの入口を日次登録し、
-Demoでは既存 `/internal/demo/cleanup` だけを登録する。前の環境のCronは生成設定へ持ち込まない。
+`DEMO_MODE=true`では既存 `/internal/demo/cleanup` だけを登録する。
+公開環境の`APP_ENV=production`は通常・Demoともに維持する。前のモードのCronは生成設定へ持ち込まない。
 UTC 18時（日本時間03時台）。Hobbyは日次まで・時刻に幅がある。
 [Vercel Cronの制限](https://vercel.com/docs/cron-jobs/usage-and-pricing)。
 

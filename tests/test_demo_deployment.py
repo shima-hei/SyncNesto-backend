@@ -2,23 +2,24 @@
 
 import pytest
 
-from scripts.configure_demo_deployment import deployment_config
+from scripts.configure_demo_deployment import deployment_config, main
 
 pytestmark = pytest.mark.no_db
 
 
 def test_demo_adds_only_daily_cron():
     base = {"functions": {"app/main.py": {"maxDuration": 60}}}
-    assert deployment_config(base, "demo")["crons"] == [
+    assert deployment_config(base, "production", demo_mode=True)["crons"] == [
         {"path": "/internal/demo/cleanup", "schedule": "0 18 * * *"}
     ]
     assert deployment_config(base, "production") == base
     assert "crons" not in base
 
 
-def test_unknown_environment_fails_closed():
+@pytest.mark.parametrize("app_env", ["development", "test", "demo", ""])
+def test_unknown_environment_fails_closed(app_env):
     with pytest.raises(ValueError):
-        deployment_config({}, "development")
+        deployment_config({}, app_env, demo_mode=True)
 
 
 @pytest.mark.parametrize("mode", ["dry_run", "execute"])
@@ -31,6 +32,34 @@ def test_normal_cleanup_is_opt_in_and_does_not_keep_demo_cron(mode):
     assert "crons" not in deployment_config(base, "production")
     assert base["crons"][0]["path"] == "/internal/demo/cleanup"
     with pytest.raises(ValueError):
-        deployment_config(base, "demo", mode)
+        deployment_config(base, "production", mode, demo_mode=True)
     with pytest.raises(ValueError):
         deployment_config(base, "production", "Execute")
+
+
+@pytest.mark.parametrize("demo_mode", [False, True], ids=["normal", "demo"])
+def test_pulled_demo_flag_selects_cron_without_copying_secrets(
+    tmp_path, monkeypatch, demo_mode
+):
+    """実際のpull済みファイルを読み、productionのままCronだけを切り替える。"""
+    import json
+
+    import scripts.configure_demo_deployment as module
+
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / ".vercel").mkdir()
+    (tmp_path / "vercel.json").write_text("{}")
+    (tmp_path / ".vercel/.env.production.local").write_text(
+        f"APP_ENV=production\nDEMO_MODE={str(demo_mode).lower()}\nCRON_SECRET=private-fixture\n"
+    )
+    monkeypatch.setattr(
+        module, "__file__", str(tmp_path / "scripts/configure_demo_deployment.py")
+    )
+    main()
+    generated = (tmp_path / ".vercel/deploy-config.json").read_text()
+    assert "private-fixture" not in generated and "CRON_SECRET" not in generated
+    config = json.loads(generated)
+    if demo_mode:
+        assert config["crons"][0]["path"] == "/internal/demo/cleanup"
+    else:
+        assert "crons" not in config

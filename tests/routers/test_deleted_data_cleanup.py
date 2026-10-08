@@ -64,7 +64,7 @@ def test_cron_secret_is_required_before_any_database_work(client, monkeypatch):
     monkeypatch.setattr(settings, "deleted_data_cleanup_mode", "disabled")
     assert client.get(PATH, headers=HEADERS).status_code == 404
     configure(monkeypatch)
-    monkeypatch.setattr(settings, "app_env", "demo")
+    monkeypatch.setattr(settings, "demo_mode", True)
     assert client.get(PATH, headers=HEADERS).status_code == 404
     assert PATH not in client.app.openapi()["paths"]
 
@@ -84,7 +84,7 @@ def test_cron_secret_is_required_before_any_database_work(client, monkeypatch):
         {"deleted_data_retention_days": 0},
         {"demo_cron_secret": "short"},
         {"demo_cron_secret": "bff-secret" * 5},
-        {"app_env": "demo"},
+        {"demo_mode": True},
     ],
 )
 def test_unsafe_schedule_configuration_fails_closed(changes):
@@ -92,6 +92,7 @@ def test_unsafe_schedule_configuration_fails_closed(changes):
     base = replace(
         settings,
         app_env="test",
+        demo_mode=False,
         deleted_data_cleanup_mode="dry_run",
         deleted_data_cleanup_tenant_ids="1,2",
         deleted_data_cleanup_limit=20,

@@ -24,7 +24,7 @@ from tests.fakes.storage import MemoryS3Client
 @pytest.fixture
 def demo_client(client, monkeypatch):
     """起動設定は既存test環境、機能設定だけをデモにする。"""
-    monkeypatch.setattr(settings, "app_env", "demo")
+    monkeypatch.setattr(settings, "demo_mode", True)
     monkeypatch.setattr(settings, "frontend_public_url", "http://testserver")
     monkeypatch.setattr(settings, "demo_cron_secret", "c" * 48)
     return client
@@ -47,6 +47,32 @@ def test_demo_is_disabled_in_normal_environment(client, db):
     assert client.get("/demo/csrf").status_code == 404
     assert client.get("/internal/demo/cleanup").status_code == 404
     assert db.scalar(select(func.count()).select_from(DemoSession)) == 0
+
+
+def test_disabling_demo_mode_rejects_existing_demo_cookie(demo_client, monkeypatch):
+    """フラグを無効にした後も通常セッションとしてデモを継続させない。"""
+    start(demo_client)
+    monkeypatch.setattr(settings, "demo_mode", False)
+    assert demo_client.get("/auth/me").status_code == 401
+    assert demo_client.get("/demo/csrf").status_code == 404
+
+
+@pytest.mark.no_db
+def test_demo_password_reset_never_sends_mail(demo_client, monkeypatch):
+    """メール抑止も環境名ではなくフラグで切り替える。"""
+
+    def unexpected_mail(*_args):
+        raise AssertionError("Demo must not send password reset mail")
+
+    monkeypatch.setattr(
+        "app.routers.account_actions.service.email_service.ensure_available",
+        unexpected_mail,
+    )
+    response = demo_client.post(
+        "/auth/password-reset/request", json={"email": "real@example.com"}
+    )
+    assert response.status_code == 202
+    assert response.json()["message"] == "デモのためメールは送信しません"
 
 
 def test_anonymous_start_requires_csrf_and_exact_origin(demo_client, db):

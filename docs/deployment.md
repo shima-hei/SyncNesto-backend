@@ -7,7 +7,8 @@
 `main` へのpush、または `main` を指定した手動実行で、検証成功後に次の順で進む。
 
 1. Vercelの設定取得と本番build。
-   `configure_demo_deployment.py`で取得済み`APP_ENV`から設定JSONを生成し、デモだけ日次Cronを登録する。
+   `configure_demo_deployment.py`で取得済み`APP_ENV=production`を検証し、`DEMO_MODE`と通常回収設定からCronを生成する。
+   デモの日次回収と通常のごみ箱回収は併用しない。両方無効ならCronは登録しない。
 2. `scripts/migrate_production.py` によるAlembic migration。
 3. build済みの成果物をVercelへ本番デプロイ。
 4. 健康確認200と共有キーなしのAPIアクセス403を確認。
@@ -25,8 +26,9 @@ migrationは稼働中の旧APIと互換性が必要。列削除・意味変更�
 
 Vercel CLI62.2.0、Node.js22、Python3.14、uv0.10.11を使用。Git連携・Preview自動デプロイは無効のまま維持する。PRでは本番Secretsを使用しない。
 
-公開URL: https://syncnesto-portfolio-api.vercel.app
+公開URL: https://syncnesto-api.vercel.app
 
 [VercelのGitHub Actions手順](https://vercel.com/kb/guide/how-can-i-use-github-actions-with-vercel)
 
 デモへの切り替え条件・回収仕様は[ポートフォリオ用デモ](portfolio-demo.md)を参照する。
+環境変数の正は[2026-10-08の決定記録](decisions/2026-10-08-demo-mode.md)。公開環境の`APP_ENV`は常に`production`とし、デモは`DEMO_MODE=true`で切り替える。

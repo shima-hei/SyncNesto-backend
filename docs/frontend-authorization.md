@@ -9,15 +9,15 @@ system権限だけでは閲覧できません。詳細は `frontend-audit-logs-a
 
 ## 公開環境の接続境界
 
-`APP_ENV=production` / `demo` では、FastAPIの業務APIは `X-Syncnesto-BFF-Key` を要求します。Next.jsのBFFとServer Guardが、サーバー専用の `BFF_SHARED_SECRET` をこのヘッダーに設定します。ブラウザから送られた同名ヘッダーは上書きします。キーを `NEXT_PUBLIC_` 変数、レスポンス、ログへ含めないでください。このキーは既存のユーザー認証・permission・CSRF検証を置き換えません。
+`APP_ENV=production` では、FastAPIの業務APIは `X-Syncnesto-BFF-Key` を要求します。公開デモも `APP_ENV=production` + `DEMO_MODE=true` とし、同じ保護を維持します。Next.jsのBFFとServer Guardが、サーバー専用の `BFF_SHARED_SECRET` をこのヘッダーに設定します。ブラウザから送られた同名ヘッダーは上書きします。キーを `NEXT_PUBLIC_` 変数、レスポンス、ログへ含めないでください。このキーは既存のユーザー認証・permission・CSRF検証を置き換えません。
 
 健康確認の `GET /`・`HEAD /` は共有キーを要求しません。内部運用の `GET /internal/demo/cleanup`・`GET /internal/trash/cleanup` は専用 `CRON_SECRET` のBearer認証を要求し、Cookie・BFF共有キーでは実行できません。通常データの定期回収は既定で無効で、対象組織の指定と対象確認を経て運用者が有効化します。詳細は [deleted-data-cleanup.md](deleted-data-cleanup.md) を参照してください。
 
-環境名は `development` / `test` / `production` / `demo` のみ許可します。
-Vercel上ではPreviewも含め `production` / `demo` が必須です。`demo` にも
+環境名は `development` / `test` / `production` のみ許可します。
+Vercel上ではPreviewも含め `production` が必須です。公開デモも同じ環境で
 Secure Cookie、Cookie-only認証、明示したHost、DBの `verify-full` TLS、
 回数制限、OpenAPI非公開など本番と同じ設定検証を適用します。
-`demo` は保護レベルの分類であり、デモデータの分離・破棄機能は別途実装します。
+デモデータの作成・分離・破棄機能は `DEMO_MODE=true` で有効にし、公開保護の判定には使用しません。
 
 キー未設定・不一致はDBへ到達する前に `403 FORBIDDEN` になります。Vercelでキーが未設定・32文字未満ならBFFは `503 SERVICE_UNAVAILABLE` を返します。ローカルでは共有キーを省略できます。
 

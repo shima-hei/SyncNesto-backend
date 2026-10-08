@@ -129,6 +129,7 @@ class Settings:
 
     app_name: str = os.getenv("APP_NAME", "Syncnesto API")
     app_env: str = os.getenv("APP_ENV", "development")
+    demo_mode: bool = get_bool_env("DEMO_MODE")
     demo_cron_secret: str = os.getenv("CRON_SECRET", "")
     demo_data_isolated: bool = get_bool_env("DEMO_DATA_ISOLATED")
     bff_shared_secret: str = os.getenv("BFF_SHARED_SECRET", "")
@@ -237,8 +238,8 @@ class Settings:
 
     @property
     def is_public_environment(self) -> bool:
-        """ポートフォリオ用デモにも本番と同じ公開境界を適用する。"""
-        return self.app_env in {"production", "demo"}
+        """デモ機能の有無にかかわらず、本番の公開境界を適用する。"""
+        return self.app_env == "production"
 
     def cleanup_tenant_ids(self) -> tuple[int, ...]:
         """定期回収で明示的に許可した組織だけを返す。"""
@@ -273,7 +274,7 @@ class Settings:
         tenant_ids = self.cleanup_tenant_ids()
         if self.deleted_data_cleanup_mode == "disabled":
             return
-        if self.app_env == "demo":
+        if self.demo_mode:
             raise RuntimeError(
                 "Demo must use session cleanup, not deleted data retention"
             )
@@ -296,14 +297,15 @@ class Settings:
         """公開環境の設定漏れを起動時に拒否する。"""
         if not 0 <= self.deleted_data_retention_days <= 3650:
             raise RuntimeError("DELETED_DATA_RETENTION_DAYS must be between 0 and 3650")
-        if self.app_env not in {"development", "test", "production", "demo"}:
+        if self.app_env not in {"development", "test", "production"}:
             raise RuntimeError(
-                "APP_ENV must be one of: development, test, production, demo"
+                "APP_ENV must be one of: development, test, production; "
+                "use DEMO_MODE=true for demo features"
             )
         self.validate_cleanup()
         if os.getenv("VERCEL") == "1" and not self.is_public_environment:
-            raise RuntimeError("Vercel requires APP_ENV=production or demo")
-        if self.app_env == "demo":
+            raise RuntimeError("Vercel requires APP_ENV=production")
+        if self.demo_mode:
             if not self.demo_data_isolated:
                 raise RuntimeError(
                     "Demo requires a dedicated database and private bucket: "

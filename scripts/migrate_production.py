@@ -30,6 +30,8 @@ def main() -> int:
             "DATABASE_URL": uri,
             "PGSSLROOTCERT": certifi.where(),
             "APP_ENV": "production",
+            # migrationはデモAPIを起動せず、デモ用runtime設定を引き継がない。
+            "DEMO_MODE": "false",
             # migrationはJWTを発行せず、アプリの実際の署名キーも必要としない。
             "SECRET_KEY": secrets.token_urlsafe(48),
             "BFF_SHARED_SECRET": secrets.token_urlsafe(48),

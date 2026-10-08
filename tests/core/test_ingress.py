@@ -13,12 +13,13 @@ from app.core.middleware import register_middleware
 from app.main import create_app
 
 
-@pytest.fixture(params=["production", "demo"])
+@pytest.fixture(params=[False, True], ids=["normal", "demo"])
 def ingress_client(
     monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
 ) -> TestClient:
     """DBを呼ばないAPIで本番・デモ両方の公開境界を確認する。"""
-    monkeypatch.setattr(settings, "app_env", request.param)
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "demo_mode", request.param)
     monkeypatch.setattr(settings, "bff_shared_secret", "s" * 48)
     monkeypatch.setattr(settings, "allowed_hosts", ["testserver"])
     monkeypatch.setattr("app.core.ingress.consume_request_budget", lambda *_args: 0)
@@ -115,12 +116,14 @@ def test_shared_budget_is_required(
     assert "database unavailable" not in response.text
 
 
-def production_settings(app_env: str = "production"):
+def production_settings(app_env: str = "production", *, demo_mode: bool = False):
     """公開環境で必須になる設定を揃えたコピーを作る。"""
     return replace(
         settings,
         app_env=app_env,
+        demo_mode=demo_mode,
         demo_data_isolated=True,
+        email_provider="disabled",
         demo_cron_secret="c" * 48,
         frontend_public_url="https://app.example.com",
         bff_shared_secret="s" * 48,
@@ -152,22 +155,26 @@ def production_settings(app_env: str = "production"):
         {"sql_echo": True},
     ],
 )
-@pytest.mark.parametrize("app_env", ["production", "demo"])
+@pytest.mark.parametrize("demo_mode", [False, True], ids=["normal", "demo"])
 @pytest.mark.no_db
-def test_insecure_production_settings_rejected(changes: dict, app_env: str) -> None:
+def test_insecure_production_settings_rejected(changes: dict, demo_mode: bool) -> None:
     """本番とデモのどちらも危険な設定では起動しない。"""
     with pytest.raises(RuntimeError):
-        replace(production_settings(app_env), **changes).validate_production()
+        replace(
+            production_settings(demo_mode=demo_mode), **changes
+        ).validate_production()
 
 
-@pytest.mark.parametrize("app_env", ["production", "demo"])
+@pytest.mark.parametrize("demo_mode", [False, True], ids=["normal", "demo"])
+@pytest.mark.no_db
 def test_production_docs_disabled(
-    monkeypatch: pytest.MonkeyPatch, app_env: str
+    monkeypatch: pytest.MonkeyPatch, demo_mode: bool
 ) -> None:
     """公開環境のOpenAPI・Swagger・ReDocルートを無効にする。"""
-    secure = production_settings(app_env)
+    secure = production_settings(demo_mode=demo_mode)
     for name in secure.__dataclass_fields__:
         monkeypatch.setattr(settings, name, getattr(secure, name))
+    monkeypatch.setattr("app.core.ingress.consume_request_budget", lambda *_args: 0)
     app = create_app()
     assert app.openapi_url is None
     assert app.docs_url is None
@@ -186,7 +193,9 @@ def test_production_docs_disabled(
         )
 
 
-@pytest.mark.parametrize("app_env", ["Demo", "prod", "staging", "", "produciton"])
+@pytest.mark.parametrize(
+    "app_env", ["demo", "Demo", "prod", "staging", "", "produciton"]
+)
 @pytest.mark.no_db
 def test_unknown_environment_rejected(app_env: str) -> None:
     """環境名の誤記で公開保護を迂回させない。"""
@@ -195,14 +204,15 @@ def test_unknown_environment_rejected(app_env: str) -> None:
 
 
 @pytest.mark.parametrize("app_env", ["development", "test"])
+@pytest.mark.parametrize("demo_mode", [False, True])
 @pytest.mark.no_db
 def test_vercel_requires_public_environment(
-    monkeypatch: pytest.MonkeyPatch, app_env: str
+    monkeypatch: pytest.MonkeyPatch, app_env: str, demo_mode: bool
 ) -> None:
     """VercelのPreviewを含め、開発設定の誤配信を拒否する。"""
     monkeypatch.setenv("VERCEL", "1")
     with pytest.raises(RuntimeError, match="Vercel requires"):
-        production_settings(app_env).validate_production()
+        production_settings(app_env, demo_mode=demo_mode).validate_production()
 
 
 @pytest.mark.parametrize("app_env", ["development", "test"])
@@ -259,4 +269,26 @@ def test_public_email_rejects_local_origin_and_smtp(app_env: str) -> None:
 def test_demo_requires_isolated_data_cleanup_secret_and_no_mail(changes, reason):
     """一般の公開保護に加え、デモ固有の誤設定も起動時に拒否する。"""
     with pytest.raises(RuntimeError, match=reason):
-        replace(production_settings("demo"), **changes).validate_production()
+        replace(production_settings(demo_mode=True), **changes).validate_production()
+
+
+@pytest.mark.parametrize("demo_mode", [False, True], ids=["normal", "demo"])
+@pytest.mark.no_db
+def test_production_security_and_demo_mode_are_independent(demo_mode: bool) -> None:
+    """同じproductionでデモを切り替えても公開設定の検証を維持する。"""
+    secure = production_settings(demo_mode=demo_mode)
+    secure.validate_production()
+    assert secure.app_env == "production" and secure.is_public_environment
+
+
+@pytest.mark.no_db
+def test_disabled_demo_endpoints_stay_closed_in_production(monkeypatch) -> None:
+    """productionであってもデモフラグなしでは匿名発行・回収を公開しない。"""
+    secure = production_settings()
+    for name in secure.__dataclass_fields__:
+        monkeypatch.setattr(settings, name, getattr(secure, name))
+    monkeypatch.setattr("app.core.ingress.consume_request_budget", lambda *_args: 0)
+    client = TestClient(create_app())
+    headers = {"Host": "api.example.com", "X-Syncnesto-BFF-Key": "s" * 48}
+    assert client.get("/demo/csrf", headers=headers).status_code == 404
+    assert client.get("/internal/demo/cleanup", headers=headers).status_code == 404

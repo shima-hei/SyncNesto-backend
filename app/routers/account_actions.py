@@ -28,7 +28,7 @@ service = AccountActionService()
 )
 def request_password_reset(data: PasswordResetRequest, background: BackgroundTasks):
     """存在の有無に依存しない応答後、登録先メールへの案内を送信する。"""
-    if settings.app_env == "demo":
+    if settings.demo_mode:
         return AccountActionMessage(message="デモのためメールは送信しません")
     service.email_service.ensure_available()
     consume_email_request_budget(str(data.email), client_ip_context.get() or "unknown")

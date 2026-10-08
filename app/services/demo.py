@@ -45,7 +45,7 @@ class DemoService:
 
     def start(self, db: Session, client_ip: str) -> tuple[DemoStatus, str]:
         """既存セッションの上書きはRouterで拒否し、全発行を一度に確定する。"""
-        if settings.app_env != "demo":
+        if not settings.demo_mode:
             raise NotFoundError()
         now = datetime.now(UTC)
         self.repository.lock_admission(db)
@@ -204,7 +204,7 @@ class DemoService:
             if db.get(DemoOwnedUser, session.user_id) is not None:
                 raise InvalidTokenError()
             return
-        if settings.app_env != "demo" or demo.status != "active":
+        if not settings.demo_mode or demo.status != "active":
             raise InvalidTokenError()
         if demo.expires_at <= datetime.now(UTC):
             self.revoke(db, demo.id, "expired")
