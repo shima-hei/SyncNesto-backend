@@ -32,15 +32,23 @@ def main() -> int:
     args = parser.parse_args()
     try:
         result = cleanup_demo(execute=args.execute)
+        with session_local() as db:
+            remaining = DemoRepository().unfinished_count(db)
     except Exception:
         print("Demo cleanup failed; pending data remains for retry.")
         return 1
     if args.json:
-        print(json.dumps(result.model_dump() | {"execute": args.execute, "limit": 10}))
+        print(
+            json.dumps(
+                result.model_dump()
+                | {"execute": args.execute, "limit": 10, "remaining": remaining}
+            )
+        )
     else:
         print(
             f"Demo cleanup: execute={args.execute}, "
-            f"processed={result.processed}, pending={result.pending} (limit=10)"
+            f"processed={result.processed}, pending={result.pending}, "
+            f"remaining={remaining} (limit=10)"
         )
     return 0
 

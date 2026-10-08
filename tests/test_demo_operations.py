@@ -1,5 +1,7 @@
 """専用DBの初期化と受付停止後の回収の境界を検証する。"""
 
+import json
+import sys
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 
@@ -85,3 +87,31 @@ def test_cleanup_runs_with_demo_disabled_and_preserves_dry_run(db, monkeypatch):
     assert result.processed == 1 and result.pending == 0
     db.refresh(record)
     assert record.status == "cleaned"
+
+
+def test_cleanup_summary_includes_deferred_receipts(db, monkeypatch, capsys):
+    """今回の対象が0でも、遅延PUT待ちの残件を完了と誤認させない。"""
+    now = datetime.now(UTC)
+    db.add(
+        DemoSession(
+            created_at=now - timedelta(hours=2),
+            expires_at=now - timedelta(hours=1),
+            absolute_expires_at=now - timedelta(hours=1),
+            cleanup_after=now + timedelta(minutes=10),
+            status="cleanup_pending",
+            revoked_at=now - timedelta(hours=1),
+            revoked_reason="expired",
+        )
+    )
+    db.commit()
+    monkeypatch.setattr(settings, "demo_mode", False)
+    monkeypatch.setattr(settings, "demo_data_isolated", True)
+    monkeypatch.setattr(sys, "argv", ["cleanup_demo", "--json", "--execute"])
+    assert cleanup_demo.main() == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "processed": 0,
+        "pending": 0,
+        "remaining": 1,
+        "execute": True,
+        "limit": 10,
+    }
