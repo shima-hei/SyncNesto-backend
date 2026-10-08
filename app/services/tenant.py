@@ -16,6 +16,7 @@ from app.core.exceptions import (
     VersionConflictError,
 )
 from app.core.security import get_password_hash
+from app.models.demo import DemoOwnedUser
 from app.models.project import Project, ProjectMember
 from app.models.rbac import Role
 from app.models.tenant import Tenant, TenantMember
@@ -276,7 +277,11 @@ class TenantService:
         role = self._role(db, data.role_key)
         password = secrets.token_urlsafe(24)
         user = User(
-            email=str(data.email),
+            email=(
+                f"member-{secrets.token_hex(8)}-{db.info['demo_id'].hex}@demo.syncnesto.example.com"
+                if db.info.get("demo_id")
+                else str(data.email)
+            ),
             name=data.display_name,
             hashed_password=get_password_hash(password),
             created_by=actor,
@@ -285,6 +290,8 @@ class TenantService:
         db.add(user)
         try:
             db.flush()
+            if demo_id := db.info.get("demo_id"):
+                db.add(DemoOwnedUser(user_id=user.id, demo_id=demo_id))
             member = TenantMember(
                 tenant_id=tenant_id,
                 user_id=user.id,

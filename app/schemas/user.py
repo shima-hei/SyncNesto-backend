@@ -9,6 +9,7 @@ from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field
 
 from app.models.user import UserType
+from app.schemas.demo import DemoStatus
 
 
 class UserBase(BaseModel):
@@ -124,6 +125,7 @@ class UserListResponse(BaseModel):
 class CurrentUserRead(UserRead):
     """現在のログインユーザー読み取り時に返すschema。"""
 
+    demo: DemoStatus | None = None
     password_change_required: bool = False
     initial_password_expires_at: datetime | None = None
 

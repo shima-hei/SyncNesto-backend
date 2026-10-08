@@ -4,6 +4,7 @@ from io import BytesIO
 from typing import Any
 
 from botocore.exceptions import ClientError
+from sqlalchemy.orm import Session
 
 
 class MemoryS3Client:
@@ -18,6 +19,13 @@ class MemoryS3Client:
         """検証用のファイルを保存する。"""
         self.objects[kwargs["Key"]] = (kwargs["Body"], kwargs["ContentType"])
         return {}
+
+    def list_objects_v2(self, **kwargs: object) -> dict[str, Any]:
+        """デモ回収が別prefixを削除しないことを検証できる一覧。"""
+        prefix = str(kwargs["Prefix"])
+        return {
+            "Contents": [{"Key": key} for key in self.objects if key.startswith(prefix)]
+        }
 
     def get_object(self, **kwargs: Any) -> dict[str, Any]:
         """ファイルをストリームとして返す。"""
@@ -52,6 +60,11 @@ class FakeStorageService:
     def __init__(self) -> None:
         """FakeStorageServiceを初期化する。"""
         self.deleted_keys: list[str] = []
+
+    def for_demo(self, db: Session) -> "FakeStorageService":
+        """通常アカウントの既存fakeとして利用する。"""
+        assert not db.info.get("demo_id")
+        return self
 
     def upload_user_avatar(
         self,

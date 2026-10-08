@@ -129,6 +129,8 @@ class Settings:
 
     app_name: str = os.getenv("APP_NAME", "Syncnesto API")
     app_env: str = os.getenv("APP_ENV", "development")
+    demo_cron_secret: str = os.getenv("CRON_SECRET", "")
+    demo_data_isolated: bool = get_bool_env("DEMO_DATA_ISOLATED")
     bff_shared_secret: str = os.getenv("BFF_SHARED_SECRET", "")
     allowed_hosts: list[str] = field(default_factory=get_allowed_hosts)
     database_url: str = get_required_env("DATABASE_URL")
@@ -224,8 +226,38 @@ class Settings:
         ]
     )
 
+    @property
+    def is_public_environment(self) -> bool:
+        """ポートフォリオ用デモにも本番と同じ公開境界を適用する。"""
+        return self.app_env in {"production", "demo"}
+
     def validate_production(self) -> None:
         """公開環境の設定漏れを起動時に拒否する。"""
+        if self.app_env not in {"development", "test", "production", "demo"}:
+            raise RuntimeError(
+                "APP_ENV must be one of: development, test, production, demo"
+            )
+        if os.getenv("VERCEL") == "1" and not self.is_public_environment:
+            raise RuntimeError("Vercel requires APP_ENV=production or demo")
+        if self.app_env == "demo":
+            if not self.demo_data_isolated:
+                raise RuntimeError(
+                    "Demo requires a dedicated database and private bucket: "
+                    "DEMO_DATA_ISOLATED=true"
+                )
+            if len(self.demo_cron_secret) < 32:
+                raise RuntimeError(
+                    "Demo requires CRON_SECRET with at least 32 characters"
+                )
+            if self.email_provider != "disabled":
+                raise RuntimeError("Demo requires EMAIL_PROVIDER=disabled")
+            origin = urlsplit(self.frontend_public_url)
+            if (
+                origin.scheme != "https"
+                or not origin.netloc
+                or origin.path not in {"", "/"}
+            ):
+                raise RuntimeError("Demo requires an HTTPS FRONTEND_PUBLIC_URL origin")
         if self.email_provider not in {"disabled", "smtp", "resend"}:
             raise RuntimeError("EMAIL_PROVIDER must be disabled, smtp or resend")
         if not 1 <= self.email_timeout_seconds <= 30:
@@ -237,7 +269,7 @@ class Settings:
         if self.email_provider != "disabled":
             origin = urlsplit(self.frontend_public_url)
             local_http = (
-                self.app_env != "production"
+                not self.is_public_environment
                 and origin.scheme == "http"
                 and origin.hostname in {"localhost", "127.0.0.1"}
             )
@@ -261,7 +293,7 @@ class Settings:
                 raise RuntimeError("RESEND_API_KEY is required for Resend")
             if self.email_provider == "smtp":
                 self._validate_smtp()
-        if self.app_env != "production":
+        if not self.is_public_environment:
             return
         if len(self.bff_shared_secret) < 32:
             raise RuntimeError("Production requires BFF_SHARED_SECRET >= 32 characters")
@@ -299,7 +331,7 @@ class Settings:
         if (not local_host or self.smtp_username) and not self.smtp_starttls:
             raise RuntimeError("Remote or authenticated SMTP requires STARTTLS")
         gmail = self.smtp_host.lower() == "smtp.gmail.com"
-        if self.app_env == "production" and not gmail:
+        if self.is_public_environment and not gmail:
             raise RuntimeError("Production SMTP requires smtp.gmail.com")
         if not gmail:
             return

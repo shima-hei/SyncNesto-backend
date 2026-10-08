@@ -14,6 +14,7 @@ from app.core.exceptions import (
     AppError,
     BadRequestError,
     ConflictError,
+    DemoLimitError,
     EmailUnavailableError,
     ForbiddenError,
     InvalidTokenError,
@@ -26,6 +27,7 @@ from app.core.exceptions import (
 logger = logging.getLogger(__name__)
 
 ERROR_STATUS_MAP: dict[type[AppError], int] = {
+    DemoLimitError: status.HTTP_429_TOO_MANY_REQUESTS,
     EmailUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
     AccountActionRateLimitedError: status.HTTP_429_TOO_MANY_REQUESTS,
     BadRequestError: status.HTTP_400_BAD_REQUEST,

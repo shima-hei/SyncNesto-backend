@@ -6,6 +6,7 @@ from app.core.tenant import get_current_tenant
 from app.routers import (
     account_actions,
     auth,
+    demo,
     drafts,
     health,
     home,
@@ -28,6 +29,7 @@ def register_routers(app: FastAPI) -> None:
         app: ルーターを登録するFastAPIアプリケーション。
     """
     app.include_router(auth.router)
+    app.include_router(demo.router)
     app.include_router(account_actions.router)
     app.include_router(drafts.router, dependencies=[Depends(get_current_tenant)])
     app.include_router(health.router)

@@ -78,6 +78,9 @@ class AccountActionService:
         tenant_id: int | None = None,
     ) -> None:
         """管理者もパスワードを指定せず、現在の登録メールへ再設定を依頼する。"""
+        if db.info.get("demo_id"):
+            self._request_user(db, user_id, actor_id, tenant_id)
+            return
         self.email_service.ensure_available()
         user = self._request_user(db, user_id, actor_id, tenant_id)
         action = self._issue(
@@ -96,6 +99,9 @@ class AccountActionService:
         tenant_id: int | None = None,
     ) -> None:
         """旧アドレス承認を送信し、ログイン情報は変更しない。"""
+        if db.info.get("demo_id"):
+            self._request_user(db, user_id, actor_id, tenant_id)
+            return
         self.email_service.ensure_available()
         user = self._request_user(db, user_id, actor_id, tenant_id)
         self._check_new_email(db, user, new_email)

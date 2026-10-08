@@ -103,7 +103,15 @@ class SessionService:
         """
         session_id = self.get_session_id(payload)
         user_session = self.repository.get_by_id(db, session_id)
-        if user_session is None or user_session.revoked_at is not None:
+        if user_session is None:
+            raise InvalidTokenError()
+        if user_session.revoked_at is not None:
+            from app.services.demo import DemoService
+
+            service = DemoService()
+            demo = service.repository.by_session(db, user_session.id)
+            if demo is not None:
+                service.revoke(db, demo.id, user_session.revoked_reason or "revoked")
             raise InvalidTokenError()
 
         now = datetime.now(UTC)
@@ -147,7 +155,14 @@ class SessionService:
             user_session: 失効対象セッション。
             reason: 失効理由。
         """
-        self.repository.revoke(db, user_session, reason)
+        from app.services.demo import DemoService
+
+        service = DemoService()
+        demo = service.repository.by_session(db, user_session.id)
+        if demo is not None:
+            service.revoke(db, demo.id, reason)
+        else:
+            self.repository.revoke(db, user_session, reason)
 
     def should_refresh_session(self, user_session: UserSession) -> bool:
         """セッションを延長すべきか判定する。
@@ -213,6 +228,14 @@ class SessionService:
 
         user_session = self.repository.get_by_id(db, session_id)
         if user_session is not None:
+            from app.services.demo import DemoService
+
+            service = DemoService()
+            demo = service.repository.by_session(db, session_id)
+            if demo is not None:
+                service.revoke(db, demo.id, reason)
+                db.info["demo_cleanup_id"] = demo.id
+                return user_session
             return self.repository.revoke(db, user_session, reason)
 
         return None

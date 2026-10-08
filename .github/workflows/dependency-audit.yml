@@ -1,0 +1,26 @@
+name: Scheduled dependency audit
+
+on:
+  schedule:
+    - cron: "31 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: 0.10.11
+          python-version: '3.14'
+      - name: Audit lockfile without installing the application
+        run: |
+          uv export --frozen --no-dev --no-emit-project --no-hashes --output-file /tmp/runtime-requirements.txt --quiet
+          uvx --from pip-audit==2.10.1 pip-audit --no-deps --disable-pip --strict --progress-spinner off -r /tmp/runtime-requirements.txt

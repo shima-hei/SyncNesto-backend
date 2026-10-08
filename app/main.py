@@ -21,7 +21,7 @@ def create_app() -> FastAPI:
     """
     configure_logging()
     settings.validate_production()
-    production = settings.app_env == "production"
+    production = settings.is_public_environment
     fastapi_app = FastAPI(
         title=settings.app_name,
         docs_url=None if production else "/docs",

@@ -67,7 +67,10 @@ def should_check_csrf(request: Request) -> bool:
     return (
         request.method.upper() not in CSRF_SAFE_METHODS
         and request.url.path not in CSRF_EXEMPT_PATHS
-        and settings.auth_cookie_name in request.cookies
+        and (
+            settings.auth_cookie_name in request.cookies
+            or request.url.path == "/demo/start"
+        )
     )
 
 

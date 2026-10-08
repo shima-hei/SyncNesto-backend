@@ -469,6 +469,7 @@ class UserService:
         Returns:
             更新されたユーザー。
         """
+        storage_service = storage_service.for_demo(db)
         avatar_key = storage_service.upload_user_avatar(
             user_id=current_user.id,
             content=content,
@@ -490,9 +491,12 @@ class UserService:
         current_user: User,
         data: FileUploadRequest,
         storage_service: StorageService,
+        db: Session | None = None,
     ) -> FileUploadPlan:
         """本人のアイコン用に容量・形式を確認して送信方式を返す。"""
         self._validate_avatar_upload_metadata(data)
+        if db is not None:
+            storage_service = storage_service.for_demo(db)
         return FileUploadService(storage_service).plan(
             data, user_id=current_user.id, scope="avatar"
         )
@@ -513,6 +517,7 @@ class UserService:
         storage_service: StorageService,
     ) -> User:
         """直接送信された本人のアイコンを検証して既存処理で更新する。"""
+        storage_service = storage_service.for_demo(db)
         uploads = FileUploadService(storage_service)
         _, data, key = uploads.verify(token, user_id=current_user.id, scope="avatar")
         self._validate_avatar_upload_metadata(data)
@@ -615,6 +620,8 @@ class UserService:
             InvalidCredentialsError: emailまたはpasswordが正しくない場合。
         """
         normalized_email = self.login_attempt_service.normalize_email(email)
+        if normalized_email.endswith("@demo.syncnesto.example.com"):
+            raise InvalidCredentialsError()
         if self.login_attempt_service.is_locked(db, normalized_email):
             self.audit_log_service.record_login_failure(
                 db,

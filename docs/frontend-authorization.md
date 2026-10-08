@@ -6,7 +6,13 @@
 
 ## 公開環境の接続境界
 
-`APP_ENV=production` では、FastAPIは健康確認の `GET /`・`HEAD /` 以外に `X-Syncnesto-BFF-Key` を要求します。Next.jsのBFFとServer Guardが、サーバー専用の `BFF_SHARED_SECRET` をこのヘッダーに設定します。ブラウザから送られた同名ヘッダーは上書きします。キーを `NEXT_PUBLIC_` 変数、レスポンス、ログへ含めないでください。このキーは既存のユーザー認証・permission・CSRF検証を置き換えません。
+`APP_ENV=production` / `demo` では、FastAPIは健康確認の `GET /`・`HEAD /` 以外に `X-Syncnesto-BFF-Key` を要求します。Next.jsのBFFとServer Guardが、サーバー専用の `BFF_SHARED_SECRET` をこのヘッダーに設定します。ブラウザから送られた同名ヘッダーは上書きします。キーを `NEXT_PUBLIC_` 変数、レスポンス、ログへ含めないでください。このキーは既存のユーザー認証・permission・CSRF検証を置き換えません。
+
+環境名は `development` / `test` / `production` / `demo` のみ許可します。
+Vercel上ではPreviewも含め `production` / `demo` が必須です。`demo` にも
+Secure Cookie、Cookie-only認証、明示したHost、DBの `verify-full` TLS、
+回数制限、OpenAPI非公開など本番と同じ設定検証を適用します。
+`demo` は保護レベルの分類であり、デモデータの分離・破棄機能は別途実装します。
 
 キー未設定・不一致はDBへ到達する前に `403 FORBIDDEN` になります。Vercelでキーが未設定・32文字未満ならBFFは `503 SERVICE_UNAVAILABLE` を返します。ローカルでは共有キーを省略できます。
 

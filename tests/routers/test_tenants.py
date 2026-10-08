@@ -293,7 +293,9 @@ def test_all_business_routes_require_tenant_context(client):
 
     count = 0
     for path, operations in client.app.openapi()["paths"].items():
-        if path == "/" or path.startswith(("/auth", "/users", "/health", "/tenants")):
+        if path == "/" or path.startswith(
+            ("/auth", "/users", "/health", "/tenants", "/demo")
+        ):
             continue
         for operation in operations.values():
             assert any(
@@ -602,7 +604,9 @@ def test_every_business_operation_rejects_unowned_tenant(client, create_test_use
     client.headers["X-Tenant-ID"] = "999999"
     count = 0
     for path, operations in client.app.openapi()["paths"].items():
-        if path == "/" or path.startswith(("/auth", "/users", "/health", "/tenants")):
+        if path == "/" or path.startswith(
+            ("/auth", "/users", "/health", "/tenants", "/demo")
+        ):
             continue
         for method, operation in operations.items():
             url = path

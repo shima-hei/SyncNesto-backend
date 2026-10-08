@@ -13,10 +13,12 @@ from app.core.middleware import register_middleware
 from app.main import create_app
 
 
-@pytest.fixture
-def ingress_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    """DBを呼ばない小さなAPIに本番Middlewareを登録する。"""
-    monkeypatch.setattr(settings, "app_env", "production")
+@pytest.fixture(params=["production", "demo"])
+def ingress_client(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> TestClient:
+    """DBを呼ばないAPIで本番・デモ両方の公開境界を確認する。"""
+    monkeypatch.setattr(settings, "app_env", request.param)
     monkeypatch.setattr(settings, "bff_shared_secret", "s" * 48)
     monkeypatch.setattr(settings, "allowed_hosts", ["testserver"])
     monkeypatch.setattr("app.core.ingress.consume_request_budget", lambda *_args: 0)
@@ -108,11 +110,14 @@ def test_shared_budget_is_required(
     assert "database unavailable" not in response.text
 
 
-def production_settings():
-    """本番で必須になる設定を揃えたコピーを作る。"""
+def production_settings(app_env: str = "production"):
+    """公開環境で必須になる設定を揃えたコピーを作る。"""
     return replace(
         settings,
-        app_env="production",
+        app_env=app_env,
+        demo_data_isolated=True,
+        demo_cron_secret="c" * 48,
+        frontend_public_url="https://app.example.com",
         bff_shared_secret="s" * 48,
         secret_key="j" * 48,
         auth_cookie_secure=True,
@@ -142,15 +147,19 @@ def production_settings():
         {"sql_echo": True},
     ],
 )
-def test_insecure_production_settings_rejected(changes: dict) -> None:
-    """危険な設定は本番起動前にエラーになる。"""
+@pytest.mark.parametrize("app_env", ["production", "demo"])
+def test_insecure_production_settings_rejected(changes: dict, app_env: str) -> None:
+    """本番とデモのどちらも危険な設定では起動しない。"""
     with pytest.raises(RuntimeError):
-        replace(production_settings(), **changes).validate_production()
+        replace(production_settings(app_env), **changes).validate_production()
 
 
-def test_production_docs_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    """本番のOpenAPI・Swagger・ReDocルートを無効にする。"""
-    secure = production_settings()
+@pytest.mark.parametrize("app_env", ["production", "demo"])
+def test_production_docs_disabled(
+    monkeypatch: pytest.MonkeyPatch, app_env: str
+) -> None:
+    """公開環境のOpenAPI・Swagger・ReDocルートを無効にする。"""
+    secure = production_settings(app_env)
     for name in secure.__dataclass_fields__:
         monkeypatch.setattr(settings, name, getattr(secure, name))
     app = create_app()
@@ -169,3 +178,69 @@ def test_production_docs_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
             ).status_code
             == 404
         )
+
+
+@pytest.mark.parametrize("app_env", ["Demo", "prod", "staging", "", "produciton"])
+def test_unknown_environment_rejected(app_env: str) -> None:
+    """環境名の誤記で公開保護を迂回させない。"""
+    with pytest.raises(RuntimeError, match="APP_ENV must"):
+        production_settings(app_env).validate_production()
+
+
+@pytest.mark.parametrize("app_env", ["development", "test"])
+def test_vercel_requires_public_environment(
+    monkeypatch: pytest.MonkeyPatch, app_env: str
+) -> None:
+    """VercelのPreviewを含め、開発設定の誤配信を拒否する。"""
+    monkeypatch.setenv("VERCEL", "1")
+    with pytest.raises(RuntimeError, match="Vercel requires"):
+        production_settings(app_env).validate_production()
+
+
+@pytest.mark.parametrize("app_env", ["development", "test"])
+def test_local_environment_keeps_development_settings(
+    monkeypatch: pytest.MonkeyPatch, app_env: str
+) -> None:
+    """ローカルのHTTP・非Secure Cookieの利用は維持する。"""
+    monkeypatch.delenv("VERCEL", raising=False)
+    replace(
+        production_settings(app_env),
+        bff_shared_secret="",
+        auth_cookie_secure=False,
+        csrf_cookie_secure=False,
+        allow_authorization_header=True,
+        database_url="postgresql://admin:admin@localhost/syncnesto",
+    ).validate_production()
+
+
+@pytest.mark.parametrize("app_env", ["production"])
+def test_public_email_rejects_local_origin_and_smtp(app_env: str) -> None:
+    """デモでもHTTPメールリンク・ローカルSMTPを許可しない。"""
+    secure = replace(
+        production_settings(app_env),
+        email_provider="smtp",
+        email_from="app@example.com",
+    )
+    with pytest.raises(RuntimeError, match="trusted HTTPS"):
+        replace(
+            secure, frontend_public_url="http://localhost:3000"
+        ).validate_production()
+    with pytest.raises(RuntimeError, match="smtp.gmail.com"):
+        replace(
+            secure, frontend_public_url="https://app.example.com"
+        ).validate_production()
+
+
+@pytest.mark.parametrize(
+    "changes,reason",
+    [
+        ({"demo_data_isolated": False}, "dedicated"),
+        ({"demo_cron_secret": "short"}, "CRON_SECRET"),
+        ({"email_provider": "smtp"}, "EMAIL_PROVIDER=disabled"),
+        ({"frontend_public_url": "http://localhost:3000"}, "HTTPS"),
+    ],
+)
+def test_demo_requires_isolated_data_cleanup_secret_and_no_mail(changes, reason):
+    """一般の公開保護に加え、デモ固有の誤設定も起動時に拒否する。"""
+    with pytest.raises(RuntimeError, match=reason):
+        replace(production_settings("demo"), **changes).validate_production()

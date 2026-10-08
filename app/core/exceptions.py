@@ -26,6 +26,13 @@ class BadRequestError(AppError):
     code = "BAD_REQUEST"
 
 
+class DemoLimitError(AppError):
+    """一時環境の共有容量・発行上限を超えた。"""
+
+    message = "デモの利用上限に達しました。しばらく待って再度お試しください"
+    code = "DEMO_LIMIT_REACHED"
+
+
 class UnauthorizedError(AppError):
     """認証が必要、または認証情報が正しくない場合の例外。"""
 

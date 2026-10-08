@@ -481,6 +481,12 @@ S3互換接続先とサーバー専用のキーが必要です。環境変数は
 `terraform/vercel/` と `terraform/vercel/runtime/` で管理します。
 公開APIのURLは `https://syncnesto-api.vercel.app` です。
 
+`APP_ENV=demo` にも本番と同じ公開保護を適用します。Vercel上ではPreviewも含め
+`production` / `demo` が必須です。環境名の誤記は起動時に拒否します。
+環境名を変えるだけではデモデータの分離・破棄は動作しません。
+[デモ設計案](docs/portfolio-demo-design.md) と
+[公開環境の保護](docs/security-hardening.md) を参照してください。
+
 `FILE_UPLOAD_MODE=presigned` でファイル本体をストレージへ直接送信します。
 IPごとの回数はPostgreSQLの `request_limits` で共有し、Vercelのinstanceが
 増えたり再起動したりしても維持します。テーブル作成のmigrationを適用してから
