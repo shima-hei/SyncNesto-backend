@@ -1,5 +1,8 @@
 # Syncnesto Frontend Authorization Guide
 
+監査ログの `GET /tenants/current/audit-logs` は現在組織のOwner・管理者に限定します。
+system権限だけでは閲覧できません。詳細は `frontend-audit-logs-api.md` を参照してください。
+
 このドキュメントは、フロントエンド実装で認証状態・認可状態を扱うための仕様です。
 
 組織境界と3階層Roleは [multi-tenancy.md](multi-tenancy.md)、メールによる承認とパスワード復旧は [email-approval.md](email-approval.md) を参照してください。system_adminは運営権限で、Projectの業務権限を自動取得しません。

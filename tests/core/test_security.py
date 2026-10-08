@@ -1,11 +1,15 @@
 """securityモジュールのテスト。"""
 
+import pytest
+
 from app.core.security import (
     create_access_token,
     decode_access_token,
     get_password_hash,
     verify_password,
 )
+
+pytestmark = pytest.mark.no_db
 
 
 def test_get_password_hash_returns_different_value_from_plain_password() -> None:

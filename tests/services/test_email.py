@@ -14,6 +14,8 @@ from app.core.config import settings
 from app.core.exceptions import EmailUnavailableError
 from app.services.email import EmailService, OutgoingEmail
 
+pytestmark = pytest.mark.no_db
+
 SECRET_API_KEY = "re_email-adapter-test-secret"
 SECRET_BODY = "https://localhost/account/action#token=secret-email-test-token"
 GMAIL_APP_PASSWORD = "gmail-test-key16"

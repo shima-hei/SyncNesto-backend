@@ -5,6 +5,7 @@ from fastapi import Depends, FastAPI
 from app.core.tenant import get_current_tenant
 from app.routers import (
     account_actions,
+    audit_logs,
     auth,
     demo,
     documents,
@@ -52,3 +53,4 @@ def register_routers(app: FastAPI) -> None:
         app.include_router(router, dependencies=[Depends(get_current_tenant)])
     app.include_router(users.router)
     app.include_router(tenants.router)
+    app.include_router(audit_logs.router)

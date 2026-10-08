@@ -2,6 +2,7 @@
 
 APPLICATION_ERROR = "Application error"
 BAD_REQUEST = "Bad request"
+AUDIT_LOG_DATE_RANGE_INVALID = "開始日時は終了日時より前にしてください"
 UNAUTHORIZED = "Unauthorized"
 AUTHENTICATION_REQUIRED = "Authentication required"
 TOKEN_EXPIRED = "Token expired"

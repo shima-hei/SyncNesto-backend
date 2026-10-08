@@ -3,13 +3,62 @@
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.models.audit_log import AuditLog
+from app.models.project import Project
+from app.models.tenant import TenantMember
 
 
 class AuditLogRepository:
     """AuditLogテーブルへのデータアクセス処理を提供するRepository。"""
+
+    def list_for_tenant(
+        self,
+        db: Session,
+        *,
+        tenant_id: int,
+        event_type: str | None,
+        actor_user_id: int | None,
+        project_id: int | None,
+        created_from: datetime | None,
+        created_before: datetime | None,
+        page: int,
+        page_size: int,
+    ) -> tuple[list[tuple[AuditLog, str | None, str | None]], int]:
+        """所属の名称を同じ組織に限定し、削除済み対象の証跡も取得する。"""
+        query = db.query(AuditLog).filter(AuditLog.tenant_id == tenant_id)
+        if event_type is not None:
+            query = query.filter(AuditLog.event_type == event_type)
+        if actor_user_id is not None:
+            query = query.filter(AuditLog.actor_user_id == actor_user_id)
+        if project_id is not None:
+            query = query.filter(AuditLog.project_id == project_id)
+        if created_from is not None:
+            query = query.filter(AuditLog.created_at >= created_from)
+        if created_before is not None:
+            query = query.filter(AuditLog.created_at < created_before)
+        total = query.count()
+        rows = (
+            query.add_columns(TenantMember.display_name, Project.name)
+            .outerjoin(
+                TenantMember,
+                and_(
+                    TenantMember.tenant_id == tenant_id,
+                    TenantMember.user_id == AuditLog.actor_user_id,
+                ),
+            )
+            .outerjoin(
+                Project,
+                and_(Project.tenant_id == tenant_id, Project.id == AuditLog.project_id),
+            )
+            .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        return [(row[0], row[1], row[2]) for row in rows], total
 
     def create(
         self,

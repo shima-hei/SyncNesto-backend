@@ -3,6 +3,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
+pytestmark = pytest.mark.no_db
+
 
 @pytest.mark.xfail(
     strict=True,

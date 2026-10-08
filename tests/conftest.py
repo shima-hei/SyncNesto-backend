@@ -88,16 +88,20 @@ def run_migrations() -> None:
 
 
 def pytest_sessionstart() -> None:
-    """pytestセッション開始時にテストDBを準備する。"""
+    """アプリのimport前にテスト環境変数を読み込む。"""
     load_dotenv(PROJECT_ROOT / ".env.test", override=True)
-    start_test_database()
-    wait_for_test_database()
-    run_migrations()
 
 
-def pytest_sessionfinish() -> None:
-    """pytestセッション終了時にテストDBを破棄する。"""
-    stop_test_database()
+@pytest.fixture(scope="session")
+def test_database() -> Generator[None, None, None]:
+    """DBを使うテストがある場合だけ起動し、終了時に破棄する。"""
+    try:
+        start_test_database()
+        wait_for_test_database()
+        run_migrations()
+        yield
+    finally:
+        stop_test_database()
 
 
 @pytest.fixture
@@ -113,8 +117,11 @@ def client() -> TestClient:
 
 
 @pytest.fixture(autouse=True)
-def clean_database() -> None:
+def clean_database(request: pytest.FixtureRequest) -> None:
     """各テストの前にDB内のデータと採番をリセットする。"""
+    if request.node.get_closest_marker("no_db"):
+        return
+    request.getfixturevalue("test_database")
     import app.models  # noqa: F401
     from app.db.base import Base
     from app.db.session import engine
@@ -127,12 +134,14 @@ def clean_database() -> None:
 
 
 @pytest.fixture(autouse=True)
-def seed_rbac_data(clean_database: None) -> None:
+def seed_rbac_data(clean_database: None, request: pytest.FixtureRequest) -> None:
     """各テストの前にRBAC初期データを投入する。
 
     Args:
         clean_database: DBリセットfixture。
     """
+    if request.node.get_closest_marker("no_db"):
+        return
     from app.repositories.rbac import RbacRepository
     from scripts.seed_rbac import seed_roles_and_permissions
 
@@ -146,12 +155,14 @@ def seed_rbac_data(clean_database: None) -> None:
 
 
 @pytest.fixture
-def db() -> Generator[Session, None, None]:
+def db(request: pytest.FixtureRequest) -> Generator[Session, None, None]:
     """テスト用DBセッションを作成する。
 
     Yields:
         テスト用DBセッション。
     """
+    if request.node.get_closest_marker("no_db"):
+        raise pytest.UsageError("no_dbテストではdb fixtureを利用できません")
     from app.db.session import session_local
 
     session = session_local()

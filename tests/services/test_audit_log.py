@@ -37,6 +37,7 @@ def create_audit_log(
     return audit_log
 
 
+@pytest.mark.no_db
 def test_validate_cleanup_args_rejects_too_short_retention() -> None:
     """保持日数が短すぎる削除条件を拒否することを確認する。"""
     args = Namespace(older_than_days=1, limit=None)
@@ -45,6 +46,7 @@ def test_validate_cleanup_args_rejects_too_short_retention() -> None:
         validate_args(args)
 
 
+@pytest.mark.no_db
 def test_validate_cleanup_args_rejects_non_positive_limit() -> None:
     """limitが0以下の場合に拒否することを確認する。"""
     args = Namespace(older_than_days=30, limit=0)

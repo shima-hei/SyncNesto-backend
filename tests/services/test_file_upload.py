@@ -12,6 +12,8 @@ from app.services.file_upload import FileUploadService
 from app.services.storage import StorageService
 from tests.fakes.storage import MemoryS3Client
 
+pytestmark = pytest.mark.no_db
+
 
 @pytest.fixture
 def uploads(monkeypatch):

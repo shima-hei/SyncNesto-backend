@@ -4,6 +4,8 @@ import pytest
 
 from scripts.configure_demo_deployment import deployment_config
 
+pytestmark = pytest.mark.no_db
+
 
 def test_demo_adds_only_daily_cron():
     base = {"functions": {"app/main.py": {"maxDuration": 60}}}
