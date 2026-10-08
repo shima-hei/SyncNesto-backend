@@ -68,6 +68,27 @@ class CsrfTokenInvalidError(ForbiddenError):
     code = "CSRF_TOKEN_INVALID"
 
 
+class PasswordChangeRequiredError(ForbiddenError):
+    """本人の初回パスワード設定が必要な場合の例外。"""
+
+    message = error_messages.PASSWORD_CHANGE_REQUIRED
+    code = "PASSWORD_CHANGE_REQUIRED"
+
+
+class InitialPasswordExpiredError(ForbiddenError):
+    """初回パスワードの期限切れを通常のセッション失効と区別する。"""
+
+    message = error_messages.INITIAL_PASSWORD_EXPIRED
+    code = "INITIAL_PASSWORD_EXPIRED"
+
+
+class InitialPasswordReuseError(BadRequestError):
+    """本人の設定で初回パスワードを再使用する操作を拒否する。"""
+
+    message = error_messages.INITIAL_PASSWORD_REUSE
+    code = "INITIAL_PASSWORD_REUSE"
+
+
 class NotFoundError(AppError):
     """対象リソースが存在しない場合の例外。"""
 
@@ -125,3 +146,24 @@ class EmailAlreadyRegisteredError(BadRequestError):
 
     message = error_messages.EMAIL_ALREADY_REGISTERED
     code = "EMAIL_ALREADY_REGISTERED"
+
+
+class EmailUnavailableError(AppError):
+    """メール設定が未完了、または配信APIが受け付けなかった場合の例外。"""
+
+    message = error_messages.EMAIL_UNAVAILABLE
+    code = "EMAIL_UNAVAILABLE"
+
+
+class AccountActionInvalidError(BadRequestError):
+    """本人確認リンクが無効な場合の例外。ログインJWTとは区別する。"""
+
+    message = error_messages.ACCOUNT_ACTION_INVALID
+    code = "ACCOUNT_ACTION_INVALID"
+
+
+class AccountActionRateLimitedError(AppError):
+    """本人確認メールの申請回数が上限に達した場合の例外。"""
+
+    message = error_messages.ACCOUNT_ACTION_RATE_LIMITED
+    code = "RATE_LIMITED"

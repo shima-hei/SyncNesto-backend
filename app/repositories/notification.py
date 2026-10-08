@@ -35,6 +35,7 @@ class NotificationRepository:
 
     def create_once(self, db: Session, **values) -> None:
         """同一イベント・宛先の再評価をDBの一意制約で無害化する。"""
+        values["tenant_id"] = db.info["tenant_id"]
         db.execute(
             insert(Notification)
             .values(**values)

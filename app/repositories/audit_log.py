@@ -16,6 +16,7 @@ class AuditLogRepository:
         db: Session,
         *,
         event_type: str,
+        tenant_id: int | None = None,
         actor_user_id: int | None = None,
         target_user_id: int | None = None,
         project_id: int | None = None,
@@ -45,6 +46,7 @@ class AuditLogRepository:
             作成された監査ログ。
         """
         audit_log = AuditLog(
+            tenant_id=tenant_id if tenant_id is not None else db.info.get("tenant_id"),
             event_type=event_type,
             actor_user_id=actor_user_id,
             target_user_id=target_user_id,

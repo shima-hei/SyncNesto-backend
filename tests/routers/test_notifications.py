@@ -328,7 +328,11 @@ def test_snapshot_and_lost_access(client, db, assignment_context):
         resource = db.get(RequirementDocument, response.json()["document_id"])
     resource.deleted_at = datetime.now(UTC)
     db.commit()
-    assert client.get("/notifications").json()["items"][0]["target_status"] == "deleted"
+    redacted = client.get("/notifications").json()["items"][0]
+    assert redacted["target_status"] == "forbidden"
+    assert redacted["snapshot"]["excerpt"] is None
+    assert redacted["target_id"] == "0"
+    assert redacted["project_id"] is None
 
 
 def test_idempotency_and_return_assignment(client, db, assignment_context):
@@ -473,6 +477,7 @@ def test_project_scope_and_csrf(
     recipient = create_test_user(email="recipient@example.com")
     projects = [create_test_project(), create_test_project()]
     for project in projects:
+        db.info.update(tenant_id=project.tenant_id, tenant_user_id=actor.id)
         assign_project_role(user=recipient, project=project, role_key="member")
         task = create_test_task(project=project)
         NotificationService().assignment_changed(
@@ -487,6 +492,7 @@ def test_project_scope_and_csrf(
             title=task.title,
         )
         db.commit()
+    db.info.clear()
     authorize_as(client, recipient)
     assert client.get("/notifications").json()["total"] == 2
     assert (

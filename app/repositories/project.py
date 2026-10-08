@@ -2,11 +2,12 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.project import Project, ProjectMember
 from app.models.rbac import Permission, Role, RolePermission
+from app.models.tenant import TenantMember
 from app.models.user import User
 from app.repositories.comment_mention import CommentMentionRepository
 from app.schemas.project import ProjectCreate, ProjectUpdate
@@ -32,6 +33,7 @@ class ProjectRepository:
             作成されたプロジェクト。
         """
         project = Project(
+            tenant_id=db.info["tenant_id"],
             project_code=project_in.project_code,
             name=project_in.name,
             description=project_in.description,
@@ -42,6 +44,13 @@ class ProjectRepository:
             updated_by=actor_id,
         )
         db.add(project)
+        db.flush()
+        role = (
+            db.query(Role)
+            .filter(Role.key == "project_admin", Role.scope == "project")
+            .one()
+        )
+        db.add(ProjectMember(project_id=project.id, user_id=actor_id, role_id=role.id))
         db.commit()
         db.refresh(project)
         return project
@@ -65,21 +74,25 @@ class ProjectRepository:
             .first()
         )
 
-    def get_by_id(self, db: Session, project_id: int) -> Project | None:
+    def get_by_id(
+        self, db: Session, project_id: int, *, lock: bool = False
+    ) -> Project | None:
         """idに一致するプロジェクトを取得する。
 
         Args:
             db: DBセッション。
             project_id: 検索対象プロジェクトID。
+            lock: 所属変更などをProject単位で直列化するか。
 
         Returns:
             一致するプロジェクト。存在しない場合はNone。
         """
-        return (
-            db.query(Project)
-            .filter(Project.id == project_id, Project.deleted_at.is_(None))
-            .first()
+        query = db.query(Project).filter(
+            Project.id == project_id, Project.deleted_at.is_(None)
         )
+        if lock:
+            query = query.with_for_update().populate_existing()
+        return query.first()
 
     def list(self, db: Session) -> list[Project]:
         """削除されていないプロジェクト一覧を取得する。
@@ -405,6 +418,10 @@ class ProjectMemberRepository:
             User.is_active.is_(True),
             User.id.notin_(member_user_ids),
         )
+        query = query.join(TenantMember, TenantMember.user_id == User.id).filter(
+            TenantMember.tenant_id == db.info["tenant_id"],
+            TenantMember.status == "active",
+        )
         if q:
             like_pattern = f"%{q}%"
             query = query.filter(
@@ -416,27 +433,45 @@ class ProjectMemberRepository:
 
         return query.order_by(User.id).limit(limit).all()
 
-    def count_project_admins(self, db: Session, *, project_id: int) -> int:
-        """プロジェクト管理者の人数を取得する。
+    def count_project_admins(
+        self, db: Session, *, project_id: int, exclude_user_id: int | None = None
+    ) -> int:
+        """有効なIdentity・組織所属を持つプロジェクト管理者の人数を取得する。
 
         Args:
             db: DBセッション。
             project_id: プロジェクトID。
+            exclude_user_id: 降格・所属削除する本人を除いて数える場合のID。
 
         Returns:
             対象プロジェクトのproject_admin人数。
         """
-        return (
+        query = (
             db.query(ProjectMember.id)
             .join(Role, ProjectMember.role_id == Role.id)
+            .join(Project, Project.id == ProjectMember.project_id)
+            .join(User, User.id == ProjectMember.user_id)
+            .join(
+                TenantMember,
+                and_(
+                    TenantMember.user_id == User.id,
+                    TenantMember.tenant_id == Project.tenant_id,
+                ),
+            )
             .filter(
                 ProjectMember.project_id == project_id,
                 ProjectMember.deleted_at.is_(None),
+                Project.deleted_at.is_(None),
+                User.deleted_at.is_(None),
+                User.is_active.is_(True),
+                TenantMember.status == "active",
                 Role.key == "project_admin",
                 Role.scope == "project",
             )
-            .count()
         )
+        if exclude_user_id is not None:
+            query = query.filter(ProjectMember.user_id != exclude_user_id)
+        return query.count()
 
     def get_by_project_user(
         self,

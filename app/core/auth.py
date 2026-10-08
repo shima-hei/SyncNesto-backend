@@ -9,6 +9,7 @@ from app.core.exceptions import (
     AuthenticationRequiredError,
     ForbiddenError,
     InvalidTokenError,
+    PasswordChangeRequiredError,
 )
 from app.core.security import decode_access_token
 from app.db.session import get_db
@@ -39,7 +40,7 @@ def extract_bearer_token(authorization: str | None) -> str | None:
     return token
 
 
-def get_current_user(
+def get_authenticated_user(
     response: Response,
     access_token: str | None = Cookie(default=None, alias=settings.auth_cookie_name),
     authorization: str | None = Header(default=None),
@@ -83,11 +84,24 @@ def get_current_user(
     if user is None or not user.is_active or user.id != user_session.user_id:
         raise InvalidTokenError()
 
-    if access_token is not None and session_service.should_refresh_session(
-        user_session
+    db.info["password_setup_only"] = payload.get("password_setup_only") is True
+
+    if (
+        access_token is not None
+        and not db.info["password_setup_only"]
+        and session_service.should_refresh_session(user_session)
     ):
         session_service.refresh_session_cookie(db, response, user, user_session)
 
+    return user
+
+
+def get_current_user(
+    user: User = Depends(get_authenticated_user), db: Session = Depends(get_db)
+) -> User:
+    """初回設定済みの本人だけに業務・管理APIの利用を許可する。"""
+    if user.password_change_required or db.info.get("password_setup_only"):
+        raise PasswordChangeRequiredError()
     return user
 
 

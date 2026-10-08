@@ -70,6 +70,7 @@ class AuditLogService:
         db: Session,
         *,
         event_type: str,
+        tenant_id: int | None = None,
         actor_user_id: int | None = None,
         target_user_id: int | None = None,
         project_id: int | None = None,
@@ -95,6 +96,7 @@ class AuditLogService:
             self.repository.create(
                 db,
                 event_type=event_type,
+                tenant_id=tenant_id,
                 actor_user_id=actor_user_id,
                 target_user_id=target_user_id,
                 project_id=project_id,

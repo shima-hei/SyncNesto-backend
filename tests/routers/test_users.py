@@ -1,5 +1,6 @@
 """ユーザー管理APIのテスト。"""
 
+import re
 from collections.abc import Callable
 
 import pytest
@@ -8,9 +9,13 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import verify_password
+from app.models.account_action import AccountAction
 from app.models.audit_log import AuditLog
 from app.models.user import User
+from app.repositories.account_action import AccountActionRepository
 from app.repositories.session import UserSessionRepository
+from app.services.account_action import AccountActionService
+from app.services.email import EmailService, OutgoingEmail
 from tests.fakes.storage import FakeStorageService
 from tests.helpers.auth import authorize_as, create_session_token
 
@@ -843,6 +848,133 @@ def test_update_user_name_only_does_not_revoke_target_sessions(
     assert user_session is not None
     assert user_session.revoked_at is None
     assert user_session.revoked_reason is None
+
+
+def _pending_password_reset(
+    db: Session, user: User, monkeypatch: pytest.MonkeyPatch
+) -> tuple[AccountAction, str]:
+    """送信をfakeにして、実際に有効な未使用の再設定リンクを作る。"""
+    messages: list[OutgoingEmail] = []
+
+    def send(_self: EmailService, message: OutgoingEmail) -> str:
+        """トークンをテストプロセス内だけに保持する。"""
+        messages.append(message)
+        return "test-mail-id"
+
+    monkeypatch.setattr(EmailService, "ensure_available", lambda _self: None)
+    monkeypatch.setattr(EmailService, "send", send)
+    service = AccountActionService()
+    service.request_password_reset(db, user_id=user.id)
+    match = re.search(r"#token=([A-Za-z0-9_-]{32,128})", messages[-1].text)
+    assert match is not None
+    token = match.group(1)
+    assert service.inspect(db, token).purpose == "password_reset"
+    db.rollback()  # inspectionのUserロックをHTTP操作前に解放する。
+    return db.query(AccountAction).filter_by(user_id=user.id).one(), token
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"password": "Operator-recovery-2026!"},
+        {"email": "operator-updated@example.com"},
+        {"is_active": False},
+    ],
+)
+def test_operator_credentials_update_revokes_sessions_and_pending_links(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    change: dict[str, str | bool],
+) -> None:
+    """運営者の資格情報変更・停止は全ログインと古い復旧リンクを失効する。"""
+    admin = create_test_user(email="operator@example.com", system_role="system_admin")
+    target = create_test_user(email="recover-target@example.com")
+    action, token = _pending_password_reset(db, target, monkeypatch)
+    _, first = create_session_token(target)
+    _, second = create_session_token(target)
+    authorize_as(client, admin)
+    version = target.version
+
+    response = client.patch(f"/users/{target.id}", json={"version": version, **change})
+
+    assert response.status_code == 200
+    db.expire_all()
+    assert target.version == version + 1
+    assert action.revoked_at is not None
+    for session_id in (first, second):
+        session = UserSessionRepository().get_by_id(db, session_id)
+        assert session is not None
+        assert session.revoked_at is not None
+        assert session.revoked_reason == "credentials_changed"
+    if change.get("is_active") is False:
+        # 再有効化しても、停止前のリンクが復活しない。
+        restored = client.patch(
+            f"/users/{target.id}",
+            json={"version": target.version, "is_active": True},
+        )
+        assert restored.status_code == 200
+    invalid = client.post("/auth/account-actions/inspect", json={"token": token})
+    assert invalid.status_code == 400
+    assert invalid.json()["code"] == "ACCOUNT_ACTION_INVALID"
+
+
+@pytest.mark.parametrize("failure_stage", ["sessions", "links"])
+def test_operator_credentials_update_failure_rolls_back_entire_change(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_stage: str,
+) -> None:
+    """失効処理の途中で失敗しても資格情報・セッション・リンクを保持する。"""
+    from app.routers import users
+
+    admin = create_test_user(email="operator@example.com", system_role="system_admin")
+    target = create_test_user(email="rollback-target@example.com")
+    old_hash, version = target.hashed_password, target.version
+    action, token = _pending_password_reset(db, target, monkeypatch)
+    _, session_id = create_session_token(target)
+    authorize_as(client, admin)
+    if failure_stage == "sessions":
+        revoke = users.user_service.session_service.revoke_user_sessions
+
+        def revoke_then_fail(*args, **kwargs):
+            """セッションを変更した直後の障害を模擬する。"""
+            revoke(*args, **kwargs)
+            raise RuntimeError("test revocation failure")
+
+        monkeypatch.setattr(
+            users.user_service.session_service, "revoke_user_sessions", revoke_then_fail
+        )
+    else:
+        revoke_actions = AccountActionRepository.revoke_actions
+
+        def revoke_links_then_fail(*args, **kwargs):
+            """リンクまで変更した後の障害を模擬する。"""
+            revoke_actions(*args, **kwargs)
+            raise RuntimeError("test revocation failure")
+
+        monkeypatch.setattr(
+            AccountActionRepository, "revoke_actions", revoke_links_then_fail
+        )
+
+    with pytest.raises(RuntimeError, match="test revocation failure"):
+        client.patch(
+            f"/users/{target.id}",
+            json={"version": version, "password": "Operator-recovery-2026!"},
+        )
+
+    db.expire_all()
+    assert target.hashed_password == old_hash
+    assert target.version == version
+    assert action.revoked_at is None
+    session = UserSessionRepository().get_by_id(db, session_id)
+    assert session is not None
+    assert session.revoked_at is None
+    usable = client.post("/auth/account-actions/inspect", json={"token": token})
+    assert usable.status_code == 200
 
 
 def test_update_user_rejects_invalid_system_role_key(

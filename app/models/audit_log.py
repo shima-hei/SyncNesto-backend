@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Integer, String, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,6 +15,7 @@ class AuditLog(Base):
     """重要操作の監査ログを管理するモデル。"""
 
     __tablename__ = "audit_logs"
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id"), index=True)
     __table_args__ = {
         "comment": db_comment("監査ログ", "重要操作の監査証跡を管理するテーブル"),
     }

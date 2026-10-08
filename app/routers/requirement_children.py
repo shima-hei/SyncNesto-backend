@@ -505,6 +505,7 @@ def delete_requirement_comment(
         can_moderate=authorization_service.can_moderate_requirement_comments(
             db,
             user=current_user,
+            project_id=project_id,
         ),
     )
 

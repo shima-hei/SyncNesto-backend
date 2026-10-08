@@ -14,6 +14,12 @@ DUPLICATE_RESOURCE = "Resource already exists"
 VERSION_CONFLICT = "Resource version conflict"
 INVALID_CREDENTIALS = "Invalid email or password"
 EMAIL_ALREADY_REGISTERED = "Email already registered"
+EMAIL_UNAVAILABLE = "メールを送信できません。時間をおいて再度お試しください"
+ACCOUNT_ACTION_INVALID = (
+    "リンクが無効、期限切れ、または既に使用されています。再度申請してください"
+)
+ACCOUNT_ACTION_SAME_EMAIL = "現在と異なるメールアドレスを入力してください"
+ACCOUNT_ACTION_RATE_LIMITED = "申請が多すぎます。1分ほど待って再度お試しください"
 
 INVALID_SYSTEM_ROLE_KEY = "Invalid system role key: {role_key}"
 GUEST_SYSTEM_ADMIN_NOT_ALLOWED = "Guest users cannot have system_admin role"
@@ -30,6 +36,13 @@ PROJECT_ROLE_NOT_FOUND = "Project role not found"
 LAST_PROJECT_ADMIN_REQUIRED = "At least one project admin is required"
 
 USER_NOT_FOUND = "User not found"
+
+TENANT_ACCESS_DENIED = "この組織にはアクセスできません"
+TENANT_SELECTION_REQUIRED = "組織を選択してください（X-Tenant-ID）"
+TENANT_IDENTITY_NOT_FOUND = "指定された有効なユーザーが見つかりません"
+TENANT_STATUS_REQUIRED = "組織内の利用状態を選択してください"
+TENANT_DISPLAY_NAME_REQUIRED = "組織内の表示名を入力してください"
+LAST_TENANT_OWNER_REQUIRED = "最後の有効な組織所有者は変更・停止・削除できません"
 
 REQUIREMENT_DOCUMENT_CODE_ALREADY_EXISTS = "Requirement document code already exists"
 REQUIREMENT_DOCUMENT_NOT_FOUND = "Requirement document not found"
@@ -82,3 +95,8 @@ FILE_UPLOAD_MISMATCH = "アップロードしたファイルの形式または�
 FILE_UPLOAD_MISSING = "アップロードしたファイルが見つかりません"
 FILE_UPLOAD_UNAVAILABLE = "直接アップロードは現在利用できません"
 FILE_UPLOAD_STORAGE_ERROR = "一時ファイルの削除に失敗しました"
+PASSWORD_CHANGE_REQUIRED = "利用を開始する前に、ご自身のパスワードを設定してください"
+INITIAL_PASSWORD_EXPIRED = (
+    "初回パスワードの有効期限が切れています。メールでパスワードを再設定してください"
+)
+INITIAL_PASSWORD_REUSE = "初回パスワードとは異なるパスワードを設定してください"

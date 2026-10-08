@@ -221,5 +221,7 @@ docker/pgadmin/
 !/docs/frontend-file-upload.md
 !/docs/frontend-authorization.md
 !/docs/deployment.md
+!/docs/multi-tenancy.md
+!/docs/email-approval.md
 .codex
 AGENTS.md

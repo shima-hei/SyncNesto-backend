@@ -21,6 +21,104 @@ from tests.fakes.storage import FakeStorageService, MemoryS3Client
 from tests.helpers.auth import authorize_as, create_session_token
 
 
+@pytest.mark.parametrize("change", ["password", "email"])
+def test_login_started_during_credential_change_rejects_old_credentials(
+    client, create_test_user, db, monkeypatch, change
+):
+    """本人確認の確定待ちログインで、旧認証情報のセッションを新規発行しない。"""
+    import re
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    from app.models.session import UserSession
+    from app.services.account_action import AccountActionService
+    from app.services.user import UserService
+
+    user = create_test_user(email="race@example.com", password="old-password123")
+    messages = []
+    actions = AccountActionService()
+    monkeypatch.setattr(actions.email_service, "ensure_available", lambda: None)
+    monkeypatch.setattr(
+        actions.email_service,
+        "send",
+        lambda message: messages.append(message) or "test-message-id",
+    )
+    if change == "password":
+        actions.request_password_reset(db, user_id=user.id)
+    else:
+        actions.request_email_change(
+            db, user_id=user.id, actor_id=user.id, new_email="changed@example.com"
+        )
+        match = re.search(r"#token=([A-Za-z0-9_-]+)", messages[-1].text)
+        assert match is not None
+        actions.approve_email_change(db, match.group(1))
+    match = re.search(r"#token=([A-Za-z0-9_-]+)", messages[-1].text)
+    assert match is not None
+    token = match.group(1)
+    confirming, authenticated, release_change = Event(), Event(), Event()
+    original_finish = AccountActionService._finish
+    original_authenticate = UserService.authenticate_user
+
+    def pause_confirmation(self, *args, **kwargs):
+        confirming.set()
+        assert release_change.wait(timeout=10)
+        return original_finish(self, *args, **kwargs)
+
+    def checked_login(self, *args, **kwargs):
+        authenticated_user = original_authenticate(self, *args, **kwargs)
+        authenticated.set()
+        return authenticated_user
+
+    monkeypatch.setattr(AccountActionService, "_finish", pause_confirmation)
+    monkeypatch.setattr(UserService, "authenticate_user", checked_login)
+    with TestClient(client.app) as login_client:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            confirmation_body = {"token": token}
+            if change == "password":
+                confirmation_body["password"] = "new-password123"
+            confirmation = executor.submit(
+                client.post,
+                "/auth/password-reset/confirm"
+                if change == "password"
+                else "/auth/email-change/confirm",
+                json=confirmation_body,
+            )
+            try:
+                assert confirming.wait(timeout=5)
+                login = executor.submit(
+                    login_client.post,
+                    "/auth/login",
+                    json={"email": "race@example.com", "password": "old-password123"},
+                )
+                # ロックがなければ旧パスワードの確認が通るまで待つ。
+                authenticated.wait(timeout=0.5)
+            finally:
+                release_change.set()
+            assert confirmation.result(timeout=10).status_code == 200
+            response = login.result(timeout=10)
+            assert response.status_code == 401
+            assert response.json()["code"] == "INVALID_CREDENTIALS"
+        assert (
+            db.query(UserSession).filter(UserSession.revoked_at.is_(None)).count() == 0
+        )
+        assert (
+            db.query(AuditLog).filter_by(event_type="auth.login.failure").count() == 1
+        )
+        response = login_client.post(
+            "/auth/login",
+            json={
+                "email": "race@example.com"
+                if change == "password"
+                else "changed@example.com",
+                "password": "new-password123"
+                if change == "password"
+                else "old-password123",
+            },
+        )
+        assert response.status_code == 200
+        assert login_client.get("/auth/me").status_code == 200
+
+
 def test_direct_avatar_upload_and_server_plan(client, create_test_user, monkeypatch):
     """アイコン送信方式を切り替え、一時ファイルから本人の画像を更新する。"""
     from app.routers import auth
@@ -122,8 +220,8 @@ def test_login_user_returns_access_token_and_cookie_in_development(
     assert response.json()["token_type"] == "bearer"
     assert response.cookies.get(settings.auth_cookie_name)
     assert "httponly" in response.headers["set-cookie"].lower()
-    assert "password" not in response.text
-    assert "hashed_password" not in response.text
+    assert "password" not in response.json()
+    assert "hashed_password" not in response.json()
 
 
 def test_login_user_does_not_return_access_token_in_production(
@@ -151,7 +249,10 @@ def test_login_user_does_not_return_access_token_in_production(
     )
 
     assert response.status_code == 200
-    assert response.json() == {"message": "Login successful"}
+    assert response.json() == {
+        "message": "Login successful",
+        "password_change_required": False,
+    }
     assert response.cookies.get(settings.auth_cookie_name)
     assert "httponly" in response.headers["set-cookie"].lower()
     assert "secure" in response.headers["set-cookie"].lower()
@@ -650,6 +751,8 @@ def test_get_me_returns_current_user_with_cookie_token(
         "created_by": None,
         "updated_by": None,
         "system_roles": [],
+        "password_change_required": False,
+        "initial_password_expires_at": None,
     }
 
 
@@ -687,6 +790,8 @@ def test_get_me_returns_current_user_with_authorization_header(
         "created_by": None,
         "updated_by": None,
         "system_roles": [],
+        "password_change_required": False,
+        "initial_password_expires_at": None,
     }
 
 
@@ -724,6 +829,8 @@ def test_get_me_returns_system_roles(
                 "name": "システム管理者",
             }
         ],
+        "password_change_required": False,
+        "initial_password_expires_at": None,
     }
 
 
@@ -744,7 +851,6 @@ def test_update_me_updates_current_user_profile(
         "/auth/me",
         json={
             "name": "After",
-            "password": "new-password123",
             "version": user.version,
         },
     )
@@ -764,11 +870,27 @@ def test_update_me_updates_current_user_profile(
         "created_by": None,
         "updated_by": user.id,
         "system_roles": [],
+        "password_change_required": False,
+        "initial_password_expires_at": None,
     }
     db.refresh(user)
     assert user.name == "After"
     assert user.updated_by == user.id
-    assert verify_password("new-password123", user.hashed_password)
+    assert verify_password("password123", user.hashed_password)
+
+
+def test_update_me_rejects_direct_password_update(client, create_test_user, db):
+    """本人パスワードはメール本人確認経由とし、profile PATCHの迂回を拒否する。"""
+    user = create_test_user(
+        email="profile-password@example.com", password="password123"
+    )
+    authorize_as(client, user)
+    response = client.patch(
+        "/auth/me", json={"version": user.version, "password": "new-password123"}
+    )
+    assert response.status_code == 422
+    db.refresh(user)
+    assert verify_password("password123", user.hashed_password)
 
 
 def test_update_me_rejects_email_update(

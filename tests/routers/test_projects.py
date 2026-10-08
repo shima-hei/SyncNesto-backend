@@ -445,12 +445,12 @@ def test_read_current_project_role_returns_project_role_for_member(
     }
 
 
-def test_read_current_project_role_returns_system_admin_without_project_role(
+def test_read_current_project_role_rejects_operator_without_project_role(
     client: TestClient,
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
 ) -> None:
-    """system_adminが未所属プロジェクトでもis_system_admin=trueで取得できることを確認する。"""
+    """運営者でもProject所属がなければ拒否する。"""
     admin_user = create_test_user(
         email="admin@example.com",
         system_role="system_admin",
@@ -460,12 +460,7 @@ def test_read_current_project_role_returns_system_admin_without_project_role(
 
     response = client.get(f"/projects/{project.id}/me")
 
-    assert response.status_code == 200
-    assert response.json() == {
-        "project_id": project.id,
-        "role": None,
-        "is_system_admin": True,
-    }
+    assert response.status_code == 403
 
 
 def test_read_current_project_role_returns_both_for_system_admin_member(
@@ -489,7 +484,7 @@ def test_read_current_project_role_returns_both_for_system_admin_member(
     assert response.json() == {
         "project_id": project.id,
         "role": {"key": "project_admin", "name": "プロジェクト管理者"},
-        "is_system_admin": True,
+        "is_system_admin": False,
     }
 
 
@@ -718,14 +713,14 @@ def test_add_project_member_allows_project_admin(
     assert audit_log.extra_metadata == {"role_key": "member"}
 
 
-def test_add_project_member_revokes_target_sessions(
+def test_add_project_member_preserves_identity_sessions(
     client: TestClient,
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
     assign_project_role: Callable[..., ProjectMember],
     db: Session,
 ) -> None:
-    """メンバー追加時に対象ユーザーのセッションを失効する。"""
+    """案件所属の追加で、他組織でも共用するIdentityセッションを保持する。"""
     admin_user = create_test_user(email="project-admin@example.com")
     target_user = create_test_user(email="target@example.com")
     project = create_test_project(name="Project")
@@ -741,10 +736,9 @@ def test_add_project_member_revokes_target_sessions(
     user_session = UserSessionRepository().get_by_id(db, session_id)
     assert response.status_code == 201
     assert user_session is not None
-    assert user_session.revoked_at is not None
-    assert user_session.revoked_reason == "permission_changed"
+    assert user_session.revoked_at is None
     event_types = {audit.event_type for audit in db.query(AuditLog).all()}
-    assert event_types == {"auth.session.revoked", "project_member.added"}
+    assert event_types == {"project_member.added"}
 
 
 def test_add_project_member_rejects_viewer(
@@ -844,14 +838,14 @@ def test_update_project_member_allows_project_admin(
     assert response.json()["version"] == member.version + 1
 
 
-def test_update_project_member_revokes_target_sessions(
+def test_update_project_member_preserves_identity_sessions(
     client: TestClient,
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
     assign_project_role: Callable[..., ProjectMember],
     db: Session,
 ) -> None:
-    """メンバーロール変更時に対象ユーザーのセッションを失効する。"""
+    """案件Role変更は認可で即時反映し、共有Identityセッションを保持する。"""
     admin_user = create_test_user(email="admin@example.com")
     target_user = create_test_user(email="target@example.com")
     project = create_test_project(name="Project")
@@ -868,12 +862,9 @@ def test_update_project_member_revokes_target_sessions(
     user_session = UserSessionRepository().get_by_id(db, session_id)
     assert response.status_code == 200
     assert user_session is not None
-    assert user_session.revoked_at is not None
-    assert user_session.revoked_reason == "permission_changed"
+    assert user_session.revoked_at is None
     audit_log = (
-        db.query(AuditLog)
-        .filter_by(event_type="project_member.role_changed")
-        .one()
+        db.query(AuditLog).filter_by(event_type="project_member.role_changed").one()
     )
     assert audit_log.actor_user_id == admin_user.id
     assert audit_log.target_user_id == target_user.id
@@ -884,10 +875,7 @@ def test_update_project_member_revokes_target_sessions(
         "before_role_key": "viewer",
         "after_role_key": "member",
     }
-    session_audit_log = (
-        db.query(AuditLog).filter_by(event_type="auth.session.revoked").one()
-    )
-    assert session_audit_log.project_id == project.id
+    assert db.query(AuditLog).filter_by(event_type="auth.session.revoked").count() == 0
 
 
 def test_update_project_member_rejects_stale_version_with_current_member(
@@ -1029,9 +1017,7 @@ def test_remove_project_member_allows_project_admin(
     assert response.status_code == 204
     db.expire_all()
     assert db.get(ProjectMember, member_id) is None
-    audit_log = (
-        db.query(AuditLog).filter_by(event_type="project_member.removed").one()
-    )
+    audit_log = db.query(AuditLog).filter_by(event_type="project_member.removed").one()
     assert audit_log.actor_user_id == admin_user.id
     assert audit_log.target_user_id == target_user.id
     assert audit_log.project_id == project.id
@@ -1061,14 +1047,14 @@ def test_remove_project_member_rejects_removing_last_project_admin(
     }
 
 
-def test_remove_project_member_revokes_target_sessions(
+def test_remove_project_member_preserves_identity_sessions(
     client: TestClient,
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
     assign_project_role: Callable[..., ProjectMember],
     db: Session,
 ) -> None:
-    """メンバー削除時に対象ユーザーのセッションを失効する。"""
+    """案件所属の削除で、他組織でも共用するIdentityセッションを保持する。"""
     admin_user = create_test_user(email="admin@example.com")
     target_user = create_test_user(email="target@example.com")
     project = create_test_project(name="Project")
@@ -1082,8 +1068,7 @@ def test_remove_project_member_revokes_target_sessions(
     user_session = UserSessionRepository().get_by_id(db, session_id)
     assert response.status_code == 204
     assert user_session is not None
-    assert user_session.revoked_at is not None
-    assert user_session.revoked_reason == "permission_changed"
+    assert user_session.revoked_at is None
 
 
 def test_remove_project_member_allows_readding_same_user(

@@ -1941,14 +1941,14 @@ def test_update_target_comment_rejects_non_author(
     assert comment.body == "Original"
 
 
-def test_update_target_comment_allows_system_admin_for_non_author(
+def test_update_target_comment_rejects_operator_without_project_membership(
     client: TestClient,
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
     create_test_requirement_document: Callable[..., RequirementDocument],
     create_test_requirement_target_comment: Callable[..., RequirementTargetComment],
 ) -> None:
-    """system_adminは投稿者以外のコメントを更新できる。"""
+    """運営者権限だけではコメントを更新できない。"""
     author = create_test_user(
         email="author@example.com",
         name="Comment Author",
@@ -1973,10 +1973,7 @@ def test_update_target_comment_allows_system_admin_for_non_author(
         json={"body": "Moderated", "version": comment.version},
     )
 
-    assert response.status_code == 200
-    assert response.json()["body"] == "Moderated"
-    assert response.json()["author"]["id"] == author.id
-    assert response.json()["author"]["name"] == "Comment Author"
+    assert response.status_code == 403
 
 
 def test_resolve_and_reopen_target_comment(
@@ -2093,7 +2090,7 @@ def test_delete_target_comment_rejects_non_author(
     assert comment.deleted_at is None
 
 
-def test_delete_target_comment_allows_system_admin_for_non_author(
+def test_delete_target_comment_rejects_operator_without_project_membership(
     client: TestClient,
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
@@ -2101,7 +2098,7 @@ def test_delete_target_comment_allows_system_admin_for_non_author(
     create_test_requirement_target_comment: Callable[..., RequirementTargetComment],
     db: Session,
 ) -> None:
-    """system_adminは投稿者以外のコメントを削除できる。"""
+    """運営者権限だけではコメントを削除できない。"""
     author = create_test_user(email="author@example.com")
     system_admin = create_test_user(
         email="admin@example.com",
@@ -2119,9 +2116,9 @@ def test_delete_target_comment_allows_system_admin_for_non_author(
 
     response = client.delete(f"/projects/{project.id}/comments/{comment.id}")
 
-    assert response.status_code == 204
+    assert response.status_code == 403
     db.refresh(comment)
-    assert comment.deleted_at is not None
+    assert comment.deleted_at is None
 
 
 def test_create_requirement_allows_member(
@@ -3005,14 +3002,14 @@ def test_requirement_comment_delete_rejects_non_author(
     assert db.get(RequirementComment, comment.id) is not None
 
 
-def test_requirement_comment_delete_allows_system_admin_for_non_author(
+def test_requirement_comment_delete_rejects_operator_without_project_membership(
     client: TestClient,
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
     create_test_requirement_document: Callable[..., RequirementDocument],
     db: Session,
 ) -> None:
-    """system_adminは投稿者以外の要件コメントを削除できる。"""
+    """運営者権限だけでは要件コメントを削除できない。"""
     author = create_test_user(email="author@example.com")
     system_admin = create_test_user(
         email="admin@example.com",
@@ -3043,9 +3040,9 @@ def test_requirement_comment_delete_allows_system_admin_for_non_author(
         f"/projects/{project.id}/requirements/{requirement.id}/comments/{comment_id}"
     )
 
-    assert response.status_code == 204
+    assert response.status_code == 403
     db.expire_all()
-    assert db.get(RequirementComment, comment_id) is None
+    assert db.get(RequirementComment, comment_id) is not None
 
 
 def test_requirement_review_crud_allows_manager(

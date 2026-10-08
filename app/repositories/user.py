@@ -51,37 +51,41 @@ class UserRepository:
         db.flush()
         return user
 
-    def get_by_email(self, db: Session, email: str) -> User | None:
+    def get_by_email(
+        self, db: Session, email: str, *, lock: bool = False
+    ) -> User | None:
         """emailに一致するユーザーを取得する。
 
         Args:
             db: DBセッション。
             email: 検索対象のメールアドレス。
+            lock: ログインと認証情報変更を直列化するか。
 
         Returns:
             一致するユーザー。存在しない場合はNone。
         """
-        return (
-            db.query(User)
-            .filter(User.email == email, User.deleted_at.is_(None))
-            .first()
-        )
+        query = db.query(User).filter(User.email == email, User.deleted_at.is_(None))
+        if lock:
+            query = query.with_for_update().populate_existing()
+        return query.first()
 
-    def get_by_id(self, db: Session, user_id: int) -> User | None:
+    def get_by_id(
+        self, db: Session, user_id: int, *, lock: bool = False
+    ) -> User | None:
         """idに一致するユーザーを取得する。
 
         Args:
             db: DBセッション。
             user_id: 検索対象のユーザーID。
+            lock: ログインと認証情報変更を直列化するか。
 
         Returns:
             一致するユーザー。存在しない場合はNone。
         """
-        return (
-            db.query(User)
-            .filter(User.id == user_id, User.deleted_at.is_(None))
-            .first()
-        )
+        query = db.query(User).filter(User.id == user_id, User.deleted_at.is_(None))
+        if lock:
+            query = query.with_for_update().populate_existing()
+        return query.first()
 
     def list(self, db: Session) -> list[User]:
         """削除されていないユーザー一覧を取得する。

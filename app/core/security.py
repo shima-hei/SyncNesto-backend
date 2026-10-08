@@ -43,6 +43,7 @@ def create_access_token(
     subject: str,
     session_id: UUID | str | None = None,
     expires_at: datetime | None = None,
+    password_setup_only: bool = False,
 ) -> str:
     """アクセストークンを作成する。
 
@@ -50,6 +51,7 @@ def create_access_token(
         subject: トークンの主体を表す値。
         session_id: セッションID。
         expires_at: トークンの有効期限。未指定の場合は設定値から算出する。
+        password_setup_only: 初回設定専用のログインであることを固定する。
 
     Returns:
         JWTアクセストークン。
@@ -66,6 +68,8 @@ def create_access_token(
     }
     if session_id is not None:
         payload["sid"] = str(session_id)
+    if password_setup_only:
+        payload["password_setup_only"] = True
 
     return jwt.encode(
         payload,

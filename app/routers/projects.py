@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 from app.core.auth import (
     get_current_user,
     require_project_permission,
-    require_system_permission,
 )
+from app.core.tenant import require_project_management, require_tenant_admin
 from app.db.session import get_db
 from app.models.project import Project
 from app.models.user import User
@@ -49,7 +49,7 @@ overview_service = ProjectOverviewService()
 )
 def create_project(
     project_in: ProjectCreate,
-    current_user: User = Depends(require_system_permission("project:create")),
+    current_user: User = Depends(require_tenant_admin),
     db: Session = Depends(get_db),
 ) -> Project:
     """プロジェクトを作成する。
@@ -137,7 +137,7 @@ def list_project_activities(
 )
 def read_project(
     project_id: int,
-    _: User = Depends(require_project_permission("project:read")),
+    _: User = Depends(require_project_management("project:read")),
     db: Session = Depends(get_db),
 ) -> Project:
     """プロジェクトを取得する。
@@ -227,7 +227,7 @@ def list_project_member_candidates(
     project_id: int,
     q: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
-    _: User = Depends(require_project_permission("project:invite_member")),
+    _: User = Depends(require_project_management("project:invite_member")),
     db: Session = Depends(get_db),
 ) -> UserSummaryListResponse:
     """プロジェクトへ追加可能なユーザー候補一覧を取得する。
@@ -260,7 +260,7 @@ def list_project_member_candidates(
 def update_project(
     project_id: int,
     project_in: ProjectUpdate,
-    current_user: User = Depends(require_project_permission("project:update")),
+    current_user: User = Depends(require_project_management("project:update")),
     db: Session = Depends(get_db),
 ) -> Project:
     """プロジェクトを更新する。
@@ -288,7 +288,7 @@ def update_project(
 )
 def delete_project(
     project_id: int,
-    current_user: User = Depends(require_project_permission("project:delete")),
+    current_user: User = Depends(require_project_management("project:delete")),
     db: Session = Depends(get_db),
 ) -> None:
     """プロジェクトを論理削除する。
@@ -309,7 +309,7 @@ def delete_project(
 def add_project_member(
     project_id: int,
     member_in: ProjectMemberCreate,
-    current_user: User = Depends(require_project_permission("project:invite_member")),
+    current_user: User = Depends(require_project_management("project:invite_member")),
     db: Session = Depends(get_db),
 ) -> ProjectMemberRead:
     """プロジェクトメンバーを追加する。
@@ -339,7 +339,7 @@ def add_project_member(
 )
 def list_project_members(
     project_id: int,
-    _: User = Depends(require_project_permission("project:read")),
+    _: User = Depends(require_project_management("project:read")),
     db: Session = Depends(get_db),
 ) -> list[ProjectMemberRead]:
     """プロジェクトメンバー一覧を取得する。
@@ -364,7 +364,7 @@ def update_project_member(
     project_id: int,
     user_id: int,
     member_in: ProjectMemberUpdate,
-    current_user: User = Depends(require_project_permission("project:invite_member")),
+    current_user: User = Depends(require_project_management("project:invite_member")),
     db: Session = Depends(get_db),
 ) -> ProjectMemberRead:
     """プロジェクトメンバーのロールを更新する。
@@ -397,7 +397,7 @@ def update_project_member(
 def remove_project_member(
     project_id: int,
     user_id: int,
-    current_user: User = Depends(require_project_permission("project:remove_member")),
+    current_user: User = Depends(require_project_management("project:remove_member")),
     db: Session = Depends(get_db),
 ) -> None:
     """プロジェクトメンバーを物理削除する。

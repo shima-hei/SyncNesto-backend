@@ -21,9 +21,12 @@ class Project(Base):
     """プロジェクトを管理するモデル。"""
 
     __tablename__ = "projects"
-    __table_args__ = {
-        "comment": db_comment("プロジェクト", "プロジェクト情報を管理するテーブル"),
-    }
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "project_code", name="uq_projects_tenant_code"),
+        {"comment": db_comment("プロジェクト", "プロジェクト情報を管理するテーブル")},
+    )
+
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), index=True)
 
     id: Mapped[int] = mapped_column(
         primary_key=True,
@@ -32,7 +35,6 @@ class Project(Base):
     )
     project_code: Mapped[str] = mapped_column(
         String(100),
-        unique=True,
         index=True,
         comment=db_comment(
             "プロジェクトコード",

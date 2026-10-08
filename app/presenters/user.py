@@ -97,8 +97,10 @@ def build_current_user_response(
     Returns:
         現在のログインユーザー読み取りレスポンス。
     """
-    return CurrentUserRead.model_validate(
-        build_user_response(user, system_roles, storage_service)
+    return CurrentUserRead(
+        **build_user_response(user, system_roles, storage_service).model_dump(),
+        password_change_required=user.password_change_required,
+        initial_password_expires_at=user.initial_password_expires_at,
     )
 
 

@@ -115,6 +115,7 @@ def client() -> TestClient:
 @pytest.fixture(autouse=True)
 def clean_database() -> None:
     """各テストの前にDB内のデータと採番をリセットする。"""
+    import app.models  # noqa: F401
     from app.db.base import Base
     from app.db.session import engine
 
@@ -136,6 +137,12 @@ def seed_rbac_data(clean_database: None) -> None:
     from scripts.seed_rbac import seed_roles_and_permissions
 
     seed_roles_and_permissions(RbacRepository())
+    from app.db.session import session_local
+    from app.models.tenant import Tenant
+
+    with session_local() as session:
+        session.add(Tenant(name="Default Tenant", slug="default"))
+        session.commit()
 
 
 @pytest.fixture
@@ -165,6 +172,7 @@ def create_test_user(db: Session) -> Callable[..., "User"]:
         任意のemail/name/passwordでユーザーを作成する関数。
     """
     from app.core.security import get_password_hash
+    from app.models.tenant import Tenant, TenantMember
     from app.models.user import User
     from app.repositories.rbac import RbacRepository
 
@@ -182,6 +190,23 @@ def create_test_user(db: Session) -> Callable[..., "User"]:
         )
         db.add(user)
         db.flush()
+
+        repository = RbacRepository()
+        tenant = db.query(Tenant).filter(Tenant.slug == "default").one()
+        tenant_role = repository.get_role_by_key_scope(
+            db,
+            key="tenant_owner" if system_role == "system_admin" else "tenant_member",
+            scope="tenant",
+        )
+        assert tenant_role is not None
+        db.add(
+            TenantMember(
+                tenant_id=tenant.id,
+                user_id=user.id,
+                role_id=tenant_role.id,
+                display_name=user.name,
+            )
+        )
 
         if system_role is not None:
             repository = RbacRepository()
@@ -212,6 +237,7 @@ def create_test_project(db: Session) -> Callable[..., "Project"]:
         任意のname/descriptionでプロジェクトを作成する関数。
     """
     from app.models.project import Project
+    from app.models.tenant import Tenant
 
     def _create_test_project(
         *,
@@ -221,6 +247,7 @@ def create_test_project(db: Session) -> Callable[..., "Project"]:
         status: str = "active",
     ) -> Project:
         project = Project(
+            tenant_id=db.query(Tenant).filter(Tenant.slug == "default").one().id,
             project_code=project_code or f"PRJ-{uuid4().hex[:8].upper()}",
             name=name,
             description=description,
