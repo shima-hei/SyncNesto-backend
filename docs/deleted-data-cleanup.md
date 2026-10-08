@@ -5,6 +5,11 @@ Demoはログアウト・セッション期限で全破棄する既存回収を�
 監査ログの1095日保持・削除済みProjectの回収はこのジョブの対象外。
 既存テーブルを使うためmigrationは不要。公開APIの契約・Orvalクライアントは変更しない。
 
+2026-10-08のProductionでは、通常Tenant 1だけを対象にdry-run後`execute`で有効化済み。
+保持30日・上限20資源・予算20秒、日次CronはJST 04時台。公開手動実行は候補0・削除0・失敗0だった。
+初回日次実行の観測は未実施。詳細は[決定記録](decisions/2026-10-08-demo-mode.md)とInfra READMEを参照する。
+以下の既定`disabled`は新規設定向けであり、公開環境の現在値とは区別する。
+
 ## 有効化
 
 `DELETED_DATA_CLEANUP_MODE` は既定 `disabled`。次の順で運用者が設定する。
