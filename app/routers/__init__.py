@@ -14,6 +14,7 @@ from app.routers import (
     notifications,
     projects,
     requirements,
+    search,
     tasks,
     tenants,
     test_collaboration,
@@ -36,6 +37,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(health.router)
     for router in (
         home.router,
+        search.router,
         notifications.router,
         projects.router,
         documents.router,
