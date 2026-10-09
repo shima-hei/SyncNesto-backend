@@ -2,7 +2,9 @@
 
 ## 構成と権限
 
-Codex → Mac上のHTTP MCP → FastAPIの連携API → 通常DB。MCPはDB、BFF共有秘密、Supabase・Neon管理資格情報を持たない。
+Codex → 公開Backendの `/mcp` → 既存の認証・業務Service → 通常DB。
+MCPは既存Vercel FastAPIへ組み込む。Mac上で別のMCPプロセスを起動・維持する必要はない。
+CodexへDB、BFF共有秘密、Supabase・Neon管理資格情報を渡さない。詳細な方針は[リモートMCPの決定記録](decisions/2026-10-09-remote-mcp.md)を参照する。
 通常アカウントは従来のDB・Storageを維持し、デモとは接続先・認証を分離する。初版ではデモアカウントのMCP接続を許可しない。
 
 接続した本人の現在の権限を毎回検証する。接続で許可したProjectと現在の権限の両方を満たす操作だけ実行する。
@@ -12,42 +14,46 @@ Codex → Mac上のHTTP MCP → FastAPIの連携API → 通常DB。MCPはDB、BF
 
 ## 初回設定
 
-Backendでmigrationを適用し、Git対象外の環境変数を設定する。
+既存MCPのmigration `91a7d2b8c406` を適用済みのBackendへ、この実装を配布する。
+リモート化による追加migrationはない。公開Backendのサーバー環境変数を設定する。
 
 ```env
 MCP_ENABLED=true
-MCP_ISSUER_URL=http://127.0.0.1:8000
-MCP_RESOURCE_URL=http://127.0.0.1:8765/mcp
-FRONTEND_PUBLIC_URL=http://localhost:3000
+MCP_ISSUER_URL=https://syncnesto-api.vercel.app
+MCP_RESOURCE_URL=https://syncnesto-api.vercel.app/mcp
+FRONTEND_PUBLIC_URL=https://syncnesto.vercel.app
 ```
 
-Frontendにもサーバー環境変数 `MCP_ENABLED=true` を設定し、両方を再起動する。
-公開APIを対象にする場合のissuerは `https://syncnesto-api.vercel.app`。BackendとFrontendで有効化するまで公開環境の挙動は変わらない。
+Frontendにもサーバー環境変数 `MCP_ENABLED=true` を設定し、Backend、Frontendの順に再デプロイする。
+`MCP_RESOURCE_URL` の既定値はissuer + `/mcp`。公開環境では同一originのHTTPS URLだけを許可する。
+既定では無効。有効化設定と再デプロイを行うまで公開MCPを利用できない。
 `APP_ENV` と `DEMO_MODE` はMCP設定によって変更しない。
 公開時は既存の `scripts/migrate_production.py` により通常DBと専用デモDBの両方へmigrationを適用してから配布する。
 デモからMCPを利用しなくても、デモ破棄処理が参照するスキーマを揃える必要がある。
 
-```bash
-cd /Users/kohei/syncnesto/syncnesto-backend
-uv run alembic upgrade head
-uv run --extra mcp python -m syncnesto_mcp \
-  --api-url http://127.0.0.1:8000 \
-  --resource-url http://127.0.0.1:8765/mcp
-```
-
-上記プロセスを動かしたまま、別のターミナルでCodexへ登録する。Codex CLI 0.162.0-alpha.2でオプションを確認した。
+Codexへ公開URLを登録する。Codex CLI 0.162.0-alpha.2でオプションを確認した。
+同名のローカル登録がある場合は `codex mcp remove syncnesto` で削除してから登録し直す。
 
 ```bash
 codex mcp add syncnesto \
-  --url http://127.0.0.1:8765/mcp \
+  --url https://syncnesto-api.vercel.app/mcp \
   --oauth-client-id syncnesto-codex-local \
-  --oauth-resource http://127.0.0.1:8765/mcp
+  --oauth-resource https://syncnesto-api.vercel.app/mcp
 codex mcp login syncnesto
 ```
 
 ブラウザで通常アカウントにログインし、同じ組織内から許可するProjectを選ぶ。
 手動トークン発行・コピーは不要。CodexがOAuth資格情報を管理し、アカウント画面の「Codex・MCPとの接続」で取り消せる。
-Mac上の127.0.0.1だけで待ち受ける。Origin/Host保護を無効にしたり、0.0.0.0へ変更しない。
+client IDの `-local` は登録済み識別子を維持するための名称で、MCPの実行場所を意味しない。
+Codexがブラウザ認証中だけ使うloopback callbackは継続するが、常時起動するローカルMCPは不要。
+
+## ローカル開発
+
+Backendの `MCP_ENABLED=true`、`MCP_ISSUER_URL=http://127.0.0.1:8000`、
+`MCP_RESOURCE_URL=http://127.0.0.1:8000/mcp`、`FRONTEND_PUBLIC_URL=http://localhost:3000` を設定する。
+通常のBackend/Frontendを起動し、CodexのURLとresourceを `http://127.0.0.1:8000/mcp` とする。
+MCPだけの別プロセスは不要。旧 `python -m syncnesto_mcp` adapterは開発環境のloopback接続用として残す。
+公開Backendでは別originのローカルresourceを許可しない。
 
 ## 業務操作
 
@@ -83,26 +89,38 @@ quote_startは**元の文字列のUnicode code point単位**。絵文字を含�
 
 Authorization Code + PKCE S256。登録済みpublic clientのみで、動的client登録や任意のmetadata URL取得を行わない。
 callbackは `http://127.0.0.1:<port>/callback`（または安全なcallbackサブパス）だけを許可する。
-resourceは設定したローカルMCPのURLと完全一致が必要。
+resourceは設定したMCPのURLと完全一致が必要。公開時はissuerと同じoriginの `/mcp` とする。
 要求10分、認可コード2分、access10分、接続/refresh絶対期限30日。refreshは一回使用後にローテーションする。
 認可コード・refreshの再利用は接続全体を失効する。DBは高エントロピーtokenのSHA-256だけを保存する。
 パスワード・メール変更、ユーザー無効化、所属解除・降格・明示的取消を次の操作で反映する。
 
-MCP宛accessは `/oauth/exchange` で60秒の連携API専用JWTへ交換し、通常ログインJWTとは鍵の用途・issuer/audienceを分ける。
+MCP宛accessは既存認証Serviceで都度検証し、60秒の連携API専用JWTへ交換する。
+通常ログインJWTとは鍵の用途・issuer/audienceを分け、業務Serviceへの入口で再検証する。
+リモート実装では既存Serviceを直接呼び、公開APIへの自己宛HTTP通信を行わない。
+旧adapter向けの `/oauth/exchange` と専用連携APIは維持する。
 通常Cookie・通常JWT・MCP宛accessで専用連携APIを呼べず、派生資格情報で通常APIにログインできない。
-同意/取消は既存Cookie/BFF/CSRF。直接経路はOAuth discovery/authorize/token/exchange/revokeとcatalog/operationsの完全一致だけ。
+同意/取消は既存Cookie/BFF/CSRF。`/mcp` はBearerのみでCookieを拒否する。
+直接経路はOAuth discovery/authorize/token/exchange/revoke、catalog/operations、
+`POST/GET/DELETE /mcp` と `GET /.well-known/oauth-protected-resource/mcp` の完全一致だけ。
+GET/DELETEは入口で405を返す。認証なしのPOST `/mcp` は401とresource metadataへの案内を返す。
+Host/Origin検証、入力サイズ制限、SDKのlifespanを維持する。
 直接経路も公開環境の共有レート制限を通り、偽装したBFFヘッダーからIPを信用しない。通常APIのBFF必須は維持する。
 監査には本人・source=mcp・connection_id・操作名を記録し、本文・tokenは含めない。
+
+stateless Streamable HTTPのJSON応答を使う。MCPセッション・長寿命SSE・接続権限をプロセス内に保持しない。
+OAuth・接続・再送結果は既存の通常DBへ保存する。Vercel Functionの再起動・複数インスタンスでも同じ認可を行う。
+新しいホスティング資源は作成しない。呼び出しは既存Vercel/Neonの利用枠を消費し、既存のFunction上限60秒を適用する。
 
 ## 検証
 
 ```bash
-uv sync --extra dev --extra mcp
+uv sync --extra dev
 uv run ruff check .
 uv run pyright
-uv run --extra mcp pytest -q
+uv run pytest -q
 ```
 
 OAuth・所属/権限変更・流用拒否・再送・競合・ロールバックと公式SDKのHTTP transportをテストする。
+組み込みBackendのHTTPS入口から初期化・ツール一覧・業務書き込み・引用コメント・取消までを検証する。
 実際の利用者のCodexブラウザ同意、公開環境の有効化は別途実施が必要。
 期限切れの接続・認可要求・資格情報・再送結果はアクセスを拒否するが、現時点では定期的な物理削除を行わない。

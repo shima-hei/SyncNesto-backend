@@ -29,6 +29,9 @@ def test_exact_mcp_exemptions_and_shared_rate_limit(monkeypatch):
     @app.post("/oauth/other")
     @app.get("/integrations/mcp/connections")
     @app.get("/integrations/mcp/catalog")
+    @app.post("/mcp")
+    @app.post("/mcp/other")
+    @app.get("/.well-known/oauth-protected-resource/mcp")
     def endpoint():
         return {"reached": True}
 
@@ -37,6 +40,9 @@ def test_exact_mcp_exemptions_and_shared_rate_limit(monkeypatch):
     assert client.post("/oauth/other").status_code == 403
     assert client.get("/integrations/mcp/connections").status_code == 403
     assert client.get("/integrations/mcp/catalog").status_code == 200
+    assert client.post("/mcp").status_code == 200
+    assert client.post("/mcp/other").status_code == 403
+    assert client.get("/.well-known/oauth-protected-resource/mcp").status_code == 200
     for index in range(10):
         assert (
             client.post(
@@ -49,3 +55,4 @@ def test_exact_mcp_exemptions_and_shared_rate_limit(monkeypatch):
     assert all(args[2] is False for args in budgets)
     monkeypatch.setattr(settings, "mcp_enabled", False)
     assert client.get("/integrations/mcp/catalog").status_code == 403
+    assert client.post("/mcp").status_code == 403

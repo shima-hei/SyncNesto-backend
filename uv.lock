@@ -1359,6 +1359,7 @@ dependencies = [
     { name = "email-validator" },
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "mcp" },
     { name = "psycopg2-binary" },
     { name = "pwdlib", extra = ["argon2"] },
     { name = "pydantic" },
@@ -1375,9 +1376,6 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
-mcp = [
-    { name = "mcp" },
-]
 
 [package.dev-dependencies]
 dev = [
@@ -1392,7 +1390,7 @@ requires-dist = [
     { name = "email-validator", specifier = ">=2.0.0" },
     { name = "fastapi", specifier = "==0.142.2" },
     { name = "httpx", specifier = ">=0.28.0" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = "==2.3.0" },
+    { name = "mcp", specifier = "==2.3.0" },
     { name = "psycopg2-binary", specifier = "==2.9.12" },
     { name = "pwdlib", extras = ["argon2"], specifier = ">=0.3.0" },
     { name = "pydantic", specifier = "==2.12.4" },

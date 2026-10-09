@@ -143,7 +143,10 @@ class Settings:
     bff_shared_secret: str = os.getenv("BFF_SHARED_SECRET", "")
     mcp_enabled: bool = get_bool_env("MCP_ENABLED")
     mcp_issuer_url: str = os.getenv("MCP_ISSUER_URL", "http://127.0.0.1:8000")
-    mcp_resource_url: str = os.getenv("MCP_RESOURCE_URL", "http://127.0.0.1:8765/mcp")
+    mcp_resource_url: str = os.getenv(
+        "MCP_RESOURCE_URL",
+        os.getenv("MCP_ISSUER_URL", "http://127.0.0.1:8000").rstrip("/") + "/mcp",
+    )
     allowed_hosts: list[str] = field(default_factory=get_allowed_hosts)
     database_url: str = get_required_env("DATABASE_URL")
     log_level: str = os.getenv("LOG_LEVEL", "INFO")

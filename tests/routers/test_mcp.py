@@ -105,6 +105,224 @@ def operate(direct, headers, name, project_id, *, key=None, **arguments):
     )
 
 
+@pytest.fixture
+def remote_context(context, monkeypatch):
+    """本体のHTTPS入口・lifespan・OAuth・SDK・通常DBを実物で接続する。"""
+    from app.main import create_app
+
+    user, project, _ = context
+    monkeypatch.setattr(settings, "mcp_issuer_url", "https://api.example")
+    monkeypatch.setattr(settings, "mcp_resource_url", "https://api.example/mcp")
+    with TestClient(create_app(), base_url="https://api.example") as remote:
+        authorize_as(remote, user, domain="api.example")
+        _, tokens, _ = connect(remote, project.id)
+        remote.cookies.clear()
+        remote.headers["Authorization"] = "Bearer " + tokens["access_token"]
+        remote.headers["Accept"] = "application/json, text/event-stream"
+        initialized = remote.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test", "version": "1"},
+                },
+            },
+        )
+        assert initialized.status_code == 200, initialized.text
+        remote.headers["MCP-Protocol-Version"] = initialized.json()["result"][
+            "protocolVersion"
+        ]
+        yield remote, tokens
+
+
+def remote_call(remote, name, arguments):
+    """実際のMCP JSON-RPCで一操作だけ実行する。"""
+    response = remote.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        },
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["result"]
+
+
+def test_embedded_mcp_discovery_tools_auth_and_flag(
+    remote_context, client, monkeypatch
+):
+    """本体で初期化・tool一覧が動き、Host/Origin/Cookie・無効化を守る。"""
+    remote, _ = remote_context
+    metadata = remote.get("/.well-known/oauth-protected-resource/mcp")
+    assert metadata.status_code == 200, metadata.text
+    assert metadata.json()["resource"] == "https://api.example/mcp"
+    assert metadata.json()["authorization_servers"] == ["https://api.example/"]
+    listed = remote.post(
+        "/mcp", json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"}
+    )
+    assert listed.status_code == 200, listed.text
+    assert len(listed.json()["result"]["tools"]) == 28
+    assert "mcp-session-id" not in listed.headers
+    assert remote.get("/mcp").status_code == 405
+    assert remote.delete("/mcp").status_code == 405
+    assert (
+        remote.post("/mcp", json={}, headers={"Host": "evil.example"}).status_code
+        == 421
+    )
+    assert (
+        remote.post(
+            "/mcp", json={}, headers={"Origin": "https://evil.example"}
+        ).status_code
+        == 403
+    )
+    assert (
+        remote.post("/mcp", json={}, headers={"Cookie": "other=value"}).status_code
+        == 400
+    )
+    assert (
+        remote.post(
+            "/mcp", json={}, headers={"Authorization": "Bearer invalid"}
+        ).status_code
+        == 401
+    )
+    normal_token = client.cookies.get(settings.auth_cookie_name)
+    assert (
+        remote.post(
+            "/mcp", json={}, headers={"Authorization": "Bearer " + normal_token}
+        ).status_code
+        == 401
+    )
+    assert remote.get("/auth/me").status_code == 401
+
+    def unavailable(*args):
+        raise RuntimeError("private credential must not be returned")
+
+    monkeypatch.setattr("app.services.mcp_auth.McpAuthService.exchange", unavailable)
+    failed = remote.post("/mcp", json={})
+    assert failed.status_code == 503
+    assert failed.json() == {"error": "temporarily_unavailable"}
+    monkeypatch.setattr(settings, "mcp_enabled", False)
+    assert remote.post("/mcp", json={}).status_code == 404
+
+
+def test_embedded_mcp_writes_are_atomic_idempotent_and_audited(
+    remote_context, context, db, monkeypatch
+):
+    """自己宛HTTPなしでもsavepoint・再送・監査・失敗時rollbackを維持する。"""
+    from app.models.audit_log import AuditLog
+    from app.repositories.mcp import McpRepository
+
+    remote, _ = remote_context
+    _, project, _ = context
+    arguments = {
+        "project_id": project.id,
+        "idempotency_key": uuid4().hex,
+        "data": {"title": "remote-once"},
+    }
+    first = remote_call(remote, "create_task", arguments)
+    assert not first.get("isError"), first
+    again = remote_call(remote, "create_task", arguments)
+    assert again["structuredContent"] == first["structuredContent"]
+    assert len(db.scalars(select(Task).where(Task.title == "remote-once")).all()) == 1
+    audit = db.scalar(select(AuditLog).where(AuditLog.event_type == "mcp.operation"))
+    assert audit is not None
+    assert audit.actor_user_id == context[0].id
+    assert audit.extra_metadata["source"] == "mcp"
+    assert audit.extra_metadata["operation"] == "create_task"
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("private SQL or credential must not be returned")
+
+    monkeypatch.setattr(McpRepository, "save_receipt", fail)
+    failed = remote_call(
+        remote,
+        "create_task",
+        {
+            **arguments,
+            "idempotency_key": uuid4().hex,
+            "data": {"title": "remote-rollback"},
+        },
+    )
+    assert failed["isError"] is True
+    assert "private SQL" not in str(failed)
+    db.expire_all()
+    assert db.scalar(select(Task).where(Task.title == "remote-rollback")) is None
+
+
+def test_embedded_mcp_project_scope_downgrade_and_revoke(
+    remote_context, context, db, client, create_test_project
+):
+    """接続時の許可Projectと、操作時の降格・明示的失効を確認する。"""
+    from app.models.rbac import Role
+
+    remote, _ = remote_context
+    _, project, member = context
+    other = create_test_project()
+    denied = remote_call(remote, "list_tasks", {"project_id": other.id})
+    assert denied["isError"] is True
+    member.role_id = db.scalar(
+        select(Role.id).where(Role.key == "viewer", Role.scope == "project")
+    )
+    db.commit()
+    # 利用資格そのものを失う降格は、tool実行より前の資格情報検証で拒否する。
+    assert remote.post("/mcp", json={}).status_code == 401
+    connection = db.scalar(select(McpConnection))
+    assert connection is not None
+    assert (
+        client.delete(f"/integrations/mcp/connections/{connection.id}").status_code
+        == 204
+    )
+    assert remote.post("/mcp", json={}).status_code == 401
+
+
+def test_embedded_mcp_requirement_review_uses_exact_quote(remote_context, context):
+    """リモートから下書きを作成し、指摘の引用位置・版を再検証する。"""
+    remote, _ = remote_context
+    _, project, _ = context
+
+    def write(name, **arguments):
+        return remote_call(
+            remote,
+            name,
+            {"project_id": project.id, "idempotency_key": uuid4().hex, **arguments},
+        )
+
+    document = write(
+        "create_requirement_document",
+        data={"title": "要求仕様", "document_code": "REMOTE"},
+    )["structuredContent"]
+    requirement = write(
+        "create_requirement",
+        data={
+            "document_id": document["id"],
+            "title": "ログイン",
+            "requirement_type": "functional",
+            "description": "🔐認証する",
+        },
+    )["structuredContent"]
+    anchor = {
+        "target_type": "requirement_item",
+        "target_id": requirement["id"],
+        "version": requirement["version"],
+        "field": "description",
+        "quote": "認証",
+        "quote_start": 1,
+        "body": "認証手段を明記してください",
+    }
+    comment = write("comment_requirement", **anchor)
+    assert not comment.get("isError"), comment
+    assert comment["structuredContent"]["target_anchor"]["quote_start"] == 1
+    stale = write("comment_requirement", **{**anchor, "version": 99})
+    assert stale["isError"] is True
+    assert "409" in stale["content"][0]["text"]
+
+
 @pytest.mark.parametrize(
     "redirect",
     [
