@@ -46,9 +46,9 @@ Functionの終了時処理へ書き込みの確定や失効を依存させず、
 - Ruff・format check・Pyright・差分の空白検査が成功。通常ビルド依存関係にSDKが含まれ、固定依存関係の監査で既知の脆弱性なし。
 - FrontendとInfraは差分なし。既存のAI支援stashは維持した。
 
-公開環境のMCPフラグ・環境変数・Codex登録はこのコード変更では変更しない。
-有効化時は[接続手順](../mcp.md)に従いBackend、Frontendを再デプロイし、本人がブラウザでProjectを許可する。
-実際のCodex OAuth同意と公開環境での一連の操作は、その後の確認対象とする。
+実装時点では公開環境のMCPフラグ・環境変数・Codex登録を変更せず、公開有効化を別の承認対象としていた。
+後述の承認を受け、[接続手順](../mcp.md)に従いBackend、Frontendを再デプロイした。
+Codexの登録、本人のブラウザでのProject許可、公開環境での一連のツール操作は後続の確認対象とする。
 
 期限切れの接続・認可要求・資格情報・再送結果を物理削除する定期処理は別課題として継続する。
 
@@ -60,6 +60,43 @@ Backend PR #16のマージ・公開、両ProjectのProduction用MCP設定、Fron
 本人によるCodexのOAuth同意とProjectの選択は後続の操作とする。
 
 PRの最初のCIはテスト80%まで失敗なく進行したが、20分のjob上限でcancelledとなった（run `37861542876`）。
-停止やアサーション失敗ではなく全体実行時間の不足と判断し、checks上限を35分へ変更する。
+停止やアサーション失敗ではなく全体実行時間の不足と判断し、checks上限を35分へ変更した。
 失敗時の短いtracebackと遅い10ケースの時間を出力し、公開前の全体テストを維持する。アプリコードは変更しない。
-有効化・公開確認の結果は完了後に追記する。
+
+PR #16を通常のsquash mergeでmainへ反映した（`fab778657aaa353bd7e26abf22b2924ab1875d49`）。
+次の設定をVercelのProductionにだけ追加し、既存の環境変数を変更していないことを確認した。
+
+| Project | 設定 |
+| --- | --- |
+| `syncnesto-api` | `MCP_ENABLED=true`、`MCP_ISSUER_URL=https://syncnesto-api.vercel.app`、`MCP_RESOURCE_URL=https://syncnesto-api.vercel.app/mcp` |
+| `syncnesto` | `MCP_ENABLED=true` |
+
+- Backend main CI [run 37869997089](https://github.com/shima-hei/SyncNesto-backend/actions/runs/37869997089) が成功。
+  全体テストは882成功・5skip・3既知xfailで失敗なし（1262.93秒）。Ruff・Pyright・固定依存関係の監査も成功した。
+- BackendのProduction deployment `dpl_2jyadacm84XNaGBQFA3LVUvAFpkL` がREADY。
+  公開コードは `fab778657aaa353bd7e26abf22b2924ab1875d49`、frameworkはFastAPI。
+  CIでのprebuilt作成は約2秒、Vercelのbuild開始からREADYまで約22秒。
+  canonical URLは `https://syncnesto-api.vercel.app`。
+- Backend公開後の12項目が成功。health=200、resource/authorization server metadata=200、
+  未認証・無効BearerのMCP POST=401、Cookie=400、GET/DELETE=405、通常APIの直接アクセス=403を確認した。
+  無効refreshの交換も400となり、接続を発行していない。
+- この確認後にFrontend mainの再デプロイをdispatchした。
+  [run 37871905063](https://github.com/shima-hei/SyncNesto-frontend/actions/runs/37871905063)、
+  対象commitは `a235adaaca8a834e63de3fd793eb69c2e02b8bd7`。
+  format・型検査・lint・71テスト・依存関係監査・build・Production CSP確認・deployがすべて成功した。
+- FrontendのProduction deployment `dpl_C1ZGwiGkx46aCrnjENewmrZenUHG` がREADY。
+  frameworkはNext.js。CIでのprebuilt作成は約38秒、Vercelのbuild開始からREADYまで約14秒。
+  canonical URLは `https://syncnesto.vercel.app`。
+- 両環境の公開後、Backendの12項目にFrontendの4項目を加えた16項目がすべて成功。
+  `/login`=200、未認証のBFF `/api/auth/me` と `/api/demo/status`=401、
+  `/mcp/authorize` からログイン画面へ戻り先を維持するredirectを確認した。
+- 有効なPKCEを含む未認証のOAuth開始も302となり、正しいFrontendの同意画面を経由してログインへ誘導された。
+  接続の承認・資格情報の発行・業務データの書き込みは行っていない。
+  検証で作成した未承認の認可要求は10分で失効する。
+- 2026-10-09 10:56 JST時点で、両ProjectのProductionの直近15分にerrorログなし。
+  Teamの外部log drainは既存どおり0件。継続監視やアラートの新設は行っていない。
+- 設定追加後も、MCP以外の既存環境変数のID・key・type・targetが一致し、Production以外にMCP設定を追加していない。
+  通常アカウント・デモの接続先と権限境界は維持する。
+
+以上の実環境確認は未認証の公開経路までであり、本人によるCodex OAuth同意と認証後のツール実行は未実施。
+この結果の追記は文書のみの変更として記録し、検証済みアプリの公開commitは上記のまま維持する。
