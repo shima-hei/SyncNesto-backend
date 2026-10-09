@@ -16,7 +16,7 @@ concurrency:
 jobs:
   checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -45,7 +45,7 @@ jobs:
           AWS_ENDPOINT_URL=http://localhost:4566
           AWS_S3_BUCKET_NAME=syncnesto-local-app-bucket
           ENV
-      - run: uv run --frozen pytest -q
+      - run: uv run --frozen pytest -q --tb=short --durations=10
 
   deploy:
     needs: checks
