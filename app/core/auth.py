@@ -11,6 +11,7 @@ from app.core.exceptions import (
     InvalidTokenError,
     PasswordChangeRequiredError,
 )
+from app.core.mfa import require_verified
 from app.core.security import DEMO_AUDIENCE, decode_access_token
 from app.db.session import get_db
 from app.models.user import User
@@ -94,6 +95,8 @@ def get_authenticated_user(
         raise InvalidTokenError()
 
     db.info["password_setup_only"] = payload.get("password_setup_only") is True
+    db.info["auth_session"] = user_session
+    request.state.auth_session_id = user_session.id
 
     if (
         access_token is not None
@@ -114,6 +117,8 @@ def get_current_user(
     """初回設定済みの本人だけに業務・管理APIの利用を許可する。"""
     if user.password_change_required or db.info.get("password_setup_only"):
         raise PasswordChangeRequiredError()
+    if db.info.get("data_realm") != "demo":
+        require_verified(user, db.info["auth_session"])
     return user
 
 

@@ -15,6 +15,12 @@ class UserSession(Base):
     """ユーザーのログインセッションを管理するモデル。"""
 
     __tablename__ = "sessions"
+    mfa_method: Mapped[str | None] = mapped_column(String(20))
+    mfa_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    mfa_security_version: Mapped[int | None] = mapped_column()
+    mfa_reauthenticated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     __table_args__ = {
         "comment": db_comment("セッション", "ログインセッションを管理するテーブル"),
     }

@@ -38,3 +38,17 @@ def consume_email_request_budget(identifier: str, client_ip: str) -> None:
         with session_local() as db:
             if RequestLimitRepository(db).consume(f"{scope}:{digest}", limit):
                 raise AccountActionRateLimitedError()
+
+
+def consume_mfa_budget(identifier: str, client_ip: str) -> None:
+    """限定Cookieを作り直しても本人・IPの試行上限を共有する。"""
+    for scope, value, limit in (
+        ("mfa-user", identifier, 10),
+        ("mfa-ip", client_ip, 30),
+    ):
+        digest = hmac.new(
+            settings.secret_key.encode(), value.encode(), hashlib.sha256
+        ).hexdigest()
+        with session_local() as db:
+            if RequestLimitRepository(db).consume(f"{scope}:{digest}", limit):
+                raise AccountActionRateLimitedError()

@@ -118,8 +118,18 @@ class DemoRepository:
                     )
             elif name in {"tenant_members", "account_actions"}:
                 condition = table.c.tenant_id == tenant_id
-            elif name in {"sessions", "user_roles"}:
+            elif name in {
+                "sessions",
+                "user_roles",
+                "mfa_factors",
+                "mfa_flows",
+                "mfa_recovery_codes",
+            }:
                 condition = table.c.user_id.in_(users)
+            elif name == "mfa_recovery_requests":
+                condition = or_(
+                    table.c.user_id.in_(users), table.c.actor_user_id.in_(users)
+                )
             else:
                 # 新しいモデル追加時、所有経路の定義忘れを削除漏れにしない。
                 raise RuntimeError(f"Demo cleanup ownership missing: {name}")

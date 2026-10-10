@@ -29,3 +29,21 @@ uv run pytest -q --durations=10
 ```
 
 結果と公開反映の状態は[決定記録](decisions/2026-10-08-demo-mode.md)へ追記する。
+
+## MFAの回帰確認（2026-10-11）
+
+既存の業務・RBACケースは`pytest_sessionstart`で`MFA_REQUIRED=false`にし、従来のテスト目的を維持する。
+製品の既定値は`true`のまま。`tests/routers/test_mfa.py`は各ケースで明示的に必須化し、専用暗号鍵と固定RP/originを設定する。
+追加認証前の通常API/MCP拒否、所有者・Permission、OTP再利用、実WebAuthn署名とorigin/RP/UV、
+同時復旧コード消費、期限・失効・運営復旧、通知/監査失敗のrollbackを実PostgreSQLで確認する。
+Passkeyの署名テストに実機の生体認証・登録操作は含まれない。
+
+```sh
+uv run pytest -q tests/routers/test_mfa.py tests/routers/test_demo.py tests/routers/test_demo_coexistence.py tests/routers/test_documents.py
+uv run pytest -q > /tmp/syncnesto-tests.log 2>&1
+```
+
+MFAテーブル追加時はデモの所有者定義にも追記する。未定義テーブルを無視せず回収を止める既存の安全策を維持する。
+今回の対象実行は63件成功。FrontendはMFAのCSRF・Server Guard・BFF中継4件を含む79件成功。
+最終のBackend全体実行は`926 passed, 5 skipped, 3 xfailed`（563.55秒）。ruff・pyrightも通過。
+実装状態・ローカル適用・公開未適用の区別は [MFA運用手順](mfa.md) に記録する。

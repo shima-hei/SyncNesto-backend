@@ -18,6 +18,7 @@ from app.core.exceptions import (
     EmailUnavailableError,
     ForbiddenError,
     InvalidTokenError,
+    MfaUnavailableError,
     NotFoundError,
     TokenExpiredError,
     UnauthorizedError,
@@ -28,6 +29,7 @@ from app.core.mcp import McpOAuthError
 logger = logging.getLogger(__name__)
 
 ERROR_STATUS_MAP: dict[type[AppError], int] = {
+    MfaUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
     DemoLimitError: status.HTTP_429_TOO_MANY_REQUESTS,
     EmailUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
     AccountActionRateLimitedError: status.HTTP_429_TOO_MANY_REQUESTS,

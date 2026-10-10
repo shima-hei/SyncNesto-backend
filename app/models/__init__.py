@@ -18,6 +18,7 @@ from app.models.mcp import (
     McpCredential,
     McpOperationReceipt,
 )
+from app.models.mfa import MfaFactor, MfaFlow, MfaRecoveryCode, MfaRecoveryRequest
 from app.models.notification import Notification
 from app.models.project import Project, ProjectMember
 from app.models.rbac import Permission, Role, RolePermission, UserRole
@@ -73,6 +74,10 @@ from app.models.test_design import (
 from app.models.user import User
 
 __all__ = [
+    "MfaFactor",
+    "MfaFlow",
+    "MfaRecoveryCode",
+    "MfaRecoveryRequest",
     "McpAuthorizationRequest",
     "McpConnection",
     "McpCredential",

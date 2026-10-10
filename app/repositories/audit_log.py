@@ -75,6 +75,7 @@ class AuditLogRepository:
         user_agent: str | None = None,
         request_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        commit: bool = True,
     ) -> AuditLog:
         """監査ログを作成する。
 
@@ -108,7 +109,10 @@ class AuditLogRepository:
             extra_metadata=metadata or {},
         )
         db.add(audit_log)
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(audit_log)
         return audit_log
 

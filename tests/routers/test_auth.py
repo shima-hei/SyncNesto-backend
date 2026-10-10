@@ -251,6 +251,7 @@ def test_login_user_does_not_return_access_token_in_production(
     assert response.status_code == 200
     assert response.json() == {
         "message": "Login successful",
+        "next_step": "authenticated",
         "password_change_required": False,
     }
     assert response.cookies.get(settings.auth_cookie_name)

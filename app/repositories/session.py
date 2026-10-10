@@ -13,7 +13,7 @@ from app.models.user import User
 class UserSessionRepository:
     """UserSessionテーブルへのデータアクセス処理を提供する。"""
 
-    def create(self, db: Session, user: User) -> UserSession:
+    def create(self, db: Session, user: User, *, commit: bool = True) -> UserSession:
         """ユーザーのログインセッションを作成する。
 
         Args:
@@ -39,7 +39,10 @@ class UserSessionRepository:
             absolute_expires_at=absolute_expires_at,
         )
         db.add(user_session)
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(user_session)
         return user_session
 

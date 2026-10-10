@@ -1,5 +1,42 @@
 # Syncnesto Frontend Authorization Guide
 
+## 2026-10-11 MFA契約（公開環境は未適用）
+
+通常Identity全員が対象。匿名デモは除外。詳細と移行手順は [MFA運用手順](mfa.md) を参照。
+既存DB/Storage・組織/Project認可は維持する。
+
+`POST /auth/login` は既存のpassword_change_requiredに加え `next_step` を返す。
+MFA必須時は `mfa_setup` / `mfa_verify` / `mfa_recovery` を返し、access tokenを返さず通常Cookieも発行しない。
+初期パスワードの限定セッションは維持する。`authenticated` の場合だけ従来の通常画面へ進む。
+FrontendはMFA完了前に通常の本人情報や業務キャッシュを復元せず、安全なMCP同意画面の戻り先だけを保持する。
+
+| API | 認証・用途 |
+| --- | --- |
+| `GET /auth/flow` | 10分の限定Cookie。next_step・利用できるmethod・期限のみ。秘密や組織情報を返さない |
+| `POST /auth/mfa/totp/setup` | 限定状態で `{name}` を送信。登録用URIとQR data URLはメモリだけで扱う |
+| `POST /auth/mfa/verify-code` | 限定状態で `{code,recovery:false}`。復旧コードはtrueで指定 |
+| `POST /auth/mfa/passkeys/register-options` | 登録用限定状態で `{name}`。SimpleWebAuthnへoptionsJSONとして渡す |
+| `POST /auth/mfa/passkeys/authenticate-options` | ログイン/再認証の限定状態。登録済み本人credentialだけを提示 |
+| `POST /auth/mfa/passkeys/verify` | `{credential}`。Backendが署名・本人確認・challenge・origin・RPを検証 |
+| `POST /auth/mfa/finish` | 初回/復旧時のコード保存確認。通常Cookieを発行し限定Cookieを破棄 |
+| `POST /auth/mfa/cancel` | 限定状態だけ取消。通常セッションは維持。logoutは両方を取消 |
+| `GET /auth/mfa` | 本人のMFA済み通常Cookie。認証器のID・種類・名前・日時、未使用コード数・直近認証の有無 |
+| `POST /auth/mfa/reauth` | 通常Cookieと `{password}`、続けてTOTP/Passkey。復旧コードによる再認証は不可 |
+| `POST /auth/mfa/manage` | 直近5分の本人認証。予備の登録用限定状態を発行 |
+| `PATCH /auth/mfa/factors/{id}` | 本人・直近認証で `{name}`。表示名だけ変更 |
+| `DELETE /auth/mfa/factors/{id}` | 本人・直近認証・最後の要素以外。204後に全ログイン/MCPが失効するためログインへ戻す |
+| `POST /auth/mfa/recovery-codes` | 本人・直近認証。旧コード破棄、新しい文字列10件を一度だけ表示 |
+| `POST /users/{id}/mfa-recovery` | system専用Permission・TOTP/Passkey直近認証。方法・理由・本人確認済みtrue。204後に案内メールを送信済み |
+| `POST /auth/mfa/recover` | `{token,password}`。運営承認後のリンクと本人のパスワードから再登録用限定状態を発行 |
+
+状態や秘密情報を返す成功レスポンスはno-store。更新系は限定Cookieがある場合もDouble Submit CSRFを要求する。
+`MFA_REQUIRED` は403、`MFA_INVALID`（不一致・期限切れ・消費済み・5回失敗）は400、
+`MFA_UNAVAILABLE`（暗号鍵・WebAuthn設定不備）は503、共有試行上限は429 `RATE_LIMITED`。
+通常APIのMFA_REQUIREDは再ログイン、機微な設定での同エラーはアカウントの再認証へ案内する。
+MFA画面でのコード不一致や期限切れを、通常セッション切れのイベントへ読み替えない。
+既存 `/auth/me` は初期パスワードの限定状態以外、MFA未検証の旧セッションを拒否する。
+アカウント画面に本人のMFA管理、運営ユーザー詳細に別ユーザーの復旧支援を配置する。組織管理者には解除APIを許可しない。
+
 MCPは通常Cookie認証と別のOAuth委任を使用します。接続本人の現在のProject権限と許可Projectの積集合で毎回認可します。
 `mcp:connect` に加えて業務の編集権限が必要で、閲覧専用・テスト実行専用は対象外、編集権限のあるguestは利用可能です。
 Cookie/BFF/CSRFは同意・接続管理に維持し、通常APIのAuthorization headerを有効にしません。詳細は [MCP仕様・接続手順](mcp.md) を参照してください。
@@ -67,7 +104,8 @@ permission を使ってAPI実行可否を最終判定する
 
 ## 認証Cookie
 
-ログイン成功時、バックエンドは HttpOnly Cookie に JWT access token をセットします。
+通常の認証完了時、バックエンドは HttpOnly Cookie に JWT access token をセットします。
+MFA必須の通常ログインでは、パスワード成功時には限定Cookieだけを発行し、追加認証完了後に通常Cookieを発行します（冒頭のMFA契約を参照）。
 
 ```http
 Set-Cookie: access_token=<JWT>; HttpOnly; Path=/; SameSite=Lax
@@ -79,12 +117,15 @@ Set-Cookie: access_token=<JWT>; HttpOnly; Path=/; SameSite=Lax
 Set-Cookie: access_token=<JWT>; HttpOnly; Secure; Path=/; SameSite=Lax
 ```
 
-本番相当の `ALLOW_BEARER_TOKEN_RESPONSE=false` では、ログインレスポンスbodyに成功メッセージと初回設定の必要性を返します。JWTは返しません。
+`ALLOW_BEARER_TOKEN_RESPONSE=false` ではJWTをbodyに返しません。
+次は初回パスワード設定用またはMFA準備期間の `POST /auth/login` の完了例です。
+MFAが必要な通常ログインは`next_step=mfa_setup|mfa_verify|mfa_recovery`を返します。
 
 ```json
 {
   "message": "Login successful",
-  "password_change_required": false
+  "password_change_required": false,
+  "next_step": "authenticated"
 }
 ```
 
