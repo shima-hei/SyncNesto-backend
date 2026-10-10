@@ -3,7 +3,7 @@
   "name": "syncnesto",
   "version": "0.1.0",
   "description": "Create and review requirements and test designs, and manage tasks and schedules in Syncnesto.",
-  "author": { "name": "Kohei" },
+  "author": { "name": "shime-hei", "email": "syncnesto@gmail.com" },
   "homepage": "https://syncnesto.vercel.app",
   "license": "UNLICENSED",
   "keywords": ["requirements", "test-design", "tasks", "project-management"],
@@ -13,7 +13,7 @@
         "displayName": "Syncnesto",
         "shortDescription": "要件・テスト設計の作成とレビュー、タスク管理",
         "longDescription": "Syncnestoの要件定義とテスト設計の作成、箇所を指定したレビューコメント、タスクと日程の編集を行います。接続本人の現在の権限と、同意したプロジェクトの範囲で操作します。通常アカウントが必要です。閲覧専用・テスト実行専用・デモアカウントは接続できません。",
-        "developerName": "Kohei",
+        "developerName": "shime-hei",
         "category": "Productivity",
         "capabilities": ["要件定義の作成・レビュー", "テスト設計の作成・レビュー", "タスク・日程の管理"],
         "websiteURL": "https://syncnesto.vercel.app",
@@ -24,6 +24,9 @@
         "logo": "./assets/icon.svg"
       },
       "onboardingSkill": "./skills/syncnesto-work/SKILL.md",
+      "publication": {
+        "release_notes": "初版。本人が許可したプロジェクトと現在の権限で、要件定義・テスト設計の作成と箇所別レビュー、タスク・日程の管理に対応します。"
+      },
       "review": {
         "test_cases": {
           "positive": [

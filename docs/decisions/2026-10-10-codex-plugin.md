@@ -57,10 +57,74 @@ OpenAI側のプラグインは未登録であることを確認した。
 
 ## 公開に残る作業
 
-1. 発行者・問い合わせ窓口・プライバシーポリシー・利用規約の確定と公開。
-2. Backend/Frontend変更のレビュー・マージ・Backend先行配布。
+1. 発行者名・問い合わせメールは回答済み。保持/削除・運営条件を確定し、問い合わせ・プライバシー・規約ページを公開する。
+2. 審査前に日程previewのannotationを修正し、期限切れMCP記録等の保持・実削除方針を確定する。
 3. OpenAIへ登録・ZIPアップロード、ドメインchallengeの配布と検証、管理画面のcallback完全一致登録。
 4. ホスト上で本人のOAuth同意と業務操作の確認。審査用の分離した通常Project/アカウント・動画等を準備して申請。
 5. 承認後の公開、実紹介URLの `MCP_PLUGIN_INSTALL_URL` 設定とFrontend配布、ボタンからの最終確認。
 
 未登録・未申請・未審査・未公開である。架空の紹介URL・規約URLを登録して連携可能と表示しない。
+
+## マージ・公開と申請資料の準備
+
+2026-10-10: PR作成後の「次に進めよう」を受け、両PRの成功したCIとheadを確認し、Backend先行で公開する。
+
+- Backend PR #17のCIは899 passed / 5 skipped / 3 xfailed。Ruff・Pyright・本番依存監査も成功した。
+- PR #17をmain `b81e93e6d28a3bbce0f9bf3879db8e2696e1c3ef` へsquash mergeした。
+  [公開用CI 38020686359](https://github.com/shima-hei/SyncNesto-backend/actions/runs/38020686359)も全成功。
+  全体899 passed / 5 skipped / 3 xfailed（1212.30秒）。通常・専用デモの既存migration確認も成功。
+- Backend Production `dpl_E3ckMpy9Draotnhxx9Jw36MDJuGo` はREADY。
+  対象は `shima-hei / syncnesto-api`、公開commitは上記、frameworkはFastAPI、canonical URLは
+  `https://syncnesto-api.vercel.app`。Vercelのbuild開始からREADYまで約26秒。
+- Backend公開後の12項目が成功。healthと2つのdiscoveryは200、未認証/無効BearerのMCPは401、
+  Cookieは400、GETは405、通常API・利用資格APIの直接呼出しとOpenAPIは403。
+  プラグインclientの有効なloopback認可開始は302、任意のHTTPS callbackは400。
+  作成した未承認要求は10分で失効する。接続の承認・資格情報の発行・業務書込みは行っていない。
+- 上記の確認後にFrontend PR #23をmain `f02cda86484bcd487189c592be9612b2a47e9368` へsquash mergeした。
+  [公開用CI 38022063555](https://github.com/shima-hei/SyncNesto-frontend/actions/runs/38022063555)は全成功。
+  73件・format/型/lint/build/本番依存監査/CSPを通過。
+  Production `dpl_AgoMsspL7McX8BHS6bQaenazkpLR` はREADY。
+  対象は `shima-hei / syncnesto`、公開commitは上記、canonical URLは `https://syncnesto.vercel.app`。
+  Vercelのbuild開始からREADYまで約15秒。
+- Backend新deploymentの公開後から03:52 UTCまでのerror/fatalログは0件。
+  この短時間の確認を継続監視の保証として扱わない。
+
+ユーザーから規約は「未作成」、発行者名は **shime-hei**、公開窓口は **syncnesto@gmail.com** と回答を受けた。
+GitHubの `shima-hei` から推測して公開名の綴りを変更しない。
+manifest・listingの発行者名、窓口、初版release notesへ反映し、パッケージの2テストが成功した。
+最新の検証用ZIPを再生成した。公開用の実URLやOpenAIの確認済みidentityを作ったことにはしない。
+
+問い合わせ・プライバシー・規約のレビュー用案を `plugins/publication-draft.ja.md` に保存した。
+現在の保持/失効/実削除を区別し、未確定項目を明示した。Webページとして公開していない。
+OpenAI管理画面はログイン待ちで、ZIPの実受理・本人確認・challenge・callbackは未確認。
+日程previewは再送結果を保存するため、現行の `readOnlyHint=true` は公開審査前の修正対象として記録した。
+通常DB/Storage・`APP_ENV`・`DEMO_MODE`・MCP設定・AI支援stashには変更を加えていない。
+
+## 公開後のBFF修正
+
+公開確認で `/api/integrations/mcp/availability` が404になることを発見した。
+Backend側の資格APIと生成クライアントは存在するが、Frontend BFFの許可一覧へ追加していなかった。
+アカウント画面の利用資格判定に影響するため、完全一致パスを追加した。
+OAuth・他の連携APIを公開せず、Cookie/BFF共有キー・Backendの資格/未認証応答を維持する。
+
+- [Frontend PR #24](https://github.com/shima-hei/SyncNesto-frontend/pull/24) に修正とハンドラー経由の回帰テストを追加。
+  修正前に資格APIの中継テストが失敗し、修正後に成功することを確認した。
+- ローカル75件・format/型/lint/build/CSPとPR CIが成功した。
+  main `54369069eb7f559dd939b670e45f163e51e2d6f6` へsquash merge。
+  [公開用CI 38022732848](https://github.com/shima-hei/SyncNesto-frontend/actions/runs/38022732848) はchecks/deployとも成功。
+- 初回smokeの残り2件は確認コードの前提誤りだった。アカウント未認証は正しく `/login` へ307、
+  同意画面は有効なUUIDの `request_id` を付けると戻り先付きログインへ307となる。
+  アプリの遷移や機能フラグを変更せず、確認コードの入力と期待値を修正した。
+
+- 再配布したProduction `dpl_6PnZCwJFMQgausE2g3fMSh9A3eYV` はREADY。
+  `https://syncnesto.vercel.app` にmain `5436906` が割り当てられていることを確認した。
+  Vercelのbuild開始からREADYまで約11秒。
+- 再確認17項目は全成功。利用資格APIはBFF経由で未認証401へ戻り、直接呼出し403を維持した。
+  health/discovery、ログイン、Cookie/Bearerの境界、アカウント/同意画面の遷移、callback制限も成功。
+  有効なloopback認可開始で作った未承認要求は10分で失効する。本人の承認・資格情報発行・業務書込みは行っていない。
+- 04:06:45 UTC以降のログ再確認時点で、対象Backend/Frontend deploymentのerror/fatalログはどちらも0件。
+  ログ取得範囲の確認であり、継続的な監視や認証後の全業務操作の検証を意味しない。
+- Frontendのタスク/ローカル作業メモの「MCP検討は後続」という古い記載を更新し、公開MCP・連携欄の実装済みと
+  OpenAI未登録・本人同意未検証を区別した。デプロイ資料から本決定記録へ参照を追加した。
+- 今回の追加は申請メタデータと草案・記録のみ。パッケージ2件とRuffが成功した。
+  Backendの稼働コードは `b81e93e` のまま。通常/デモの資源・環境変数・AI支援stashは保持した。
