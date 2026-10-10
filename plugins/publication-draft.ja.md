@@ -104,10 +104,12 @@ Syncnestoの操作、不具合、個人情報の取扱いについては `syncne
 ## 申請に残る作業
 
 - 文面の確定後、ログイン不要の問い合わせ・プライバシー・規約ページを公開し、実URLを申請用listingへ設定する。
-- OpenAIへのログイン・発行者の本人確認、申請ZIPの実アップロード、OAuth設定の読込を確認する。
+- OpenAIへのログインは完了。本人確認で支払方法登録が要求され、追加請求ゼロを確認できないためカード入力前で保留中。
+  [費用条件と再開条件](publication-status.ja.md) を満たしてから、本人確認・申請ZIPの実アップロード・OAuth設定の読込を進める。
 - 管理画面で発行された正確なドメインchallengeとcallbackを設定する。
 - 分離した通常Projectと審査用アカウントで、本人のOAuth同意・全8審査ケース・動画を準備する。既存デモ利用者へMCP権限を開放しない。
-- 各ツールのannotationの根拠を準備する。現状の日程previewは再送結果を保存するため、`readOnlyHint=true` の表示を公開審査前に見直す必要がある。初版release notesはmanifestへ反映済み。
+- [各ツールのannotation根拠](tool-annotations.md) を準備した。日程previewは再送結果を保存するため
+  `readOnlyHint=false` へ修正した。公開先への配布とtool scanの一致確認は残る。初版release notesはmanifestへ反映済み。
 - portable MCP schemaとOpenAI認証拡張の不一致を、管理画面の実受理結果で解消する。
 - 審査・承認・発行者による公開後に実紹介URLを設定し、アカウントのボタンから最終確認する。
 
