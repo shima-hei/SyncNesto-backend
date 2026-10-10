@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.core.config import settings
-from app.core.mcp import CLIENT_ID
+from app.core.mcp import CLIENT_ID, PLUGIN_CLIENT_ID
 from app.models.mcp import McpConnection, McpCredential
 from app.models.task import Task
 from tests.helpers.auth import authorize_as
@@ -54,21 +54,22 @@ def begin(client, **overrides):
     return response, params, verifier
 
 
-def connect(client, project_id):
+def connect(client, project_id, **overrides):
     """ブラウザ同意後、Cookieなしでコードを交換する。"""
-    response, params, verifier = begin(client)
+    response, params, verifier = begin(client, **overrides)
     assert response.status_code == 302, response.text
     request_id = parse_qs(urlsplit(response.headers["location"]).query)["request_id"][0]
     root = "/integrations/mcp/authorization-requests/" + request_id
     consent = client.get(root)
     assert consent.status_code == 200, consent.text
+    assert consent.json()["redirect_uri"] == params["redirect_uri"]
     approved = client.post(root + "/approve", json={"project_ids": [project_id]})
     assert approved.status_code == 200, approved.text
     query = parse_qs(urlsplit(approved.json()["redirect_url"]).query)
     assert query["state"] == [params["state"]]
     direct = TestClient(client.app)
     token_params = {
-        "client_id": CLIENT_ID,
+        "client_id": params["client_id"],
         "resource": settings.mcp_resource_url,
         "grant_type": "authorization_code",
         "code": query["code"][0],
@@ -78,6 +79,100 @@ def connect(client, project_id):
     response = direct.post("/oauth/token", data=token_params)
     assert response.status_code == 200, response.text
     return direct, response.json(), token_params
+
+
+def test_plugin_callback_and_client_bound_credentials(client, context, monkeypatch):
+    """登録済みcallbackで接続し、別clientのcode・refresh・取消を拒否する。"""
+    _, project, _ = context
+    callback = "https://chatgpt.com/connector_platform_oauth_redirect"
+    assert (
+        begin(client, client_id=PLUGIN_CLIENT_ID, redirect_uri=callback)[0].status_code
+        == 400
+    )
+    monkeypatch.setattr(settings, "mcp_plugin_redirect_uris", [callback])
+    assert begin(client, redirect_uri=callback)[0].status_code == 400
+    direct, tokens, code_params = connect(
+        client, project.id, client_id=PLUGIN_CLIENT_ID, redirect_uri=callback
+    )
+    # 使用済みcodeでも、別clientからの再送で正当な接続を失効させない。
+    assert (
+        direct.post(
+            "/oauth/token", data={**code_params, "client_id": CLIENT_ID}
+        ).status_code
+        == 400
+    )
+    refresh = {
+        "client_id": PLUGIN_CLIENT_ID,
+        "resource": settings.mcp_resource_url,
+        "grant_type": "refresh_token",
+        "refresh_token": tokens["refresh_token"],
+    }
+    assert (
+        direct.post(
+            "/oauth/token", data={**refresh, "client_id": CLIENT_ID}
+        ).status_code
+        == 400
+    )
+    assert (
+        direct.post(
+            "/oauth/revoke",
+            data={"client_id": CLIENT_ID, "token": tokens["access_token"]},
+        ).status_code
+        == 200
+    )
+    api_headers(direct, tokens["access_token"])
+    rotated = direct.post("/oauth/token", data=refresh)
+    assert rotated.status_code == 200, rotated.text
+    token = rotated.json()["access_token"]
+    assert (
+        direct.post(
+            "/oauth/revoke", data={"client_id": PLUGIN_CLIENT_ID, "token": token}
+        ).status_code
+        == 200
+    )
+    assert (
+        direct.post(
+            "/oauth/exchange", headers={"Authorization": "Bearer " + token}
+        ).status_code
+        == 401
+    )
+
+
+def test_removed_plugin_callback_cannot_be_approved(client, context, monkeypatch):
+    """同意前にallowlistから外したcallbackへの遷移を許可しない。"""
+    _, project, _ = context
+    callback = "https://chatgpt.com/connector/oauth/plugin-id"
+    monkeypatch.setattr(settings, "mcp_plugin_redirect_uris", [callback])
+    response, _, _ = begin(client, client_id=PLUGIN_CLIENT_ID, redirect_uri=callback)
+    request_id = parse_qs(urlsplit(response.headers["location"]).query)["request_id"][0]
+    monkeypatch.setattr(settings, "mcp_plugin_redirect_uris", [])
+    root = "/integrations/mcp/authorization-requests/" + request_id
+    assert client.get(root).status_code == 404
+    assert (
+        client.post(root + "/approve", json={"project_ids": [project.id]}).status_code
+        == 404
+    )
+
+
+def test_availability_uses_live_project_permissions(client, db, context):
+    """編集可能な外部協力者は利用でき、閲覧専用への降格を反映する。"""
+    from app.models.rbac import Role
+
+    user, _, member = context
+    user.user_type = "guest"
+    db.commit()
+    assert client.get("/integrations/mcp/availability").json() == {"can_connect": True}
+    # アカウント単位の確認は組織選択を使わず、本人の全所属を検証する。
+    client.headers["X-Tenant-ID"] = "999999"
+    assert client.get("/integrations/mcp/availability").json() == {"can_connect": True}
+    role = db.scalar(select(Role).where(Role.key == "viewer", Role.scope == "project"))
+    assert role is not None
+    member.role_id = role.id
+    db.commit()
+    assert client.get("/integrations/mcp/availability").json() == {"can_connect": False}
+    assert (
+        TestClient(client.app).get("/integrations/mcp/availability").status_code == 401
+    )
 
 
 def api_headers(direct, access_token):
@@ -888,6 +983,7 @@ def test_execution_only_role_cannot_connect_even_with_mcp_permission(
         db.add(RolePermission(role_id=role.id, permission_id=permission.id))
     member.role_id = role.id
     db.commit()
+    assert client.get("/integrations/mcp/availability").json() == {"can_connect": False}
     response, _, _ = begin(client)
     request_id = parse_qs(urlsplit(response.headers["location"]).query)["request_id"][0]
     root = f"/integrations/mcp/authorization-requests/{request_id}"
@@ -1108,3 +1204,4 @@ def test_demo_account_cannot_authorize_mcp(client, context, demo_settings, monke
         == 403
     )
     assert client.get("/integrations/mcp/connections").status_code == 403
+    assert client.get("/integrations/mcp/availability").status_code == 403

@@ -26,6 +26,7 @@ from tests.helpers.auth import authorize_as
 # 接続の同意・管理は組織選択ではなく本人のIdentityを認証する。
 # 業務操作のcatalog/operationsはOpenAPI外で、委任に固定した組織を検証する。
 MCP_IDENTITY_OPERATIONS = {
+    ("get", "/integrations/mcp/availability"),
     ("get", "/integrations/mcp/connections"),
     ("delete", "/integrations/mcp/connections/{connection_id}"),
     ("get", "/integrations/mcp/authorization-requests/{request_id}"),

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "syncnesto": {
+      "type": "streamable-http",
+      "url": "https://syncnesto-api.vercel.app/mcp",
+      "extensions": {
+        "com.openai": {
+          "auth": {
+            "type": "oauth",
+            "client": {
+              "mode": "provided",
+              "clientId": "syncnesto-openai-plugin",
+              "tokenEndpointAuthMethod": "none"
+            },
+            "authorizationUrl": "https://syncnesto-api.vercel.app/oauth/authorize",
+            "tokenUrl": "https://syncnesto-api.vercel.app/oauth/token",
+            "baseScopes": ["mcp:work"]
+          }
+        }
+      }
+    }
+  }
+}

@@ -13,6 +13,7 @@ from app.db.mcp import get_mcp_db
 from app.db.session import get_db, get_normal_db
 from app.models.user import User
 from app.schemas.mcp import (
+    McpAvailabilityRead,
     McpConnectionRead,
     McpConsentCreate,
     McpConsentRead,
@@ -176,6 +177,12 @@ def deny(
 ):
     """本人が拒否した要求を閉じる。"""
     return McpRedirectRead(redirect_url=service.deny(db, user, request_id))
+
+
+@router.get("/integrations/mcp/availability", response_model=McpAvailabilityRead)
+def availability(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """連携開始前に本人の現在の利用資格だけを返す。"""
+    return McpAvailabilityRead(can_connect=bool(service.available_projects(db, user)))
 
 
 @router.get("/integrations/mcp/connections", response_model=list[McpConnectionRead])

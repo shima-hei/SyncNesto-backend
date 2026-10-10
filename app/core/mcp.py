@@ -2,13 +2,52 @@
 
 import hashlib
 import hmac
+import re
 from urllib.parse import urlsplit
 
 from app.core.config import settings
 from app.core.exceptions import AppError, NotFoundError
 
 CLIENT_ID = "syncnesto-codex-local"
+PLUGIN_CLIENT_ID = "syncnesto-openai-plugin"
+CLIENT_IDS = frozenset({CLIENT_ID, PLUGIN_CLIENT_ID})
 SCOPES = ["mcp:work"]
+
+
+def valid_redirect_uri(client_id: str, value: str) -> bool:
+    """既存clientはloopback、pluginは登録済みOpenAI callbackも許可する。"""
+    if (
+        client_id not in CLIENT_IDS
+        or len(value) > 500
+        or "\\" in value
+        or any(ord(char) <= 32 or ord(char) == 127 for char in value)
+    ):
+        return False
+    try:
+        uri = urlsplit(value)
+        port = uri.port
+    except ValueError:
+        return False
+    if uri.username or uri.password or uri.query or uri.fragment:
+        return False
+    if (
+        uri.scheme == "http"
+        and uri.hostname == "127.0.0.1"
+        and port is not None
+        and 1 <= port <= 65535
+        and re.fullmatch(r"/callback(?:/[A-Za-z0-9_-]{1,100})?", uri.path)
+    ):
+        return True
+    return bool(
+        client_id == PLUGIN_CLIENT_ID
+        and value in settings.mcp_plugin_redirect_uris
+        and uri.scheme == "https"
+        and uri.netloc == "chatgpt.com"
+        and (
+            uri.path == "/connector_platform_oauth_redirect"
+            or re.fullmatch(r"/connector/oauth/[A-Za-z0-9_-]{1,200}", uri.path)
+        )
+    )
 
 
 class McpOAuthError(AppError):

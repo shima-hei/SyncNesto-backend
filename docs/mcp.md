@@ -12,10 +12,21 @@ CodexへDB、BFF共有秘密、Supabase・Neon管理資格情報を渡さない�
 カスタムロールは `mcp:connect` と少なくとも一つの要件・設計・タスクの作成/更新/コメント権限が必要。
 組織管理者・運営管理者の権限でProjectの業務権限を迂回しない。
 
-## 初回設定
+## アカウント画面からの連携
+
+入口は **アカウント → 外部サービス連携 → Codex**。プラグインの紹介ページを別タブで開き、
+Codex側へ追加してからSyncnestoにログインし、同じ組織の許可Projectを選ぶ。
+手動トークンの発行や貼り付けは不要。アカウント画面で接続状態を更新・確認・解除できる。
+プラグインの追加だけでは接続済みと扱わず、OAuthの同意で作成された接続を表示する。
+
+2026-10-10時点ではOpenAIへ未登録。紹介URL未設定時は「公開準備中」として開始ボタンを無効にする。
+申請資材と審査前の検証方法は [plugins/README.md](../plugins/README.md) を参照する。
+既存のリモート接続はそのまま利用できる。
+
+## サーバー設定
 
 既存MCPのmigration `91a7d2b8c406` を適用済みのBackendへ、この実装を配布する。
-リモート化による追加migrationはない。公開Backendのサーバー環境変数を設定する。
+リモート化・プラグイン対応による追加migrationはない。公開Backendのサーバー環境変数を設定する。
 
 ```env
 MCP_ENABLED=true
@@ -31,7 +42,17 @@ Frontendにもサーバー環境変数 `MCP_ENABLED=true` を設定し、Backend
 公開時は既存の `scripts/migrate_production.py` により通常DBと専用デモDBの両方へmigrationを適用してから配布する。
 デモからMCPを利用しなくても、デモ破棄処理が参照するスキーマを揃える必要がある。
 
-Codexへ公開URLを登録する。Codex CLI 0.162.0-alpha.2でオプションを確認した。
+プラグイン用client IDは `syncnesto-openai-plugin`。public clientのためclient secretは発行しない。
+OpenAI管理画面で表示された正確なHTTPS callbackをBackendの `MCP_PLUGIN_REDIRECT_URIS` に設定する。
+複数の場合はカンマ区切り。既定は空で、HTTPS callbackを許可しない。
+`https://chatgpt.com/connector_platform_oauth_redirect` または `/connector/oauth/<callback ID>` の完全一致だけを許可する。
+Frontendのサーバー環境変数 `MCP_PLUGIN_INSTALL_URL` には**審査・公開後の実際の紹介URL**を設定する。
+資格情報・query・fragmentを含まない `https://chatgpt.com/` 配下の紹介ページだけを受け付ける。
+Backendを先に配布し、その後Frontendを配布する。未登録段階で存在しないURLを設定しない。
+
+## 既存接続・開発者向けCLI
+
+従来の接続方式も維持する。Codex CLI 0.162.0-alpha.2でオプションを確認した。
 同名のローカル登録がある場合は `codex mcp remove syncnesto` で削除してから登録し直す。
 
 ```bash
@@ -43,7 +64,7 @@ codex mcp login syncnesto
 ```
 
 ブラウザで通常アカウントにログインし、同じ組織内から許可するProjectを選ぶ。
-手動トークン発行・コピーは不要。CodexがOAuth資格情報を管理し、アカウント画面の「Codex・MCPとの接続」で取り消せる。
+手動トークン発行・コピーは不要。CodexがOAuth資格情報を管理し、アカウント画面の「外部サービス連携」で取り消せる。
 client IDの `-local` は登録済み識別子を維持するための名称で、MCPの実行場所を意味しない。
 Codexがブラウザ認証中だけ使うloopback callbackは継続するが、常時起動するローカルMCPは不要。
 
@@ -88,7 +109,9 @@ quote_startは**元の文字列のUnicode code point単位**。絵文字を含�
 ## 認証境界
 
 Authorization Code + PKCE S256。登録済みpublic clientのみで、動的client登録や任意のmetadata URL取得を行わない。
-callbackは `http://127.0.0.1:<port>/callback`（または安全なcallbackサブパス）だけを許可する。
+既存clientは `http://127.0.0.1:<port>/callback`（または安全なcallbackサブパス）だけを許可する。
+プラグインclientはそのloopbackに加え、設定済みのOpenAI HTTPS callbackだけを許可する。
+認可コード・refresh・取消は発行先clientに結び付ける。別clientの再送で正当な接続を失効させない。
 resourceは設定したMCPのURLと完全一致が必要。公開時はissuerと同じoriginの `/mcp` とする。
 要求10分、認可コード2分、access10分、接続/refresh絶対期限30日。refreshは一回使用後にローテーションする。
 認可コード・refreshの再利用は接続全体を失効する。DBは高エントロピーtokenのSHA-256だけを保存する。
@@ -122,5 +145,5 @@ uv run pytest -q
 
 OAuth・所属/権限変更・流用拒否・再送・競合・ロールバックと公式SDKのHTTP transportをテストする。
 組み込みBackendのHTTPS入口から初期化・ツール一覧・業務書き込み・引用コメント・取消までを検証する。
-実際の利用者のCodexブラウザ同意、公開環境の有効化は別途実施が必要。
+プラグインの実際のホストへの追加・本人同意、公開申請・審査・紹介URL設定は別途実施が必要。
 期限切れの接続・認可要求・資格情報・再送結果はアクセスを拒否するが、現時点では定期的な物理削除を行わない。

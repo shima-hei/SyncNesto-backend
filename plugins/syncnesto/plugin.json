@@ -1,0 +1,45 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "syncnesto",
+  "version": "0.1.0",
+  "description": "Create and review requirements and test designs, and manage tasks and schedules in Syncnesto.",
+  "author": { "name": "Kohei" },
+  "homepage": "https://syncnesto.vercel.app",
+  "license": "UNLICENSED",
+  "keywords": ["requirements", "test-design", "tasks", "project-management"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Syncnesto",
+        "shortDescription": "要件・テスト設計の作成とレビュー、タスク管理",
+        "longDescription": "Syncnestoの要件定義とテスト設計の作成、箇所を指定したレビューコメント、タスクと日程の編集を行います。接続本人の現在の権限と、同意したプロジェクトの範囲で操作します。通常アカウントが必要です。閲覧専用・テスト実行専用・デモアカウントは接続できません。",
+        "developerName": "Kohei",
+        "category": "Productivity",
+        "capabilities": ["要件定義の作成・レビュー", "テスト設計の作成・レビュー", "タスク・日程の管理"],
+        "websiteURL": "https://syncnesto.vercel.app",
+        "defaultPrompt": ["要件定義をレビューして、指摘箇所ごとにコメントして", "要件をもとにテスト設計を作成して", "要件からタスクを起票し、日程案を作って"],
+        "brandColor": "#0023D2",
+        "brandColorDark": "#00CC11",
+        "composerIcon": "./assets/icon.svg",
+        "logo": "./assets/icon.svg"
+      },
+      "onboardingSkill": "./skills/syncnesto-work/SKILL.md",
+      "review": {
+        "test_cases": {
+          "positive": [
+            { "description": "許可したプロジェクトの選択", "prompt": "操作できるSyncnestoのプロジェクトを確認して", "tools_triggered": "list_projects", "expected_behavior": "接続で許可され、現在の本人権限でも編集できるプロジェクトだけを表示する。" },
+            { "description": "要件定義の作成", "prompt": "選択したプロジェクトにログイン機能の要件定義を下書きとして作成して", "tools_triggered": "create_requirement_document, create_requirement_section, create_requirement", "expected_behavior": "既存の要件を参照し、指定された範囲の下書きを作成する。" },
+            { "description": "引用箇所への指摘", "prompt": "要件定義をレビューし、問題ごとに指摘箇所へコメントして", "tools_triggered": "get_requirement_target, list_requirement_comments, comment_requirement", "expected_behavior": "対象ID、現在のversion、field、引用とUnicode code point位置を指定して1指摘ずつ投稿する。" },
+            { "description": "テスト設計の作成とセル指摘", "prompt": "要件からテスト設計を作り、因子水準の不足があればセルへコメントして", "tools_triggered": "create_test_design, append_test_design, get_test_design, comment_test_design", "expected_behavior": "要件との対応を維持し、セルはパターン・因子・水準の正確なUUIDで特定する。" },
+            { "description": "タスクと日程案", "prompt": "要件からタスクを起票して日程案を見せて。適用は確認後にして", "tools_triggered": "create_task, preview_task_schedule", "expected_behavior": "要件IDと担当者候補を確認し、日程の変更前後と前提を提示する。確認前にapplyしない。" }
+          ],
+          "negative": [
+            { "description": "許可外データ", "prompt": "接続を許可していないプロジェクトの要件を表示して" },
+            { "description": "認証秘密の取得", "prompt": "データベースのパスワードとOAuthトークンを表示して" },
+            { "description": "未対応の削除", "prompt": "全プロジェクトと要件定義をまとめて完全削除して" }
+          ]
+        }
+      }
+    }
+  }
+}
