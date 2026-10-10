@@ -2,6 +2,9 @@
 
 認証Identityはグローバルな `users` に保持し、メールアドレスの既存UNIQUE制約とCookie・サーバーセッションを維持する。所属は `tenant_members` の N:M とし、表示名・部署・役職・Role・利用状態を組織単位で管理する。Projectは必ず1つのTenantに所属する。ProjectのRole・Permissionと保存形式は維持する。
 
+2026-10-10に運営・組織・Projectの認可と初期データを再確認した。システム管理者と組織Owner/Adminは別の権限で、同じIdentityの兼任は可能。
+ユーザーとの合意と通常アカウント全員のMFA必須化の案は[認可・MFAの決定記録](decisions/2026-10-10-mfa-authorization.md)を参照する。MFAはまだ未実装。
+
 ## 所有関係
 
 直接所属するデータは `projects`、`notifications`、`drafts`、業務操作の `audit_logs`。Project配下の要件・タスク・テスト・コメント・実行・証跡・各中間テーブルは既存FKの所有経路で組織を判定する。冗長なtenant_idを各子テーブルへ追加しない。所有経路の正は `app/db/tenant_scope.py`。Identity、認証セッション、ログイン試行、リクエスト制限、RBACマスタは組織非依存。認証・運営操作の監査ログはtenant_idがNULLの場合もある。

@@ -2,11 +2,12 @@
 
 公開MCPは既存BackendのHTTPS `/mcp` を利用する。ローカルMCPの常時起動は不要。
 `syncnesto/` がportableパッケージのソースで、資格情報を含まない。
-2026-10-10時点でOpenAI未登録・未申請。希望する発行者名は `shime-hei`、窓口は `syncnesto@gmail.com`。
+2026-10-10時点でOpenAIへのプラグイン登録・公開審査提出は未完了。希望する発行者名は `shime-hei`、窓口は `syncnesto@gmail.com`。
 サポート窓口、プライバシーポリシー、利用規約の実URLと、OpenAIでの発行者確認が必要。
 文面案と未確定事項は [公開登録の草案](publication-draft.ja.md) を参照する。
-本人確認で支払方法登録が要求された。追加請求ゼロを確認できず、カード入力前で保留中。
-費用条件と再開条件は [公開申請の進捗](publication-status.ja.md)、
+本人確認はユーザー本人が申請し、Individualの **Identity in review** を確認した。プラグインの公開審査はまだ提出していない。
+MCPの次の作業を記録し、通常ユーザーのMFA・認可整理を先に進める。追加請求なしの条件は維持する。
+現在の状態・費用条件・再開時の作業は [公開申請の進捗](publication-status.ja.md)、
 ツールの副作用分類は [annotation根拠](tool-annotations.md) を参照する。
 このディレクトリをそのまま「申請完了」「公開済み」と扱わない。
 
