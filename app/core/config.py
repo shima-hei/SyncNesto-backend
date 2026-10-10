@@ -85,6 +85,15 @@ def get_allowed_hosts() -> list[str]:
     return hosts
 
 
+def get_mcp_plugin_redirect_uris() -> list[str]:
+    """OpenAIの管理画面で確認したcallbackを完全一致で登録する。"""
+    return [
+        uri.strip()
+        for uri in os.getenv("MCP_PLUGIN_REDIRECT_URIS", "").split(",")
+        if uri.strip()
+    ]
+
+
 def get_file_upload_mode() -> FileUploadMode:
     """アップロード方式を取得し、未対応の値は起動時に拒否する。"""
     value = os.getenv("FILE_UPLOAD_MODE", "server")
@@ -146,6 +155,9 @@ class Settings:
     mcp_resource_url: str = os.getenv(
         "MCP_RESOURCE_URL",
         os.getenv("MCP_ISSUER_URL", "http://127.0.0.1:8000").rstrip("/") + "/mcp",
+    )
+    mcp_plugin_redirect_uris: list[str] = field(
+        default_factory=get_mcp_plugin_redirect_uris
     )
     allowed_hosts: list[str] = field(default_factory=get_allowed_hosts)
     database_url: str = get_required_env("DATABASE_URL")

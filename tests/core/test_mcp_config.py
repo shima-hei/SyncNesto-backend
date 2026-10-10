@@ -4,9 +4,47 @@ import pytest
 
 from app.core.config import settings
 from app.core.exceptions import NotFoundError
-from app.core.mcp import require_mcp_enabled
+from app.core.mcp import (
+    CLIENT_ID,
+    PLUGIN_CLIENT_ID,
+    require_mcp_enabled,
+    valid_redirect_uri,
+)
 
 pytestmark = pytest.mark.no_db
+
+
+@pytest.mark.parametrize(
+    "callback",
+    [
+        "https://evil.example/connector_platform_oauth_redirect",
+        "https://chatgpt.com.evil.example/connector/oauth/id",
+        "https://user@chatgpt.com/connector/oauth/id",
+        "https://chatgpt.com:443/connector/oauth/id",
+        "https://chatgpt.com/connector/oauth/id?next=evil",
+        "https://chatgpt.com/connector/oauth/id#fragment",
+        "https://chatgpt.com/connector/oauth/id/other",
+        "https://chatgpt.com/connector/oauth/%2e%2e",
+        "https://chatgpt.com/other",
+        "https://chatgpt.com/connector/oauth/id\n",
+        "https://chatgpt.com\\@evil.example/connector/oauth/id",
+    ],
+)
+def test_plugin_allowlist_cannot_enable_unsafe_callback(monkeypatch, callback):
+    """allowlistの設定ミスでも任意origin・別path・正規化の抜け道を開かない。"""
+    monkeypatch.setattr(settings, "mcp_plugin_redirect_uris", [callback])
+    assert not valid_redirect_uri(PLUGIN_CLIENT_ID, callback)
+
+
+def test_plugin_callback_needs_exact_registration(monkeypatch):
+    """HTTPS callbackはplugin専用で、別IDや未登録の宛先へ拡大しない。"""
+    callback = "https://chatgpt.com/connector/oauth/approved-id"
+    monkeypatch.setattr(settings, "mcp_plugin_redirect_uris", [callback])
+    assert valid_redirect_uri(PLUGIN_CLIENT_ID, callback)
+    assert not valid_redirect_uri(CLIENT_ID, callback)
+    assert not valid_redirect_uri("unknown", callback)
+    assert not valid_redirect_uri(PLUGIN_CLIENT_ID, callback + "2")
+    assert valid_redirect_uri(PLUGIN_CLIENT_ID, "http://127.0.0.1:54321/callback")
 
 
 @pytest.mark.parametrize(

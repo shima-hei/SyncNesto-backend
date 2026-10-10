@@ -20,6 +20,7 @@ class McpConsentRead(BaseModel):
 
     request_id: UUID
     client_name: str
+    redirect_uri: str
     scopes: list[str]
     projects: list[McpProjectChoice]
     expires_at: datetime
@@ -33,9 +34,15 @@ class McpConsentCreate(BaseModel):
 
 
 class McpRedirectRead(BaseModel):
-    """検証済みのループバックcallback。"""
+    """同意したclientに登録済みのcallback。"""
 
     redirect_url: str
+
+
+class McpAvailabilityRead(BaseModel):
+    """本人が少なくとも一つのProjectへ接続できるか。"""
+
+    can_connect: bool
 
 
 class McpConnectionRead(BaseModel):

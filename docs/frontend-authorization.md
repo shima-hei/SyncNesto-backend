@@ -4,6 +4,13 @@ MCPは通常Cookie認証と別のOAuth委任を使用します。接続本人の
 `mcp:connect` に加えて業務の編集権限が必要で、閲覧専用・テスト実行専用は対象外、編集権限のあるguestは利用可能です。
 Cookie/BFF/CSRFは同意・接続管理に維持し、通常APIのAuthorization headerを有効にしません。詳細は [MCP仕様・接続手順](mcp.md) を参照してください。
 MCP本体は既存Backendの `/mcp` で提供します。公開resourceはissuerと同じoriginのHTTPS URLです。
+アカウントの「外部サービス連携 → Codex」が連携入口です。紹介URL未設定時は公開準備中にします。
+`GET /integrations/mcp/availability` は通常Cookie/BFFで `{ "can_connect": true|false }` を返し、
+同意候補と同じ現在のProject権限を検証します。デモは拒否します。
+同意取得の `McpConsentRead.redirect_uri` は要求時に検証したcallbackです。
+Frontendは承認・拒否レスポンスのredirect先がこのURLと一致することを確認します。
+既存loopbackのほか、plugin専用clientにはBackendで完全一致登録したOpenAI HTTPS callbackを許可します。
+これらのブラウザAPIのCookie・BFF・CSRF境界は維持します。追加migrationは不要です。
 Bearer専用の直接経路は `/mcp` とresource metadataの完全一致に限定し、同意・取消のFrontend API契約は維持します。
 Backend/Frontend両方のサーバー環境変数 `MCP_ENABLED=true` と再デプロイが有効化に必要です。
 追加のFrontend実装・Orval再生成は不要です。リモート化では既存JSON APIの入出力やOpenAPIを変更していません。

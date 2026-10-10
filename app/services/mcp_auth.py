@@ -6,7 +6,7 @@ import hmac
 import re
 from datetime import UTC, datetime, timedelta
 from secrets import token_urlsafe
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlencode
 from uuid import UUID
 
 import jwt
@@ -15,13 +15,14 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.exceptions import ForbiddenError, NotFoundError
 from app.core.mcp import (
-    CLIENT_ID,
+    CLIENT_IDS,
     SCOPES,
     McpOAuthError,
     api_audience,
     api_signing_key,
     digest,
     oauth_issuer,
+    valid_redirect_uri,
 )
 from app.models.mcp import McpAuthorizationRequest, McpConnection, McpCredential
 from app.models.user import User
@@ -80,28 +81,12 @@ class McpAuthService:
 
     def start(self, db: Session, params: dict[str, str]) -> str:
         """検証済み要求から同意画面へのURLを作る。"""
-        try:
-            redirect = urlsplit(params.get("redirect_uri", ""))
-            valid = (
-                redirect.scheme == "http"
-                and redirect.hostname == "127.0.0.1"
-                and redirect.port is not None
-                and 1 <= redirect.port <= 65535
-                and re.fullmatch(r"/callback(?:/[A-Za-z0-9_-]{1,100})?", redirect.path)
-                and not (
-                    redirect.query
-                    or redirect.fragment
-                    or redirect.username
-                    or redirect.password
-                )
-            )
-        except ValueError:
-            valid = False
+        client_id = params.get("client_id", "")
         scope = params.get("scope", "mcp:work").split()
         if (
-            params.get("client_id") != CLIENT_ID
+            client_id not in CLIENT_IDS
             or params.get("response_type") != "code"
-            or not valid
+            or not valid_redirect_uri(client_id, params.get("redirect_uri", ""))
             or params.get("resource") != settings.mcp_resource_url
             or params.get("code_challenge_method") != "S256"
             or not re.fullmatch(r"[A-Za-z0-9_-]{43}", params.get("code_challenge", ""))
@@ -110,7 +95,7 @@ class McpAuthService:
         ):
             raise McpOAuthError("invalid_request")
         request = McpAuthorizationRequest(
-            client_id=CLIENT_ID,
+            client_id=client_id,
             redirect_uri=params["redirect_uri"],
             resource=params["resource"],
             scopes=SCOPES,
@@ -134,14 +119,14 @@ class McpAuthService:
             or request.expires_at <= datetime.now(UTC)
             or request.connection_id is not None
             or request.consumed_at is not None
+            or not valid_redirect_uri(request.client_id, request.redirect_uri)
         ):
             raise NotFoundError()
         return request
 
-    def consent(self, db: Session, user: User, request_id: UUID) -> McpConsentRead:
-        """各候補Projectで現在の所属と権限を検証する。"""
+    def available_projects(self, db: Session, user: User) -> list[McpProjectChoice]:
+        """連携開始画面と同意画面で同じProject権限を検証する。"""
         self.validate_browser(db, user)
-        request = self.pending(db, request_id)
         rows = self.repository.consent_projects(db, user.id)
         previous, choices = dict(db.info), []
         try:
@@ -159,9 +144,17 @@ class McpAuthService:
         finally:
             db.info.clear()
             db.info.update(previous)
+        return choices
+
+    def consent(self, db: Session, user: User, request_id: UUID) -> McpConsentRead:
+        """各候補Projectで現在の所属と権限を検証する。"""
+        self.validate_browser(db, user)
+        request = self.pending(db, request_id)
+        choices = self.available_projects(db, user)
         return McpConsentRead(
             request_id=request.id,
-            client_name="Codex（ローカルMCP）",
+            client_name="Codex",
+            redirect_uri=request.redirect_uri,
             scopes=request.scopes,
             projects=choices,
             expires_at=request.expires_at,
@@ -232,7 +225,7 @@ class McpAuthService:
             or connection.revoked_at
             or connection.expires_at <= datetime.now(UTC)
             or connection.resource != settings.mcp_resource_url
-            or connection.client_id != CLIENT_ID
+            or connection.client_id not in CLIENT_IDS
             or connection.scopes != SCOPES
         ):
             raise McpOAuthError("invalid_token", 401)
@@ -295,7 +288,7 @@ class McpAuthService:
     def token(self, db: Session, params: dict[str, str]) -> dict:
         """コードまたはrefreshを一回だけ交換する。"""
         if (
-            params.get("client_id") != CLIENT_ID
+            params.get("client_id") not in CLIENT_IDS
             or params.get("resource") != settings.mcp_resource_url
         ):
             raise McpOAuthError("invalid_request")
@@ -312,12 +305,16 @@ class McpAuthService:
             if (
                 request is None
                 or request.connection_id is None
+                or request.client_id != params["client_id"]
+                or not valid_redirect_uri(request.client_id, request.redirect_uri)
                 or request.expires_at <= datetime.now(UTC)
                 or request.redirect_uri != params.get("redirect_uri")
                 or not hmac.compare_digest(request.code_challenge, challenge)
             ):
                 raise McpOAuthError()
             connection, _ = self.valid_connection(db, request.connection_id, lock=True)
+            if connection.client_id != params["client_id"]:
+                raise McpOAuthError()
             if request.consumed_at is not None:
                 connection.revoked_at = datetime.now(UTC)
                 db.commit()
@@ -337,6 +334,8 @@ class McpAuthService:
             connection, _ = self.valid_connection(
                 db, credential.connection_id, lock=True
             )
+            if connection.client_id != params["client_id"]:
+                raise McpOAuthError()
             db.refresh(credential)
             if credential.consumed_at is not None:
                 connection.revoked_at = datetime.now(UTC)
@@ -415,14 +414,14 @@ class McpAuthService:
 
     def revoke_token(self, db: Session, client_id: str, token: str) -> None:
         """OAuth logoutではtokenの存在を応答で漏らさない。"""
-        if client_id != CLIENT_ID:
+        if client_id not in CLIENT_IDS:
             raise McpOAuthError("invalid_client")
         credential = self.repository.credential(db, digest(token))
         if credential is not None:
             connection = self.repository.connection(
                 db, credential.connection_id, lock=True
             )
-            if connection is not None:
+            if connection is not None and connection.client_id == client_id:
                 connection.revoked_at = datetime.now(UTC)
                 db.commit()
                 self.audit(db, connection, "mcp.disconnected")

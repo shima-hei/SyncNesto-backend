@@ -221,6 +221,7 @@ docker/pgadmin/
 !/docs/decisions/2026-10-08-demo-mode.md
 !/docs/decisions/2026-10-08-mcp.md
 !/docs/decisions/2026-10-09-remote-mcp.md
+!/docs/decisions/2026-10-10-codex-plugin.md
 !/docs/mcp.md
 !/docs/frontend-audit-logs-api.md
 !/docs/testing.md
