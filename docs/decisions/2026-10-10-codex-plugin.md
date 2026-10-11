@@ -174,3 +174,36 @@ OAuth・他の連携APIを公開せず、Cookie/BFF共有キー・Backendの資�
 ローカルDBにはバックアップ後に適用した。公開環境と本人の認証器登録は未実施。
 [MFA運用手順](../mfa.md)に従って適用・本人確認を終えた後、審査用アカウントと操作資料を更新する。
 プラグインの提出・費用条件・OpenAI本人確認の結果待ちは、この実装で完了扱いにしない。
+
+## 本人確認Verified後の公開申請準備
+
+2026-10-11、ユーザー提示の画面でIndividualの **Verified** を確認し、追加請求を発生させない条件で
+MCP公開申請の作業を再開する。前節までの本人確認結果待ちは当時の記録であり、現在の待ち状態ではない。
+本人確認を再実施しない。希望する公開名 `shime-hei`、窓口 `syncnesto@gmail.com` を維持し、
+実際に選択する確認済みidentityの公開表示名を管理画面で照合する。
+
+- manifestの基本listing・starter prompts・release notesを英語にし、日本語のsubtitle/descriptionを `ja-JP` translationへ保持する資材を準備した。
+- 正常系5件・異常系3件に具体的な入力・期待ツール・観察可能な結果を記載し、
+  [審査準備と動画台本](../../plugins/review-plan.ja.md)へサンプルデータ、実行記録、動画順、静的検証を整理した。
+- `listing.example.json` のsupport/privacy/terms URLは未公開のため空欄のまま。
+  [規約草案](../../plugins/publication-draft.ja.md)の保持・実削除・提供範囲・運営条件は勝手に決定せず未決として残す。
+- OpenAI公式の現在の[申請手順](https://developers.openai.com/plugins/deploy/submission)と
+  [MCP審査要件](https://developers.openai.com/plugins/deploy/app-review)は、専用サンプルアカウントに
+  MFA承認・メール/SMSコード等を必要とせず直ちにログインできることを求める。
+  通常アカウント全員MFAの既存合意と衝突するため、認められる代替または運営者の方針確認が必要。
+  審査だけのMFA除外・恒久バイパス、匿名デモへのMCP開放は採用していない。
+- 本人確認・登録・審査がすべて追加料金0という明示は今回の公式資料でも確認できなかった。
+  APIキー作成・クレジット購入・モデルAPI呼出しは申請手順に要求されておらず、実施しない。
+  料金・購入・有料化を伴う段階、または金額が不明な操作は止めて条件を確認する。Verifiedを無料の保証としない。
+- 現在の公開ディレクトリはChatGPT/Codex共通。MCP付きpluginの審査を通す方針を維持する。
+  [公式package仕様](https://developers.openai.com/plugins/build/plugins)もserver内 `extensions.com.openai.auth` と
+  `provided`/`none`を案内しており、汎用schemaを通すために認証拡張を削除しない。
+- callbackとdomain challengeは管理画面の実値を取得してから登録・配布する。
+  MCP endpoint・存在しない紹介URL・規約URL・未発行のcallback/challengeを作らない。
+
+この準備はZIPの実受理、接続用OAuth同意、審査アカウント作成、8ケースのホスト実行、録画、審査提出、公開を
+完了した記録ではない。MFAの公開適用状態は[MFA運用手順](../mfa.md)と主担当の配布記録で確認する。
+2026-10-11、MFAのBackend/Frontend・両DB migrationを公開適用し、限定ログインと匿名デモ分離/破棄を確認した。
+本人のMFA登録・OAuth再接続と、審査ログイン方針の解決は引き続き必要。
+日程previewのannotationも公開先のscanで照合してから提出する。
+現在の残作業と費用条件は[公開申請の進捗](../../plugins/publication-status.ja.md)を正とする。

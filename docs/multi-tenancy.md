@@ -3,7 +3,8 @@
 認証Identityはグローバルな `users` に保持し、メールアドレスの既存UNIQUE制約とCookie・サーバーセッションを維持する。所属は `tenant_members` の N:M とし、表示名・部署・役職・Role・利用状態を組織単位で管理する。Projectは必ず1つのTenantに所属する。ProjectのRole・Permissionと保存形式は維持する。
 
 2026-10-10に運営・組織・Projectの認可と初期データを再確認した。システム管理者と組織Owner/Adminは別の権限で、同じIdentityの兼任は可能。
-ユーザーとの合意と通常アカウント全員のMFA必須化の案は[認可・MFAの決定記録](decisions/2026-10-10-mfa-authorization.md)を参照する。MFAはまだ未実装。
+ユーザーとの合意は[認可・MFAの決定記録](decisions/2026-10-10-mfa-authorization.md)を参照する。
+MFAは実装済み。公開適用・検証の状態は[MFA運用手順](mfa.md)を正とする。
 
 ## 所有関係
 
@@ -11,7 +12,8 @@
 
 Projectコードの一意性は `(tenant_id, project_code)`、所属は `(tenant_id, user_id)`、下書きは `(owner_user_id, tenant_id, scope_key)`。通知は組織・宛先・日時の複合インデックスを追加する。削除済みProjectの通知もtenant_idを保持する。
 
-現在のアプリケーションテーブル57個の分類（Alembic管理テーブルを除く）:
+組織境界migration導入時のアプリケーションテーブル57個の分類（Alembic管理テーブルを除く）。
+後から追加したMCP・MFA等を含む現在の全テーブル一覧ではない:
 
 | 分類 | テーブル |
 | --- | --- |
@@ -86,6 +88,9 @@ uv run python -m scripts.bootstrap_tenant_owner --email admin@example.com
 新しい組織にデータが作成された後の自動downgradeはデータ消失・コード重複につながるため禁止する。失敗時はAlembicのtransaction rollback、公開後の復旧はアプリ停止と検証済みバックアップからの復旧を使う。バックアップ後に発生した更新の再適用も含めて判断する。
 
 ## RLSの判断
+
+2026-10-11、通常・デモNeon DBの実測でRLS無効、runtime roleの管理属性なし、MFA表の必要なCRUD権限を確認した。
+DB role・GRANT・default privilegeの詳細は[Infraの権限確認記録](../../syncnesto-infra/README.md#2026-10-11のneon権限確認)を参照する。
 
 今回はRLSを有効化していない。ローカル・既存テストはsuperuser/BYPASSRLSで、productionのruntime Roleは非superuser/非BYPASSRLS、migration Roleは別接続でBYPASSRLS。Repositoryが処理途中で複数回commitするため、transaction-localの設定を各transactionに再適用する基盤と、RLSが実際に働く非特権Roleのテストが必要になる。Context設定だけで防御できたと判断せず、先にHTTP共通認可・ORM条件・書込検証・Isolation Testで境界を確立する。RLS追加時はpool再利用・rollback・transaction再開・運用処理を含めて別途検証する。
 

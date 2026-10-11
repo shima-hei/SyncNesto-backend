@@ -22,9 +22,10 @@ GitHubの `production` Environmentには以下のSecretsを設定済み。デプ
 - `VERCEL_ORG_ID`
 - `VERCEL_PROJECT_ID`
 - `MIGRATION_DATABASE_URL`: `syncnesto_owner` のNeon direct URI。`sslmode=verify-full` 必須。
+- `DEMO_MIGRATION_DATABASE_URL`: デモ専用DBのowner direct URI。通常DBとは別の接続先。
 
-デモ公開前に追加が必要なSecret: `DEMO_MIGRATION_DATABASE_URL`（専用DBのowner direct URI）。
-現在の通常用Secretを置き換えない。追加Secretの登録・公開反映は未実施。
+通常用Secretを置き換えず、デモ用を別に登録済み。2026-10-11のMFAリリースでは、
+両DBへのmigrationとBackend公開配布が成功した。詳細は[MFA公開適用記録](mfa.md#2026-10-11の公開適用記録)を参照する。
 
 管理URIはmigrationのステップだけへ渡し、Vercelへ登録しない。APIは引き続き制限付き `syncnesto_app` のpooled URIを使う。migrationの生ログは公開しない。失敗するとデプロイを停止する。
 

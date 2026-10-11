@@ -44,11 +44,11 @@ backupからの復元確認はクラウドアカウント設定・運用の確�
 
 AI支援とEveへの変更は取りやめ。既存stashを保持する。MCPの実装と権限境界は [MCP仕様](mcp.md) と [決定記録](decisions/2026-10-08-mcp.md) に記録する。
 現在は既存Backendの公開HTTPS MCPを有効化済みで、ローカルサーバーの常時起動は不要。
-Codexのプラグイン公開は未完了。本人確認の審査待ちと再開作業は[申請進捗](../plugins/publication-status.ja.md)を参照する。
+Codexのプラグイン公開は未完了。本人確認はVerifiedになった。公開審査の未決事項と次の作業は[申請進捗](../plugins/publication-status.ja.md)を参照する。
 
 2026-10-10、Syncnestoの通常ユーザー全員へのMFA強制と、運営/業務権限の分離を確認した。
-匿名デモはMFA対象外。現行アプリにMFAは未実装であり、クラウド管理者のMFA設定と区別する。
-現行認可・ローカルDBの兼任状況・MFAとMCPの実装案は[決定記録](decisions/2026-10-10-mfa-authorization.md)を参照する。
+匿名デモはMFA対象外。MFAは実装済みで、公開適用と検証の状態は[MFA運用手順](mfa.md)を正とする。
+クラウド管理者のMFA設定とは区別する。現行認可・ローカルDBの兼任状況・合意は[決定記録](decisions/2026-10-10-mfa-authorization.md)を参照する。
 
 ## ローカル検証結果（2026-10-07）
 
