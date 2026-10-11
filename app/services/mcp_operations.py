@@ -111,7 +111,7 @@ class McpOperationsService:
                 "description": tool.description,
                 "inputSchema": tool.schema.model_json_schema(),
                 "annotations": {
-                    "readOnlyHint": not tool.write or tool.preview,
+                    "readOnlyHint": not tool.write,
                     "destructiveHint": tool.write and not tool.preview,
                     "idempotentHint": True,
                     "openWorldHint": False,

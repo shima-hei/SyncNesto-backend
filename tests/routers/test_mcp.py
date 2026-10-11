@@ -764,7 +764,7 @@ def test_design_append_preserves_execution_and_exact_matrix_cell(client, db, con
 
 
 def test_schedule_preview_conflict_and_atomic_apply(client, db, context):
-    """日程案は読むだけで、確認済みの同一版だけを全件反映する。"""
+    """日程案で業務日程を変えず、確認済みの同一版だけを全件反映する。"""
     _, project, _ = context
     direct, tokens, _ = connect(client, project.id)
     headers = api_headers(direct, tokens["access_token"])
