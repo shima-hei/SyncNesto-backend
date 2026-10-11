@@ -292,6 +292,7 @@ def test_update_task_uses_optimistic_lock(
     assert response.status_code == 409
     assert response.json()["code"] == "VERSION_CONFLICT"
     assert response.json()["current"]["id"] == task.id
+    assert response.json()["current"]["description"] == task.description
 
 
 def test_update_task_rejects_self_parent(
