@@ -583,12 +583,15 @@ class McpOperationsService:
                 )
             )
         if name == "update_task":
-            self.task(db, project_id, data.task_id)
-            return summary(
-                self.tasks.update_task(
+            task = self.task(db, project_id, data.task_id)
+            try:
+                updated = self.tasks.update_task(
                     db, task_id=data.task_id, task_in=data.data, actor_id=actor_id
                 )
-            )
+            except VersionConflictError:
+                # 業務Serviceが更新した現行値から、MCP用の要約だけを返す。
+                raise VersionConflictError(summary(task)) from None
+            return summary(updated)
         if name == "create_task_dependency":
             self.task(db, project_id, data.data.predecessor_task_id)
             self.task(db, project_id, data.data.successor_task_id)

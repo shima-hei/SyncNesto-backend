@@ -94,6 +94,8 @@ MCPだけの別プロセスは不要。旧 `python -m syncnesto_mcp` adapterは�
 1指摘=1コメント=1回の書き込み。要件は対象種別・ID・version・field・quote・quote_startを必須とする。
 quote_startは**元の文字列のUnicode code point単位**。絵文字を含むJavaScriptのUTF-16 offsetと混同しない。
 取得した版と引用範囲が一致しない場合は409で拒否し、再取得・再レビューする。
+MCPのタスク更新で競合した場合、`current` は成功時と同じ要約だけを返し、本文や関連要件の詳細を含めない。
+通常UI向けのタスク更新APIでは、従来の競合解決用レスポンスを維持する。
 
 マトリクスの因子水準セルは `target_type=combination`、`target_id=pattern UUID`、
 `field=level:<factor UUID>:<level UUID>` で、選択されていない水準も指定できる。

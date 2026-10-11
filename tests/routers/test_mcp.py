@@ -583,6 +583,59 @@ def test_task_idempotency_and_atomic_rollback(client, db, context, monkeypatch):
     assert len(db.scalars(select(Task).where(Task.title == "once")).all()) == 1
 
 
+def test_task_update_conflict_returns_summary_and_allows_retry(client, db, context):
+    """MCPの競合は本文・要件を含めず、現行版で再試行できる。"""
+    _, project, _ = context
+    direct, tokens, _ = connect(client, project.id)
+    headers = api_headers(direct, tokens["access_token"])
+    created = operate(
+        direct,
+        headers,
+        "create_task",
+        project.id,
+        data={"title": "Original", "description": "Task details"},
+    ).json()
+    updated = operate(
+        direct,
+        headers,
+        "update_task",
+        project.id,
+        task_id=created["id"],
+        data={"version": created["version"], "title": "Current"},
+    )
+    assert updated.status_code == 200, updated.text
+    key = uuid4().hex
+    conflict = operate(
+        direct,
+        headers,
+        "update_task",
+        project.id,
+        key=key,
+        task_id=created["id"],
+        data={"version": created["version"], "title": "Retry"},
+    )
+    assert conflict.status_code == 409, conflict.text
+    body = conflict.json()
+    assert body["code"] == "VERSION_CONFLICT"
+    assert body["current"] == updated.json()
+    assert "description" not in body["current"]
+    assert "requirements" not in body["current"]
+    retry = operate(
+        direct,
+        headers,
+        "update_task",
+        project.id,
+        key=key,
+        task_id=created["id"],
+        data={"version": body["current"]["version"], "title": "Retry"},
+    )
+    assert retry.status_code == 200, retry.text
+    db.expire_all()
+    task = db.get(Task, created["id"])
+    assert task.title == "Retry"
+    assert task.description == "Task details"
+
+
 def test_revoke_owned_connection(client, db, context, create_test_user):
     """本人だけ取り消せて、既存の派生資格情報も次の操作で失効する。"""
     _, project, _ = context
