@@ -1,0 +1,155 @@
+# 公開MCP審査の準備と動画台本
+
+2026-10-11。申請準備用の計画であり、以下のアカウント・fixture・実行結果・動画はまだ作成していない。
+manifestの正常系5件・異常系3件と対応する。既存利用者・実業務・認証秘密を審査資料へ含めない。
+公開名は `shime-hei`、窓口は `syncnesto@gmail.com`。掲載される名前は選択した確認済みidentityと照合する。
+
+## 提出前の未決事項
+
+| 項目 | 必要な確認 |
+| --- | --- |
+| 費用 | 追加請求0が条件。本人確認のVerifiedだけでは登録・審査等の料金を確定できない。購入、有料API、auto recharge、クラウド有料化を行わない。 |
+| 公開規約 | support/privacy/termsは未公開。保持・実削除・提供範囲・運営条件を運営者が確定し、公開済み実URLだけをlistingへ記載する。 |
+| 審査ログイン | OpenAIはMFA等なしで直ちに使える専用アカウントを要求。全通常アカウントMFAという既存合意との整合が未決。代替または方針確認前にバイパスを設けない。 |
+| ホスト設定 | 管理画面の正確なcallback・challengeを未取得。推測値や偽URLで準備完了にしない。 |
+| 公開状態 | previewのannotationとMFAの実配布状態を主担当の記録と本番で照合する。ローカルCI成功は公開確認と区別する。 |
+
+OpenAIへの本人確認はVerifiedで完了したため、再実施しない。
+MFA例外や課金の判断が未決でも、listing・ケース・台本・ZIP静的検証は独立して準備できる。
+
+OpenAIへの問い合わせ案（未送信。外部への送信は運営者の承認後）:
+
+> Syncnestoでは通常アカウント全員にMFAを必須としています。公開審査の専用アカウントについて、
+> MFAなしで直ちに利用できることを求める要件と整合させる方法を確認したいです。
+> 審査アカウントにもMFAを維持したまま受け入れられる認証・接続の代替手順はありますか。
+> また、APIクレジットの購入やモデルAPI利用を開始せず、追加料金0で公開審査を進められるか教えてください。
+
+本人の認証秘密・TOTP seed・復旧コード・審査用パスワードは問い合わせに含めない。
+回答があるまで審査アカウントのMFAを除外したり、要件を満たしたと表明したりしない。
+
+## 分離したサンプルデータの準備案
+
+以下は準備時に作成する候補名。現存するID・Project・アカウントではない。
+専用審査アカウントの認証方法はMFAの未決事項を解消してから決める。
+
+| fixture | 準備する内容と境界 |
+| --- | --- |
+| 専用審査アカウント | 通常アカウント。必要なProject業務権限（P4の `requirement:link` を含む）だけを付与し、system運営権限は与えない。パスワード等はZIP・Git・動画へ入れず管理画面の安全な審査欄だけへ渡す。 |
+| 許可Project | 他利用者と分離した `Plugin review - consented`。審査アカウントが編集でき、OAuth同意でこのProjectだけを許可する。 |
+| 不許可Project | 同じアカウントが編集できてもOAuthでは許可しない `Plugin review - not consented`。サンプルの要件を1件用意し、N1の拒否を確認する。実IDは非公開の審査手順へ記録する。 |
+| 別組織/閲覧専用 | 別組織のサンプルProjectと、閲覧専用Projectを用意する場合は、P1に出ないことを確認する。無関係な既存Projectを使わない。 |
+| 要件 | P2で `Plugin review - login requirements` 文書、`Authentication` セクション、`Sign in with email and password` 下書き要件を作成する。本文はmanifestの入力と一致させる。 |
+| セルfixture | `Plugin review - cell fixture` 設計書に `Password` 因子と `valid`/`invalid` 水準、`Invalid password` パターンを用意する。そのPasswordセルに意図的に `valid` を選び、期待値は `Sign-in rejected` とする。実UUIDとversionを取得し、P4でその既存セルへの1指摘を確認する。 |
+| 日程 | P5で担当者・日程未設定のタスクを作り、2026-11-02〜2026-11-03への変更をpreviewする。これはreviewer指定の入力で、稼働率・休日の推定結果ではない。実審査時に日付を更新するならmanifestと動画も同時に更新する。 |
+
+専用データの再作成や整理は、そのProject内の権限と通常の画面操作に従う。
+公開MCPへbulk削除等の未対応ツールを追加してfixtureを消すことはしない。
+審査開始後もサンプルアカウントとデータを維持する。実際の保持期間は規約の未決事項として運営者が決める。
+
+## ケース実行と観察記録
+
+manifest内の英語promptをP1〜P5、N1〜N3の順で使う。P2の実IDを後続ケースで参照する。
+同名資源が複数ある状態を避ける。再実行時は対象を明示し、既存コメントの重複確認も行う。
+各writeの通信再送は同じidempotency keyと同じ入力を保持し、別操作には別keyを使う。
+
+| ケース | 動画と記録で示す観察結果 |
+| --- | --- |
+| P1 | 許可した編集可能Projectだけが一覧に表示され、書込みが発生しない。 |
+| P2 | 指定の文書・セクション・要件がdraftで作成され、返却された実IDで対応が取れる。既存要件は変わらない。 |
+| P3 | `quickly`という正確な引用へ、計測可能な応答時間を求めるコメントが1件だけ付く。現在version・field・Unicode code point位置で指定する。 |
+| P4 | 設計書と内容が作成され、作成したtest itemの実UUIDがP2の実要件IDへ `link_requirement_test_item` で紐づく。prepared fixtureのPasswordセルへ、実pattern/factor/level UUIDで1件だけ指摘が付く。fixtureの既存グラフは変わらない。 |
+| P5 | linked taskの元の日程は未設定のまま。previewが変更前後・指定された前提・15分の期限を示し、承認前にapplyが呼ばれない。 |
+| N1 | 不許可Projectの要件本文を返さない。別途、実Project IDを指定したツール要求もBackendが拒否することを記録する。 |
+| N2 | password/token/MFA recovery codeを表示・要求・捏造しない。秘密を探すために他Projectへアクセスしない。 |
+| N3 | bulk永久削除の未対応を説明し、代替writeで実行したように見せない。fixtureが残る。 |
+
+各行について実行日、package version、対象surface、prompt、実ツール、観察結果、合否、修正事項を記録する。
+必要なproject/resource IDは審査用サンプルに限り、token・Cookie・認証コードは記録しない。
+supported ChatGPT/Codex surfacesで実行する。単体テストや直接API確認だけでホスト上の8ケースを合格扱いにしない。
+
+P5に続くapply、期限切れ、409、権限変更、取消は追加の確認項目とする。
+applyを示す場合は、表示済みの同じ案への明示的な承認を別promptで入力し、15分以内・同じversionで実行する。
+この追加確認を、5＋3の公式提出ケースへ勝手に追加してケース数を変えない。
+
+## 動画台本
+
+所要時間は目安。実行が長い場合は必要な観察結果を残して編集する。撮影前に通知を切り、サンプルだけを表示する。
+ログイン・認証器登録・パスワード・OAuth token・Cookie・復旧コードの画面や値は映さない。
+
+| 順 | 操作と説明 | 映す結果 |
+| --- | --- | --- |
+| 1 | Syncnesto、package version、ChatGPT/Codexの実surface、専用サンプルProjectを紹介する。 | 実際のplugin名と今回のサンプル用途。 |
+| 2 | 認証済みの状態から許可Projectの範囲を示し、P1を実行する。 | 許可Projectの一覧。不許可Projectは一覧に出ない。 |
+| 3 | P2を実行し、Syncnesto側で作成物を見る。 | 文書・セクション・要件の対応とdraft状態。 |
+| 4 | P3を実行し、指摘箇所を開く。 | `quickly`の引用に1コメント。 |
+| 5 | P4を実行し、新設計とセルfixtureを開く。 | 要件との対応、Passwordセルに1コメント。 |
+| 6 | P5を実行し、元のタスクも確認する。 | 日程のbefore/after・前提。元の日程は未変更。 |
+| 7 | N1〜N3を1件ずつ実行する。 | 許可外データ・秘密・未対応削除を実行せず、明確に説明する。 |
+| 8 | 接続解除と今後のアクセス停止を追加説明する場合、専用接続だけを解除する。 | 既に作成した業務データは解除だけでは消えないこと。 |
+
+8ケースを確認できるreviewer-accessibleな録画URLを用意する。共有先・費用・公開範囲は運営者が決める。
+動画URLが未確定の間は `review.demo_recording_url` を埋めない。placeholder URLを申請しない。
+共有後、reviewerと同じアクセス条件で録画が再生できることを確認する。
+
+## ZIPの静的検証
+
+必要な元ファイル:
+
+- `plugins/syncnesto/plugin.json`
+- `plugins/syncnesto/mcp.json`
+- `plugins/syncnesto/assets/icon.svg`
+- `plugins/syncnesto/skills/syncnesto-work/SKILL.md`
+- 申請時のみ、5項目を確定したlisting JSON。`listing.example.json`は不足情報を拒否するための例である。
+
+manifestの本文・translations・8ケースは `plugin.json` に置く。listing JSONはdeveloperNameと4URLだけを持つ。
+reviewer credentials・ログイン手順・この台本・運用メモは公開ZIPのallowlistに入れない。
+
+Backend rootで実行する。builderは既存ZIPを上書きしないため、出力ごとに新しい一時ディレクトリを使う。
+
+```bash
+uv run python -m json.tool plugins/syncnesto/plugin.json > /dev/null
+uv run python -m json.tool plugins/syncnesto/mcp.json > /dev/null
+uv run python -m json.tool plugins/listing.example.json > /dev/null
+uv run pytest tests/test_codex_plugin_package.py
+uv run ruff check scripts/build_codex_plugin.py tests/test_codex_plugin_package.py
+git diff --check
+validation_dir=$(mktemp -d /tmp/syncnesto-plugin-validation.XXXXXX)
+uv run python scripts/build_codex_plugin.py "$validation_dir/codex.zip"
+uv run python -m zipfile -l "$validation_dir/codex.zip"
+```
+
+申請用は公開ページの到達性と発行者一致を確認し、実URLを記入したlistingが揃ってから作る。
+
+```bash
+submission_dir=$(mktemp -d /tmp/syncnesto-plugin-submission.XXXXXX)
+uv run python scripts/build_codex_plugin.py "$submission_dir/submission.zip" \
+  --submission --listing /path/to/confirmed-listing.json
+uv run python -m zipfile -l "$submission_dir/submission.zip"
+```
+
+`/path/to/confirmed-listing.json`は実ファイルへ置き換える操作説明であり、登録するURLではない。
+4つの公開URL・動画URLが未確定なまま、正式な申請ZIPや提出完了と表明しない。
+静的検証は公開URLの到達性、ポータルの受理、OAuth接続、8ケースの実行、審査を代行しない。
+汎用Agent Plugins MCP schemaとOpenAI auth拡張の不一致は既知。認証拡張を削除せず、公式形式の実受理を確認する。
+
+## 管理画面で確定する情報
+
+- 選択するverified identityの表示名、所有organization/project、Apps Management権限、global data residency。
+- MCP URLは既存の `https://syncnesto-api.vercel.app/mcp`。clientは `syncnesto-openai-plugin`、auth methodは `none`、scopeは `mcp:work`。
+- 管理画面が示す正確なHTTPS callbackをBackendのallowlistへ完全一致で登録する。
+- 指定hostの `/.well-known/openai-apps-challenge` に正確なtokenだけをplain textで返す。既存tokenを無断で置換しない。
+- metadata/skill checks、接続、domain verification、production tool scan、提出の必須attestations。
+- private reviewer credentialsとlogin手順、実行済み8ケース、動画URL、release notes、公開対象地域。
+- 承認後に発行者が公開する。実紹介URLが得られるまで `MCP_PLUGIN_INSTALL_URL` を設定しない。
+
+## 公式根拠
+
+- [申請・review欄・manifest項目](https://developers.openai.com/plugins/deploy/submission)
+- [MCP審査・MFAなしのreviewer login・対応surface](https://developers.openai.com/plugins/deploy/app-review)
+- [callback・PKCE・issuer](https://developers.openai.com/plugins/build/auth)
+- [package・OpenAI MCP認証拡張](https://developers.openai.com/plugins/build/plugins)
+- [プライバシー・annotation](https://developers.openai.com/plugins/plugin-guidelines)
+- [公開ディレクトリの共通仕様](https://developers.openai.com/plugins/concepts/plugins)
+
+公式資料の逐語引用は使用していない。annotation justificationはguidelinesでは不要だが、
+submission-errorsには必須の記載が残るため、実管理画面で必要な欄を確認する。

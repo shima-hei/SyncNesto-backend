@@ -2,7 +2,9 @@
 
 2026-10-11実装。認識合わせの記録は [決定記録](decisions/2026-10-10-mfa-authorization.md)、
 APIとFrontendの契約は [認証・認可仕様](frontend-authorization.md) を参照する。
-この文書の実装状態と、公開環境での適用状態を区別する。公開環境へのmigration・設定変更は未実施。
+2026-10-11に公開用MFA・Gmail SMTP変数を登録し、Backend PR #19とFrontend PR #25をマージ・公開配布した。
+通常・デモDBのmigrationと、公開URLでの通常MFA要求・匿名デモの分離/ログアウト破棄を確認済み。
+本人の認証器登録・実機Passkey・公開環境からのメール配送は未確認で、公開配布とは区別する。
 ローカルの既存DB（loopback:5432）は2026-10-11にバックアップ後、`a4f92c1e806d`へ適用済み。
 ユーザー・組織・Project・要件・タスクの件数を前後比較し、変更がないことを確認した。
 専用鍵はGit対象外・権限600の`.env`に保存した。本人の認証器登録は行っていない。
@@ -75,6 +77,14 @@ MFA前の旧セッション・旧MCP接続を検証済みに補完しない。�
 ローカルだけは`http://localhost:<port>`を許容する。公開環境でMFA必須の場合、鍵や固定originの不備は起動時に拒否する。
 鍵はDBとは別にバックアップし、紛失・不用意な上書きを避ける。ローテーション時は旧鍵を残し、既存秘密を再暗号化してから旧鍵を除く。
 
+### ローカル開発での一時的な回避
+
+既存の `MFA_REQUIRED=false` を使えるため、専用バイパスAPIや固定コードは追加しない。
+`APP_ENV=development`、loopbackでのみ待ち受けるBackend、ローカルDBを使う開発環境に限り、
+Git対象外のBackend `.env` に設定して再起動する。公開Vercel・共有環境・通常Neon DBには適用しない。
+この設定は登録済み認証器を削除しない。追加認証の画面・失効を確認するときは `true` に戻して再起動する。
+MCPの認証強度確認も `true` の状態で行う。公開環境は全通常アカウント必須という合意を維持する。
+
 新しいローカル環境で鍵が未設定なら、`.env`作成後、次のコマンドでGit対象外のファイルへ生成できる。
 既存の鍵を上書きせず、標準出力へ値を出さない。
 
@@ -95,10 +105,26 @@ PY
 1. DBのバックアップと、通常・デモの接続先を照合する。
 2. **通常DBとデモDBの両方**へ `alembic upgrade head` を適用する（`a4f92c1e806d`）。新しい必須User列にはserver defaultを設け、migration先行中の旧アプリのINSERTも維持する。
 3. 専用暗号鍵と公開FrontendのRP/originを設定する。
-4. BackendとFrontendを揃えて反映する。運営者の事前登録が必要な準備期間だけ`MFA_REQUIRED=false`にし、アカウント設定の「追加認証を登録」から登録できる。
+4. `MFA_REQUIRED=true`のままBackend、Frontendの順で反映する。未登録の通常アカウントは次のログインで認証器を登録する。既存通常セッションとMCPは再認証・再接続が必要。
 5. 運営者が予備認証器・復旧コードを保存し、本人操作でTOTP/実機Passkey・再ログインを確認する。
-6. `MFA_REQUIRED=true`へ切り替える。通常利用者は次のログインで登録する。既存通常セッションとMCPは再認証・再接続が必要。
-7. 通常ユーザー・MCP・匿名デモのログインと、ログアウト/期限切れ時のデモ全破棄を確認する。準備用`false`を公開運用の恒久設定にしない。
+6. 通常ユーザー・MCP・匿名デモのログインと、ログアウト/期限切れ時のデモ全破棄を確認する。公開環境に準備用のMFA除外期間を設けない。
+
+### 2026-10-11の公開適用記録
+
+- Backend: [PR #19](https://github.com/shima-hei/SyncNesto-backend/pull/19)、実装head `42dcc3d`、merge `6813a3f`。
+  [main CI/deploy](https://github.com/shima-hei/SyncNesto-backend/actions/runs/38102968545)が成功し、公開aliasのREADY deploymentとcommitの一致を確認した。
+- Frontend: [PR #25](https://github.com/shima-hei/SyncNesto-frontend/pull/25)、head `2776dc2`、merge `b3516a5`。
+  [main CI/deploy](https://github.com/shima-hei/SyncNesto-frontend/actions/runs/38148137846)が成功し、公開aliasのREADY deploymentとcommitの一致を確認した。
+- 通常・デモ両Neon DBのバックアップをGit対象外・所有者専用の保存先へ取得した。暗号鍵はDBとは別に保管した。
+- 両バックアップを隔離したPostgreSQL 17へ復元し、`a4f92c1e806d`へのmigration、業務データ件数の維持、旧セッションをMFA済みにしないことを確認した。検証用DBは削除済み。
+- 公開Backendは `MFA_REQUIRED=true`、固定RP `syncnesto.vercel.app` とorigin `https://syncnesto.vercel.app`、専用暗号鍵を使用する。公開の準備用false期間は設けない。
+- 通常・デモ両DBのrevision `a4f92c1e806d`、既存のユーザー・組織・Project件数の維持、runtime roleのMFA4表CRUD権限を読み取り専用接続で確認した。
+  DB role・GRANT・RLSの境界は[Infraの確認記録](../../syncnesto-infra/README.md#2026-10-11のneon権限確認)を参照する。
+- 公開URLで通常アカウントのパスワード確認後、限定CookieのSecure/HttpOnly/SameSite=Strict、MFA画面、業務APIの401、CSRFなしcancelの403、正規cancel後の失効を確認した。個人の認証器数は変更していない。
+- 匿名デモの開始・業務参照・通常MFA管理の拒否、通常DBへの混入なし、ログアウト後の旧Cookie拒否と専用DBの所有データ削除を確認した。今回の確認はログアウト経路で、時間経過による期限切れの公開再実行は含まない。
+- 公開MCPの未認証initializeは401。protected resourceとOAuth metadataは正規HTTPS URL、PKCE S256、scope `mcp:work`。本人のMFA後の実OAuth再接続は未確認。
+- ローカルで既に使用していたSyncnesto用Gmail SMTP（587/STARTTLS）を公開Backendにも設定した。既存資格情報によるSTARTTLS認証を確認し、試験メールは送信していない。新しい有料providerは追加していない。
+- 本人の認証器は代わりに登録しない。TOTP・実機Passkey・予備認証器・復旧コードの保存と、公開環境からのメール配送は本人の初回登録時に確認する。
 
 ## 検証状態と残タスク
 
@@ -107,6 +133,6 @@ PY
 - 専用DBでmigrationのdowngrade/upgrade、ユーザー件数保持、旧形式INSERT、旧セッションをMFA済みに補完しないことを検証した。
 - 実DB・実TOTP・実ECDSA署名によるPasskey検証、同時復旧コード利用、失効、所有者/権限、通知/監査失敗時のtransactionを自動テストする。
 - 専用の使い捨てローカルDBで、未登録ログインの登録案内、キャンセル、TOTPログインからホームとアカウント設定への遷移をブラウザ確認した。
-- 実機のPasskey登録・生体認証、個人の認証アプリへの登録、公開環境への適用は未実施。署名検証テストと実機確認を混同しない。
+- 公開環境への適用と上記の限定ログイン・匿名デモ確認は完了。実機のPasskey登録・生体認証、個人の認証アプリへの登録、公開メール配送とMFA後の本人によるMCP再接続は未確認。署名検証テストと実機確認を混同しない。
 - 次の開発は運営/組織管理/Project業務の表示と名称の整理。システム設定・組織ごとの機能許可は後続で、今回のMFAに混ぜない。
 - MCP公開審査の再開条件・提出手順は [Codex連携の記録](decisions/2026-10-10-codex-plugin.md) を参照する。

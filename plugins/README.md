@@ -2,11 +2,13 @@
 
 公開MCPは既存BackendのHTTPS `/mcp` を利用する。ローカルMCPの常時起動は不要。
 `syncnesto/` がportableパッケージのソースで、資格情報を含まない。
-2026-10-10時点でOpenAIへのプラグイン登録・公開審査提出は未完了。希望する発行者名は `shime-hei`、窓口は `syncnesto@gmail.com`。
-サポート窓口、プライバシーポリシー、利用規約の実URLと、OpenAIでの発行者確認が必要。
+2026-10-11、ユーザー提示の画面でIndividualの **Verified** を確認した。プラグイン登録・公開審査提出は未完了。
+希望する発行者名は `shime-hei`、窓口は `syncnesto@gmail.com`。選択する確認済みidentityの公開名との一致は管理画面で確認する。
+サポート窓口、プライバシーポリシー、利用規約の実URLが必要。
 文面案と未確定事項は [公開登録の草案](publication-draft.ja.md) を参照する。
-本人確認はユーザー本人が申請し、Individualの **Identity in review** を確認した。プラグインの公開審査はまだ提出していない。
-MCPの次の作業を記録し、通常ユーザーのMFA・認可整理を先に進める。追加請求なしの条件は維持する。
+追加請求なしの条件は維持する。本人確認の完了から費用ゼロやプラグイン審査済みを推定しない。
+通常アカウント全員MFAの既存方針と、MFAなしの審査ログインを求める公式要件の整合は未決。
+分離した審査データ・8ケース・動画台本・静的検証は [審査準備](review-plan.ja.md) を参照する。
 現在の状態・費用条件・再開時の作業は [公開申請の進捗](publication-status.ja.md)、
 ツールの副作用分類は [annotation根拠](tool-annotations.md) を参照する。
 このディレクトリをそのまま「申請完了」「公開済み」と扱わない。
@@ -52,7 +54,7 @@ ZIPはCodex形式の `.codex-plugin/plugin.json`、`.mcp.json`、ロゴ、業務
      --submission --listing /path/to/confirmed-listing.json
    ```
 
-3. OpenAIの管理画面で発行者確認を完了し、MCP付きプラグインとしてZIPをアップロードする。
+3. OpenAIの管理画面で確認済み発行者を選び、MCP付きプラグインとしてZIPをアップロードする。
    client ID=`syncnesto-openai-plugin`、token endpoint auth=`none`、scope=`mcp:work`。
    管理画面の正確なcallbackをBackendの `MCP_PLUGIN_REDIRECT_URIS` に登録・再配布する。
    ドメイン確認では管理画面が提示する `/.well-known/openai-apps-challenge` に正確なchallenge本文を配布する。
