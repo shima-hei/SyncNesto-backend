@@ -54,9 +54,9 @@ class McpAuthService:
 
     def fingerprint(self, user: User) -> str:
         """認証情報の変更時に既存接続を失効させる。"""
-        return digest(
-            f"{user.id}:{user.email}:{user.hashed_password}:{user.password_change_required}"
-        )
+        from app.core.mfa import fingerprint
+
+        return fingerprint(user)
 
     def validate_browser(self, db: Session, user: User) -> None:
         """デモのCookieから通常DBへの委任を作らない。"""
@@ -67,6 +67,13 @@ class McpAuthService:
             or user.password_change_required
         ):
             raise ForbiddenError()
+        if settings.mfa_required:
+            from app.core.mfa import require_verified
+
+            session = db.info.get("auth_session")
+            if session is None:
+                raise ForbiddenError()
+            require_verified(user, session)
 
     def eligible(self, db: Session, user: User, project_id: int) -> bool:
         """実行専用を除き、現在のProject権限を確認する。"""
@@ -184,6 +191,10 @@ class McpAuthService:
             project_ids=project_ids,
             scopes=request.scopes,
             credential_fingerprint=self.fingerprint(user),
+            mfa_verified_at=getattr(
+                db.info.get("auth_session"), "mfa_verified_at", None
+            ),
+            mfa_security_version=user.mfa_security_version,
             expires_at=datetime.now(UTC) + timedelta(days=30),
         )
         db.add(connection)
@@ -238,6 +249,14 @@ class McpAuthService:
             or not user.is_active
             or user.password_change_required
             or membership is None
+            or user.mfa_recovery_pending
+            or (
+                settings.mfa_required
+                and (
+                    connection.mfa_verified_at is None
+                    or connection.mfa_security_version != user.mfa_security_version
+                )
+            )
             or not hmac.compare_digest(
                 connection.credential_fingerprint, self.fingerprint(user)
             )

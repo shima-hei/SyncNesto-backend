@@ -222,7 +222,9 @@ docker/pgadmin/
 !/docs/decisions/2026-10-08-mcp.md
 !/docs/decisions/2026-10-09-remote-mcp.md
 !/docs/decisions/2026-10-10-codex-plugin.md
+!/docs/decisions/2026-10-10-mfa-authorization.md
 !/docs/mcp.md
+!/docs/mfa.md
 !/docs/frontend-audit-logs-api.md
 !/docs/testing.md
 !/docs/deleted-data-cleanup.md

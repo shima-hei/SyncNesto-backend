@@ -77,6 +77,7 @@ class AuditLogService:
         resource_type: str | None = None,
         resource_id: int | None = None,
         metadata: dict[str, Any] | None = None,
+        commit: bool = True,
     ) -> None:
         """監査ログを記録する。
 
@@ -118,8 +119,11 @@ class AuditLogService:
                         ),
                     }
                 ),
+                commit=commit,
             )
         except Exception:
+            if not commit:
+                raise
             db.rollback()
             logger.exception("Failed to record audit log: event_type=%s", event_type)
 

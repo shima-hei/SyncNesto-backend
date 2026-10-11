@@ -4,8 +4,9 @@ DB model : UserテーブルのSQLAlchemyモデルを定義するモジュール
 
 from datetime import datetime
 from enum import StrEnum
+from secrets import token_urlsafe
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.config import settings
@@ -27,6 +28,17 @@ class User(Base):
     __table_args__ = {
         "comment": db_comment("ユーザー", "ユーザー情報を管理するテーブル"),
     }
+
+    mfa_security_version: Mapped[int] = mapped_column(default=0, server_default="0")
+    mfa_recovery_pending: Mapped[bool] = mapped_column(
+        default=False, server_default="false"
+    )
+    mfa_user_handle: Mapped[str] = mapped_column(
+        String(64),
+        default=lambda: token_urlsafe(32),
+        server_default=text("gen_random_uuid()::text"),
+        comment=db_comment("WebAuthn本人識別子", "メールに依存しない不透明な識別子"),
+    )
 
     id: Mapped[int] = mapped_column(
         primary_key=True,

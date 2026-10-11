@@ -139,6 +139,13 @@ class Settings:
     app_name: str = os.getenv("APP_NAME", "Syncnesto API")
     app_env: str = os.getenv("APP_ENV", "development")
     demo_mode: bool = get_bool_env("DEMO_MODE")
+    mfa_required: bool = get_bool_env("MFA_REQUIRED", True)
+    mfa_cookie_name: str = "mfa_flow"
+    mfa_encryption_keys: str = field(
+        default=os.getenv("MFA_ENCRYPTION_KEYS", ""), repr=False
+    )
+    webauthn_rp_id: str = os.getenv("WEBAUTHN_RP_ID", "localhost")
+    webauthn_origin: str = os.getenv("WEBAUTHN_ORIGIN", "http://localhost:3000")
     demo_database_url: str = os.getenv("DEMO_DATABASE_URL", "")
     demo_secret_key: str = os.getenv("DEMO_SECRET_KEY", "")
     demo_aws_region: str = os.getenv("DEMO_AWS_REGION", "")
@@ -388,6 +395,38 @@ class Settings:
                 "use DEMO_MODE=true for demo features"
             )
         self.validate_cleanup()
+        if self.is_public_environment and self.mfa_required:
+            from cryptography.fernet import Fernet
+
+            try:
+                keys = [
+                    key.strip()
+                    for key in self.mfa_encryption_keys.split(",")
+                    if key.strip()
+                ]
+                if not keys:
+                    raise ValueError()
+                for key in keys:
+                    Fernet(key.encode())
+            except (ValueError, TypeError):
+                raise RuntimeError(
+                    "MFA_REQUIRED needs valid MFA_ENCRYPTION_KEYS"
+                ) from None
+            origin = urlsplit(self.webauthn_origin)
+            if (
+                origin.scheme != "https"
+                or origin.hostname != self.webauthn_rp_id
+                or origin.path not in {"", "/"}
+                or origin.query
+                or origin.fragment
+                or origin.username
+                or origin.password
+                or self.webauthn_origin.rstrip("/")
+                != self.frontend_public_url.rstrip("/")
+            ):
+                raise RuntimeError(
+                    "WebAuthn requires the fixed HTTPS frontend origin and RP ID"
+                )
         if os.getenv("VERCEL") == "1" and not self.is_public_environment:
             raise RuntimeError("Vercel requires APP_ENV=production")
         if self.demo_mode:

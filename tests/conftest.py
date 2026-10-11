@@ -1,5 +1,6 @@
 """pytest共通設定。"""
 
+import os
 import subprocess
 import sys
 import time
@@ -90,6 +91,8 @@ def run_migrations() -> None:
 def pytest_sessionstart() -> None:
     """アプリのimport前にテスト環境変数を読み込む。"""
     load_dotenv(PROJECT_ROOT / ".env.test", override=True)
+    # 既存の業務テストは認可を検証する。MFA強制はtest_mfaで明示して検証する。
+    os.environ["MFA_REQUIRED"] = "false"
 
 
 @pytest.fixture(scope="session")

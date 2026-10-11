@@ -68,6 +68,27 @@ class ForbiddenError(AppError):
     code = "FORBIDDEN"
 
 
+class MfaRequiredError(ForbiddenError):
+    """通常利用には追加認証が必要。"""
+
+    message = error_messages.MFA_REQUIRED
+    code = "MFA_REQUIRED"
+
+
+class MfaInvalidError(BadRequestError):
+    """追加認証の要求または応答が無効。"""
+
+    message = error_messages.MFA_INVALID
+    code = "MFA_INVALID"
+
+
+class MfaUnavailableError(AppError):
+    """追加認証の暗号鍵などが未設定。"""
+
+    message = error_messages.MFA_UNAVAILABLE
+    code = "MFA_UNAVAILABLE"
+
+
 class CsrfTokenInvalidError(ForbiddenError):
     """CSRF tokenが不正な場合の例外。"""
 

@@ -5,6 +5,9 @@ Syncnesto のバックエンドAPIです。FastAPI、SQLAlchemy、Alembic、Post
 Codex向けMCPは既存Backendの `/mcp` で提供します。ローカルMCPの常時起動は不要です。
 有効化・OAuth接続・利用権限は[MCP接続手順](docs/mcp.md)を参照してください。既定では無効です。
 
+通常アカウントはパスワード後にTOTP/Passkeyの追加認証を要求します。匿名デモは対象外です。
+起動前にmigrationと専用暗号鍵を準備してください。[MFA設定・移行・復旧手順](docs/mfa.md)を参照してください。
+
 テスト設計・テストケースAPIの構造化モデル、権限、保存契約、変更影響は[テスト設計API仕様](docs/frontend-test-design-api.md)を参照してください。利用前に`uv run alembic upgrade head`で追加テーブルを適用します。
 
 現在は認証・認可機能の土台として、ログインAPI、RBACによる管理者向けユーザー作成API、パスワードハッシュ化、共通例外ハンドラー、ロギング、テスト用PostgreSQL環境を整備しています。

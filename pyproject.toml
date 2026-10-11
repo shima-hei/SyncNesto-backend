@@ -20,6 +20,10 @@ dependencies = [
     "boto3>=1.43.9",
     "python-multipart>=0.0.32",
     "mcp==2.3.0",
+    "pyotp>=2.10.0",
+    "webauthn>=3.0.1",
+    "cryptography>=50.0.2",
+    "qrcode[pil]>=8.2",
 ]
 
 [project.optional-dependencies]

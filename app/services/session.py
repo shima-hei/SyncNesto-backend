@@ -43,6 +43,9 @@ class SessionService:
         self,
         db: Session,
         user: User,
+        *,
+        mfa_method: str | None = None,
+        commit: bool = True,
     ) -> tuple[UserSession, str]:
         """ログイン用セッションとJWTを作成する。
 
@@ -53,7 +56,14 @@ class SessionService:
         Returns:
             作成したDBセッションとアクセストークン。
         """
-        user_session = self.repository.create(db, user)
+        user_session = self.repository.create(db, user, commit=False)
+        if mfa_method:
+            user_session.mfa_method = mfa_method
+            user_session.mfa_verified_at = datetime.now(UTC)
+            user_session.mfa_reauthenticated_at = datetime.now(UTC)
+            user_session.mfa_security_version = user.mfa_security_version
+        if commit:
+            db.commit()
         access_token = create_access_token(
             subject=user.email,
             session_id=user_session.id,

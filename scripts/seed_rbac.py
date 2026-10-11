@@ -19,6 +19,7 @@ PERMISSIONS = [
     ("user:read", "ユーザーを閲覧する"),
     ("user:create", "ユーザーを作成する"),
     ("user:update", "ユーザーを更新する"),
+    ("user:mfa_recover", "本人確認後のMFA復旧支援"),
     ("user:delete", "ユーザーを削除する"),
     ("project:read", "プロジェクトを閲覧する"),
     ("project:create", "プロジェクトを作成する"),

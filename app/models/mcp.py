@@ -28,6 +28,8 @@ class McpConnection(Base):
     project_ids: Mapped[list[int]] = mapped_column(JSONB)
     scopes: Mapped[list[str]] = mapped_column(JSONB)
     credential_fingerprint: Mapped[str] = mapped_column(String(64))
+    mfa_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    mfa_security_version: Mapped[int | None] = mapped_column()
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(

@@ -7,6 +7,7 @@ from app.core.auth import get_authenticated_user, get_current_user
 from app.core.auth_cookie import delete_auth_cookie, set_auth_cookie
 from app.core.config import settings
 from app.core.csrf import delete_csrf_cookie, generate_csrf_token, set_csrf_cookie
+from app.core.mfa import delete_flow_cookie, require_verified, set_flow_cookie
 from app.db.session import get_db, get_normal_db
 from app.models.rbac import Role
 from app.models.user import User
@@ -26,6 +27,7 @@ from app.schemas.user import (
 )
 from app.services.audit_log import AuditLogService
 from app.services.demo import DemoService
+from app.services.mfa import MfaService
 from app.services.onboarding import OnboardingService
 from app.services.session import SessionService
 from app.services.storage import MAX_IMAGE_BYTES, StorageService
@@ -73,6 +75,16 @@ def login_user(
         ログイン成功レスポンス。
     """
     user = user_service.authenticate_user(db, user_in.email, user_in.password)
+    delete_flow_cookie(response)
+    if settings.mfa_required and not user.password_change_required:
+        token, result = MfaService().login(db, user)
+        delete_auth_cookie(response)
+        if token:
+            set_flow_cookie(response, token)
+        set_csrf_cookie(response, generate_csrf_token())
+        return UserLoginResponse(
+            message="Additional authentication required", next_step=result.next_step
+        )
     user_service.update_last_login_at(db, user, commit=False)
     user_session, access_token = session_service.create_session_token(db, user)
     audit_log_service.record_login_success(
@@ -108,6 +120,7 @@ def login_user(
 def logout_user(
     response: Response,
     access_token: str | None = Cookie(default=None, alias=settings.auth_cookie_name),
+    mfa_token: str | None = Cookie(default=None, alias=settings.mfa_cookie_name),
     db: Session = Depends(get_db),
 ) -> None:
     """ユーザーログアウトを行う。
@@ -117,6 +130,11 @@ def logout_user(
         access_token: 認証Cookieに含まれるアクセストークン。
         db: DBセッション。
     """
+    if mfa_token and db.info.get("data_realm") != "demo":
+        from app.core.mfa import digest
+        from app.repositories.mfa import MfaRepository
+
+        MfaRepository().cancel(db, digest(mfa_token))
     if access_token is not None:
         user_session = session_service.revoke_token_session(
             db,
@@ -131,6 +149,7 @@ def logout_user(
             DemoService().cleanup(demo_id)
 
     delete_auth_cookie(response)
+    delete_flow_cookie(response)
     delete_csrf_cookie(response)
 
 
@@ -151,6 +170,12 @@ def read_current_user(
     Returns:
         現在のログインユーザー情報。
     """
+    if (
+        not current_user.password_change_required
+        and not db.info.get("password_setup_only")
+        and db.info.get("data_realm") != "demo"
+    ):
+        require_verified(current_user, db.info["auth_session"])
     system_roles = user_service.list_system_roles_by_user(db, current_user.id)
     return current_user_response(db, current_user, system_roles)
 

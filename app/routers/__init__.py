@@ -14,6 +14,7 @@ from app.routers import (
     health,
     home,
     mcp,
+    mfa,
     notifications,
     projects,
     requirements,
@@ -35,6 +36,8 @@ def register_routers(app: FastAPI) -> None:
         app: ルーターを登録するFastAPIアプリケーション。
     """
     app.include_router(auth.router)
+    app.include_router(mfa.router)
+    app.include_router(mfa.operator_router)
     app.include_router(mcp.router)
     app.include_router(demo.router)
     app.include_router(deleted_data_cleanup.router)

@@ -154,6 +154,7 @@ class UserLoginResponse(BaseModel):
     """
 
     message: str
+    next_step: str = "authenticated"
     password_change_required: bool = False
     access_token: str | None = None
     token_type: str | None = None
