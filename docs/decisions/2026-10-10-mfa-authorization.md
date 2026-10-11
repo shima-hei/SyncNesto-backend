@@ -72,13 +72,13 @@ MFA完了を理由に権限を増やさず、管理者権限を理由にMFAを�
 
 2026-10-11、ユーザーの指示によりNeonの通常・デモDBの永続RBACも読み取り専用で確認した。
 両DBの `system_admin` は39権限（運営6・業務33、`mcp:connect`は未付与）で、全40件を追加する現在のseedと差がある。
-次の整理ではseedだけでなく既存付与を更新するmigrationも用意し、両DBへ適用する。
+2026-10-12、seedと既存付与を更新するmigration `b7d30e2c941a` を実装した。両DBへの公開適用はCI・移行確認後に行う。
 Project/組織/本人へのRole割当は維持し、DB接続ロールのGRANTとは分けて扱う。
 詳しい実測と移行時の検証項目は[Infraの権限確認](../../../syncnesto-infra/README.md#2026-10-11のneon権限確認)を参照する。
 
-1. `seed_rbac.py` は `system_admin` に業務用を含む全Permissionを列挙している。現行のProject認可では自動通過しないが、意図を誤解しやすい。運営用Permissionだけへの整理は、使用箇所・既存Role割当とmigration方針を確認してから別途実施する。
-2. Frontendの組織管理は `TenantProvider.canManageTenant`、運営画面は `requireSystemAdmin` / `system_roles` で分離されている。一方でサイドバーの「管理」「組織の運営管理」「ユーザー管理」は範囲が分かりにくい。「システム運営」「全体のユーザー管理」と、現在組織の管理を明確に表示する案とする。
-3. 本人の権限表示も、運営Role・現在組織のRole・ProjectのRoleを別々に示す案とする。兼任を単一の「管理者」表示へまとめない。Owner委譲と最後のOwner保護は維持する。
+1. `seed_rbac.py` とmigrationはsystem scopeの `system_admin` を `tenant:manage` と `user:read/create/update/mfa_recover/delete` の6権限へ限定する。他Role、User Role、組織/Project所属を変更しない。seedの再実行でも業務Permissionを再付与しない。migrationのdowngradeも権限を自動で増やさない。
+2. Frontendの組織管理は `TenantProvider.canManageTenant`、運営画面は `requireSystemAdmin` / `system_roles` による既存の分離を維持する。サイドバーを「システム運営」「全体のユーザー管理」「全体の組織管理」と「現在の組織」に分ける表示変更を実装した。
+3. アカウントに運営Roleと現在組織のRoleを別表示し、ProjectのRoleは各Projectのメンバー画面で確認するよう案内する。メンバー画面は「プロジェクト内の役割」と表示する。Owner委譲と最後のOwner保護は維持する。
 4. 組織管理者はパスワード再設定・メール変更の申請を開始できる。現行の [`AccountActionService`](../../app/services/account_action.py) は現在メールへの確認等と、完了時の管理権限再検証を行う。変更されるIdentityは組織間で共通なので、MFA復旧を組織管理者の単独操作で迂回できる設計にしない。
 5. システム設定と組織ごとの機能許可は未実装。現在のTenantモデルに機能契約・許可一覧はない。画面名の整理だけで実装済みと扱わない。
 
@@ -136,14 +136,14 @@ MFAだけでセッション窃取や権限設定ミスまで防げるとは扱�
 利用可否は「組織に機能を許可」かつ「本人に必要なProject権限」かつ「有効な所属・認証」で判定する。
 機能が無効ならBackendのAPIとMCPの両方で制限し、ボタンの非表示だけに頼らない。
 
-初版で管理する機能の一覧と、無効化後の既存データの閲覧・export・再有効化の扱いは未確定。
-運営画面・機能許可の保存モデル・migrationは、この範囲を決めてから設計する。
+2026-10-12、無効化後も既存データの閲覧・出力を維持し、作成・変更・MCP経由の変更を停止する方針を確定した。
+機能の単位・運営画面・保存モデル・migrationの案は[次の設計書](2026-10-12-system-settings-tenant-features.md)へ分けた。機能許可そのものは未実装。
 
 ## 次に進める順序と確認事項
 
 以下は実装前に合意した順序。2026-10-11時点で1〜3と4のローカル実装・DB適用を完了した。
 4の公開適用と検証の状態は [MFA運用手順](../mfa.md) を参照する。
-本人による実機登録と、5の権限表示/名称整理は残る。権限整理ではNeonのDB role・GRANT・RLSも合わせて確認する。
+本人による実機登録と、5の権限整理の公開反映は残る。権限整理ではNeonのDB role・GRANT・RLSも合わせて確認し、DB接続権限の変更とアプリRBACの変更を区別する。
 
 1. 本記録でRoleの兼任と管理範囲を認識合わせする。運営/業務の分離、通常全員のMFA・匿名デモ除外は回答済み。
 2. 2026-10-11、初版からTOTP/Passkeyの両方を提供し、予備の認証アプリと本人確認を伴う運営者の復旧支援を用意すると回答済み。具体的な利用・復旧・移行手順の案は以下に記録する。

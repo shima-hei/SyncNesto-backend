@@ -1,5 +1,6 @@
 """RBACに関するデータアクセス処理を定義するモジュール。"""
 
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models.project import ProjectMember
@@ -124,6 +125,19 @@ class RbacRepository:
         db.add(permission)
         db.flush()
         return permission
+
+    def remove_permissions_except(
+        self, db: Session, *, role: Role, permission_codes: list[str]
+    ) -> None:
+        """指定Roleの許可一覧にない付与だけを除く。所属と他Roleは変更しない。"""
+        allowed = select(Permission.id).where(Permission.code.in_(permission_codes))
+        db.execute(
+            delete(RolePermission).where(
+                RolePermission.role_id == role.id,
+                RolePermission.permission_id.not_in(allowed),
+            ),
+            execution_options={"synchronize_session": False},
+        )
 
     def add_permission_to_role(
         self,

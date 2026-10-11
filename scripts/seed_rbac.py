@@ -67,8 +67,17 @@ ROLES = [
     ("viewer", "閲覧者", "project", "閲覧専用ユーザー"),
 ]
 
+SYSTEM_ADMIN_PERMISSIONS = (
+    "tenant:manage",
+    "user:read",
+    "user:create",
+    "user:update",
+    "user:mfa_recover",
+    "user:delete",
+)
+
 ROLE_PERMISSIONS = {
-    "system_admin": [code for code, _ in PERMISSIONS],
+    "system_admin": list(SYSTEM_ADMIN_PERMISSIONS),
     "project_admin": [
         "mcp:connect",
         "project:read",
@@ -203,6 +212,10 @@ def seed_roles_and_permissions(repository: RbacRepository) -> None:
 
         for role_name, permission_codes in ROLE_PERMISSIONS.items():
             role = roles[role_name]
+            if role_name == "system_admin":
+                repository.remove_permissions_except(
+                    db, role=role, permission_codes=permission_codes
+                )
             for permission_code in permission_codes:
                 repository.add_permission_to_role(
                     db,

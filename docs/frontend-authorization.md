@@ -90,6 +90,14 @@ Secure Cookie、Cookie-only認証、明示したHost、DBの `verify-full` TLS�
 
 ## 基本方針
 
+2026-10-12の権限整理では、system scopeの `system_admin` を組織全体管理とIdentity管理の6 Permission
+（`tenant:manage`、`user:read/create/update/mfa_recover/delete`）へ限定する。
+既存付与はmigration `b7d30e2c941a`、新規/再実行はseedで同じ境界に揃える。
+組織Owner/Adminの役割とProject Role、本人への割当は保持する。運営権限だけでProjectやMCPを利用できない。
+Frontendは「システム運営」「現在の組織」「プロジェクト内の役割」を区別し、
+本人のアカウント画面に運営Roleと現在組織のRoleを別々に表示する。
+APIのレスポンス形状・既存の認可Dependencyは変更しないため、Orval再生成は不要。
+
 バックエンドの最終認可は permission ベースで行います。フロントエンドのメニュー表示やボタン表示は role key ベースで制御します。
 
 ```text
