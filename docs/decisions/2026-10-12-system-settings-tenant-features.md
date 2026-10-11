@@ -43,6 +43,7 @@ MCPではさらに接続のProject同意範囲と現在の`mcp:connect`を要求
   `APP_ENV`、`DEMO_MODE`、MFA必須設定、秘密鍵・接続情報はこの画面の編集対象に含めない。
 - `system_setting:read` / `system_setting:update` / `tenant:feature_manage`を運営用Permissionの追加候補とする。
   組織Role・Project Roleへは付与しない。既存の6運営Permissionへ導入済みとは扱わない。
+  導入時はseedの固定許可一覧と追加付与用の新しいmigrationを一緒に更新し、既存migrationは書き換えない。
 - `/system/settings`、`/system/tenants/{id}/features`を候補とする。GETとPATCHを分ける。
   組織管理者向けは現在組織の許可状態を読み取るだけとし、全組織の設定を返さない。
 - PATCHはversionによる排他制御、Cookie認証ならCSRF、更新前後の監査ログを必須にする。
@@ -52,6 +53,14 @@ MCPではさらに接続のProject同意範囲と現在の`mcp:connect`を要求
 - MCPのcatalogとexecuteの両方で現在の許可を確認する。idempotency receiptを返す場合も先に確認する。
   保存済み日程案を適用する時も再判定する。トークン発行時の状態だけを信用しない。
 - 全面メンテナンスや侵害対応の緊急停止は今回の組織許可と分けて設計し、通常の機能無効化へ混ぜない。
+
+## 画面の案
+
+- 運営画面だけで機能許可を変更し、組織管理画面には現在組織の状態を読み取り表示する。
+- 無効でも既存データへ移動できるメニューを残し、「閲覧のみ」と停止理由を表示する。
+  新規作成・編集・コメント・復元等の操作を制限し、閲覧や出力の導線を一緒に隠さない。
+- すでに開いている編集画面やMCPからの変更もBackendで拒否する。
+  権限不足と機能停止を説明し分け、ユーザーの未保存入力を勝手に破棄しない。
 
 ## データモデルと移行案
 
