@@ -6,6 +6,7 @@ from app.models.project import Project
 from app.models.tenant import Tenant, TenantMember
 from app.models.user import User
 from app.repositories.rbac import RbacRepository
+from app.services.review_account import REVIEW_PERMISSIONS, ReviewAccountService
 
 
 class AuthorizationService:
@@ -85,6 +86,11 @@ class AuthorizationService:
             権限を持つ場合はTrue。
         """
         tenant_id = db.info.get("tenant_id")
+        review = ReviewAccountService().grant(db, user)
+        if review is not None and (
+            tenant_id != review.tenant_id or permission_code not in REVIEW_PERMISSIONS
+        ):
+            return False
         if tenant_id is None:
             return False
         if (

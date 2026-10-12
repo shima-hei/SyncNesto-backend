@@ -29,6 +29,7 @@ from app.repositories.account_action import AccountActionRepository
 from app.schemas.account_action import AccountActionInspection
 from app.services.audit_log import AuditLogService
 from app.services.email import EmailService, OutgoingEmail
+from app.services.review_account import ReviewAccountService
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +210,7 @@ class AccountActionService:
         user = self.repository.get_user(db, user_id)
         if user is None:
             raise ForbiddenError()
+        ReviewAccountService().reject_identity_change(db, user)
         self._check_request_authority(db, user_id, actor_id, tenant_id)
         return user
 
@@ -345,6 +347,8 @@ class AccountActionService:
         if candidate is None:
             raise AccountActionInvalidError()
         user = self.repository.get_user(db, candidate.user_id)
+        if user is not None:
+            ReviewAccountService().reject_identity_change(db, user)
         action = self.repository.by_hash(db, digest, lock=True)
         now = datetime.now(timezone.utc)
         if (

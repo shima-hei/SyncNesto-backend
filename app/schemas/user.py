@@ -126,6 +126,7 @@ class CurrentUserRead(UserRead):
     """現在のログインユーザー読み取り時に返すschema。"""
 
     demo: DemoStatus | None = None
+    review_access_expires_at: datetime | None = None
     password_change_required: bool = False
     initial_password_expires_at: datetime | None = None
 

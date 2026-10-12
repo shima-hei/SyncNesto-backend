@@ -17,6 +17,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.repositories.user import UserRepository
 from app.services.authorization import AuthorizationService
+from app.services.review_account import ReviewAccountService
 from app.services.session import SessionService
 
 session_service = SessionService()
@@ -98,6 +99,12 @@ def get_authenticated_user(
     db.info["auth_session"] = user_session
     request.state.auth_session_id = user_session.id
 
+    review = ReviewAccountService().validate(db, user)
+    if review is not None and request.url.path.startswith("/auth/") and not (
+        request.url.path == "/auth/me" and request.method == "GET"
+    ):
+        raise ForbiddenError()
+
     if (
         access_token is not None
         and not db.info["password_setup_only"]
@@ -118,7 +125,8 @@ def get_current_user(
     if user.password_change_required or db.info.get("password_setup_only"):
         raise PasswordChangeRequiredError()
     if db.info.get("data_realm") != "demo":
-        require_verified(user, db.info["auth_session"])
+        if ReviewAccountService().validate(db, user) is None:
+            require_verified(user, db.info["auth_session"])
     return user
 
 

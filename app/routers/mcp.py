@@ -1,13 +1,15 @@
 """OAuthの直接経路と、既存Cookieで保護する接続同意・管理。"""
 
+import re
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
 from app.core.config import settings
+from app.core.exceptions import NotFoundError
 from app.core.mcp import SCOPES, McpOAuthError, oauth_issuer, require_mcp_enabled
 from app.db.mcp import get_mcp_db
 from app.db.session import get_db, get_normal_db
@@ -65,6 +67,15 @@ def operate(
     response.headers["Cache-Control"] = "no-store"
     connection, user = identity
     return McpOperationsService().execute(db, connection, user, data)
+
+
+@router.get("/.well-known/openai-apps-challenge", include_in_schema=False)
+def plugin_domain_challenge() -> PlainTextResponse:
+    """管理画面が発行した公開ドメイン検証値だけを正確に返す。"""
+    value = settings.mcp_plugin_domain_challenge
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", value):
+        raise NotFoundError()
+    return PlainTextResponse(value, headers={"Cache-Control": "no-store"})
 
 
 @router.get("/.well-known/oauth-authorization-server", include_in_schema=False)

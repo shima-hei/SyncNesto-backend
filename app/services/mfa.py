@@ -52,6 +52,7 @@ from app.repositories.mfa import MfaRepository
 from app.schemas.mfa import MfaFactorRead, MfaFlowRead, MfaStatus, MfaTotpSetup
 from app.services.audit_log import AuditLogService
 from app.services.email import EmailService, OutgoingEmail
+from app.services.review_account import ReviewAccountService
 from app.services.session import SessionService
 
 
@@ -86,6 +87,7 @@ class MfaService:
         self, db: Session, user: User, purpose: str, *, payload: dict | None = None
     ) -> tuple[str, MfaFlowRead]:
         """パスワードまたは通常セッションから短期Cookieを作る。"""
+        ReviewAccountService().reject_identity_change(db, user)
         token = secrets.token_urlsafe(48)
         self.repository.prune_flows(db, user.id)
         flow = MfaFlow(

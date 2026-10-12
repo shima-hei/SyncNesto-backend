@@ -38,6 +38,7 @@ from app.models.requirement import (
     RequirementSection,
     RequirementTargetComment,
 )
+from app.models.review_account import ReviewAccountGrant
 from app.models.session import UserSession
 from app.models.task import (
     Board,
@@ -74,6 +75,7 @@ from app.models.test_design import (
 from app.models.user import User
 
 __all__ = [
+    "ReviewAccountGrant",
     "MfaFactor",
     "MfaFlow",
     "MfaRecoveryCode",
