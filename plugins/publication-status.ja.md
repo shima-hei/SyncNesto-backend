@@ -45,10 +45,14 @@
 - OpenAIの新しい接続試行では757文字のrelay stateを観測した。API・DBの500文字制限で `invalid_request` になったため、1〜2,048文字へ広げ、migration `d4f8b1e6a902` を追加した。stateの内容・OAuth codeは記録せず、callbackの完全一致・PKCE・同意・権限検証を維持する。修正前の長いstateの回帰テスト2件失敗、修正後のMCP関連66テスト・ruff・pyright成功。
 - 上記2件の修正をBackend PR #27でマージ・公開した。main CI `38220735849` 成功、Vercel `dpl_6NM1M5LvGekL1wgaGcZnvcrPURfj` READY・公開commit `953fafc3d6424ed371780f4ecc81a630434f5bb1` 一致。
 - 両DBのrevisionは `d4f8b1e6a902`、state列上限は2,048。既存Role・所属・DB GRANTを維持し、審査許可は通常DB1件・デモDB0件のまま。公開challengeの200・正確な本文、直接authの403、許可外のmethod/path拒否、stateの上限を検証した。
-- 操作直前の本人承認を受け、専用審査Identityの `Plugin review - consented` 1 ProjectだけをOpenAI申請準備用接続へ許可した。ほかの編集可能Projectと閲覧専用Projectは許可していない。Syncnesto側の有効な接続もこの1件だけで、期限は審査Identityと同じ2026-11-11T07:17:01Z。
+- 操作直前の本人承認を受け、専用審査Identityの `Plugin review - consented` 1 ProjectだけをOpenAI申請準備用接続へ許可した。ほかの編集可能Projectと閲覧専用Projectは許可していない。Portal接続完了時点の有効接続はこの1件で、期限は審査Identityと同じ2026-11-11T07:17:01Z。その後、下記の個人用テスト接続を別途作成した。
 - OpenAI管理画面で **Domain verified / Configured / Authorized**、検出ツール28件、最新scanの **No findings** を確認した。各ツールのdescription・inputSchema・4つのannotationは現行catalogと28件すべて一致した。`preview_task_schedule.readOnlyHint=false` も実ホストのscanで確認済み。比較結果と画面証跡はGit外に保存した。
 - このscanはツール定義の確認であり、ホスト上の8ケース・動画や、MCP全体に脆弱性がないことの保証ではない。審査欄への資格情報送信・最終提出・公開は未実施。
-- Codex用の登録済みMCP mapping付きローカルテストパッケージをGit外に準備し、公式CLIでmarketplace追加・プラグインinstalled/enabledを確認した。常駐するローカルMCPはない。現在の会話への実ツール読込と既存接続の再利用は未確認で、再読込後の新しい会話でP1から検証する。Codex画面の自動操作はツールの安全制限で拒否された。
+- Codex用のMCP mapping付きローカルテストパッケージをGit外に準備したが、本人の再起動後もスキルだけが使え、MCPツールは公開されなかった。0.1.0でPlugin IDをMCP app IDとして記載した誤りを直し、0.1.1のinstalled/enabledとcache一致を公式CLIで確認した。常駐するローカルMCPはない。
+- 修正後も公式App Serverの読み取り専用 `app/read` はこのDraftのMCP appを `missingAppIds` に返し、`app/installed` にも対象はなかった。PortalのConfigured/AuthorizedはCodexでの接続完了を示さない。モデル呼び出し・新規会話・業務データ操作は行わず、診断結果をGit外へ保存した。
+- 本人のChatGPTログイン後、非公開の `Syncnesto MCP test` を登録した。検出されたcallbackは既存設定と一致し、サーバー変更なし。操作直前の本人承認後、専用審査Identityの `Plugin review - consented` だけを許可してOAuth接続した。
+- この個人用接続のMCP app ID `asdk_app_6acccb97310081919c85440d4b1f0512` を使う0.1.2へ更新し、再インストール・source/cache一致を確認した。公式App Serverは `enabled=true` / `callable=true`、`list_projects` を含む28ツールすべて有効と返した。ChatGPT詳細画面にもRead 14 / Write 14を確認し、証跡をGit外へ保存した。
+- 接続設定・ツール情報の確認まで完了。既存の会話にはツールが未読込のため、次は新しい会話でP1を実行する。業務データはまだ読み書きしていない。審査用Draftと個人用テスト接続は別のIDとして管理する。Codex画面の自動操作はツールの安全制限で拒否されており迂回しない。
 
 次はホスト上の8ケースと動画、公開規約の未決事項確定・公開、必須情報の入力、審査提出へ進める。
 以下の「現在の状態」「再開確認」「残る作業」は下書き登録前の履歴で、最新状態は本節を優先する。
