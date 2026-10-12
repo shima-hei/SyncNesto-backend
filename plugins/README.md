@@ -46,12 +46,25 @@ ZIPはCodex形式の `.codex-plugin/plugin.json`、`.mcp.json`、ロゴ、業務
 
 ### 登録済み接続を参照するホストテスト（2026-10-12）
 
-OpenAI側のDraft接続を使うテスト用パッケージは、Git外の独立marketplaceに準備した。
-公式の登録済みMCP mapping手順に従い、`.app.json` で取得済み `plugin_asdk_app...` IDを参照する。
+テスト用パッケージはGit外の独立marketplaceに準備した。
+初版0.1.0の `.app.json` にPlugin IDを入れた誤りを修正し、0.1.1ではMCP app ID
+`asdk_app_6acc60ad42d08191aa90fa9404caa5af` を参照する。
+Plugin IDとMCP app IDは別の識別子で、[公式の形式要件](https://developers.openai.com/plugins/deploy/submission-errors)に従う。
 このパッケージにはローカルMCP、トークン、審査パスワード、hooksを含めない。
 公式CLIの `plugin marketplace add` / `plugin add` と `plugin list` でinstalled/enabledを確認済み。
-現在の会話にMCPツールが読み込まれたことや、接続が再利用できることはまだ確認できていない。
-アプリの再読込後に新しい会話でプラグインを選択し、P1から実ホストの検証を行う。
+本人の再起動後もスキルだけが使え、MCPツールは公開されなかった。
+0.1.1へ更新後、公式App Serverの読み取り専用 `app/read` は対象を `missingAppIds` に返し、
+`app/installed` にも対象はなかった。現在のCodexアカウントから、このDraftのMCP appは参照できていない。
+Portalの審査用接続・scan成功と、ChatGPT/Codexで利用可能な接続を分けて確認する。
+再起動だけを解決手順にせず、[公式の接続手順](https://developers.openai.com/plugins/deploy/connect-chatgpt)に従い、
+本人のログイン後、ChatGPT Pluginsに非公開の `Syncnesto MCP test` を登録・認証した。
+操作直前の承認を受け、専用審査Identityの `Plugin review - consented` だけを許可した。
+新しいMCP app IDは `asdk_app_6acccb97310081919c85440d4b1f0512`。
+0.1.2へmappingを更新し、公式CLIで再インストール・source/cache一致を確認した。
+公式App Serverでもこの接続の `enabled=true` / `callable=true`、28ツールすべて有効、
+`list_projects` を含むことを確認した。ChatGPT詳細画面にもRead 14 / Write 14が表示された。
+既存の会話には実ツールが未読込のため、次は新しい会話でP1の `list_projects` を呼ぶ。
+接続設定とツール情報の確認を、モデルからの実呼び出し成功と混同しない。
 CLIのインストール成功だけでOAuth接続や8ケースを合格扱いにしない。
 公開プラグイン用の依存確認は未公開ローカルmarketplaceを解決せず、`plugin_not_found` となった。
 これは参照IDの誤りや、既存OAuth接続の失敗が確定したことを意味しない。

@@ -94,8 +94,13 @@ supported ChatGPT/Codex surfacesで実行する。単体テストや直接API確
 
 2026-10-12、登録済みDraftのMCP mappingを持つCodexテスト用パッケージをGit外へ準備し、
 公式CLIでローカルmarketplaceへの追加とinstalled/enabledを確認した。
-これはローカルMCPの起動を必要としない。実ツールの読込・既存接続の再利用はまだ未確認。
-ホストの再読込後、新しい会話でプラグインを選択してP1から開始する。
+これはローカルMCPの起動を必要としない。ただし本人の再起動後もスキルだけが使え、MCPツールは公開されなかった。
+Plugin IDをMCP app IDとして記載した誤りを0.1.1で修正したが、公式App Serverの `app/read` は
+DraftのMCP appを `missingAppIds` に返し、`app/installed` にも対象はなかった。
+本人のログイン・操作直前承認後、ChatGPTに個人用 `Syncnesto MCP test` を登録・認証し、審査用1 Projectだけを許可した。
+そのMCP app IDで0.1.2へ更新し、公式App Serverから `enabled=true` / `callable=true`、28ツール有効を確認した。
+ChatGPTの詳細画面にもRead 14 / Write 14が表示された。次は新しい会話でP1を実行する。
+現在の会話で実ツールを呼べていないため、この接続情報の確認をP1合格として扱わない。
 公開プラグイン用の依存確認は未公開ローカルパッケージを解決しなかったため、この結果だけで接続可否を決めない。
 Codexアプリ画面の自動操作はツールの安全制限で拒否された。UI操作を別手段で迂回しない。
 登録・インストールに使った公式CLIと、ホスト上のモデル・ツール実行は区別する。
