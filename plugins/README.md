@@ -2,7 +2,7 @@
 
 公開MCPは既存BackendのHTTPS `/mcp` を利用する。ローカルMCPの常時起動は不要。
 `syncnesto/` がportableパッケージのソースで、資格情報を含まない。
-2026-10-11、ユーザー提示の画面でIndividualの **Verified** を確認した。プラグイン登録・公開審査提出は未完了。
+発行者の本人確認と非公開Draft登録は完了。2026-10-12、審査用1 ProjectだけのOpenAI接続・28ツールのscanも完了した。公開審査提出は未完了。
 希望する発行者名は `shime-hei`、窓口は `syncnesto@gmail.com`。選択する確認済みidentityの公開名との一致は管理画面で確認する。
 サポート窓口、プライバシーポリシー、利用規約の実URLが必要。
 文面案と未確定事項は [公開登録の草案](publication-draft.ja.md) を参照する。
@@ -44,6 +44,19 @@ ZIPはCodex形式の `.codex-plugin/plugin.json`、`.mcp.json`、ロゴ、業務
 このclientを追加したBackendの配布が先に必要。検証では他利用者と分離した通常Projectを選び、
 秘密・実業務データを審査資料へ入れない。
 
+### 登録済み接続を参照するホストテスト（2026-10-12）
+
+OpenAI側のDraft接続を使うテスト用パッケージは、Git外の独立marketplaceに準備した。
+公式の登録済みMCP mapping手順に従い、`.app.json` で取得済み `plugin_asdk_app...` IDを参照する。
+このパッケージにはローカルMCP、トークン、審査パスワード、hooksを含めない。
+公式CLIの `plugin marketplace add` / `plugin add` と `plugin list` でinstalled/enabledを確認済み。
+現在の会話にMCPツールが読み込まれたことや、接続が再利用できることはまだ確認できていない。
+アプリの再読込後に新しい会話でプラグインを選択し、P1から実ホストの検証を行う。
+CLIのインストール成功だけでOAuth接続や8ケースを合格扱いにしない。
+公開プラグイン用の依存確認は未公開ローカルmarketplaceを解決せず、`plugin_not_found` となった。
+これは参照IDの誤りや、既存OAuth接続の失敗が確定したことを意味しない。
+別の同意・接続が必要になった場合は、審査用1 Projectの範囲を維持し、実際の同意画面で確認する。
+
 ## 公開申請の準備
 
 非公開下書きのIDを先に取得する場合は、次の専用モードを使う。
@@ -70,7 +83,7 @@ uv run python scripts/build_codex_plugin.py /tmp/syncnesto-draft.zip --draft
    client ID=`syncnesto-openai-plugin`、token endpoint auth=`none`、scope=`mcp:work`。
    管理画面の正確なcallbackをBackendの `MCP_PLUGIN_REDIRECT_URIS` に登録・再配布する。
    ドメイン確認では管理画面が提示する `/.well-known/openai-apps-challenge` に正確なchallenge本文を配布する。
-   現時点ではchallenge未発行のため、確認用URLは未配布。
+   現Draftではchallengeは設定・配布済みで、Domain verifiedを確認済み。
 4. 通常アカウントで、同意・許可Projectだけの一覧・下書き作成・1件ずつの箇所指定コメント・
    日程プレビュー・取消・閲覧/実行専用の拒否をホストから検証する。
    manifestに審査用テストケースを収録している。別途、審査用アカウント/Project・動画等を管理画面の要件に従って準備する。

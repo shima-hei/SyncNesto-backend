@@ -1,7 +1,7 @@
 # 公開MCP審査の準備と動画台本
 
 2026-10-12更新。非公開下書きの登録と、通常DB内の専用アカウント・fixtureの公開作成は完了。
-公開APIで隔離・OAuth・サンプル操作を検証済み。OpenAIホスト上の実行結果・動画は未完了。
+公開APIで隔離・OAuth・サンプル操作を検証済み。OpenAIの実接続・28ツールのscanは完了したが、ホスト上の8ケース・動画は未完了。
 manifestの正常系5件・異常系3件と対応する。既存利用者・実業務・認証秘密を審査資料へ含めない。
 公開名は `shime-hei`、窓口は `syncnesto@gmail.com`。掲載される名前は選択した確認済みidentityと照合する。
 
@@ -12,8 +12,8 @@ manifestの正常系5件・異常系3件と対応する。既存利用者・実�
 | 費用 | 追加請求0が条件。本人確認のVerifiedだけでは登録・審査等の料金を確定できない。購入、有料API、auto recharge、クラウド有料化を行わない。 |
 | 公開規約 | support/privacy/termsは未公開。無料ポートフォリオ・通常アカウント招待制・稼働保証なし・通常アカウントも架空の業務サンプル限定を承認済み。保持・実削除等の未決事項を確定し、公開済み実URLだけをlistingへ記載する。 |
 | 審査ログイン | 通常DBの独立審査組織・新規専用Identityを作成済み。MFA免除はこのIdentityだけ、有効期限2026-11-11T07:17:01Z。期限・隔離・既存RBAC・OAuthの公開API検証済み。資格情報のOpenAIへの送信は未実施。 |
-| ホスト設定 | 正確なcallback・challengeをBackend Productionへ設定済み。ドメイン確認GETの403・長いOAuth stateをPR #27で修正・公開し、OpenAI管理画面でDomain verifiedを確認した。実接続は専用審査Identityの同意画面まで到達。最終の権限付与は本人承認待ち。 |
-| 公開状態 | previewのannotationとMFAの実配布状態を主担当の記録と本番で照合する。ローカルCI成功は公開確認と区別する。 |
+| ホスト設定 | 正確なcallback・challengeとPR #27の互換修正を公開済み。本人承認後、専用審査Identityの `Plugin review - consented` だけを許可して接続した。管理画面はDomain verified / Configured / Authorized、28ツール検出、最新scanはNo findings。 |
+| 公開状態 | scanのdescription・inputSchema・4 annotationは現行catalogと28件すべて一致。previewの `readOnlyHint=false` も確認済み。通常MFAと審査Identity限定免除の公開API/UI検証は完了。ホストの8ケースと動画は別途実施する。 |
 
 OpenAIへの本人確認はVerifiedで完了したため、再実施しない。
 課金を伴う操作は行わず、listing・ケース・台本・ZIP静的検証を準備する。
@@ -50,7 +50,7 @@ AIによる一般的な回答ではMFAを維持した代替手順を確認でき
 
 ## 分離したサンプルデータの準備
 
-専用Identity・独立組織・3 Project（許可予定・同意対象外・閲覧専用）とセルfixtureは公開作成済み。
+専用Identity・独立組織・3 Project（許可済み・同意対象外・閲覧専用）とセルfixtureは公開作成済み。
 実ID・資格情報はGit外の審査用ファイルで管理し、再発行やfixtureの重複作成を行わない。
 以下のP2以降の成果物はホスト上のケース実行時に作成する。API検証で作成したものと混同しない。
 専用Identityの仕様は[決定記録](../docs/decisions/2026-10-12-mcp-review-account.md)に従う。
@@ -91,6 +91,14 @@ manifest内の英語promptをP1〜P5、N1〜N3の順で使う。P2の実IDを後
 各行について実行日、package version、対象surface、prompt、実ツール、観察結果、合否、修正事項を記録する。
 必要なproject/resource IDは審査用サンプルに限り、token・Cookie・認証コードは記録しない。
 supported ChatGPT/Codex surfacesで実行する。単体テストや直接API確認だけでホスト上の8ケースを合格扱いにしない。
+
+2026-10-12、登録済みDraftのMCP mappingを持つCodexテスト用パッケージをGit外へ準備し、
+公式CLIでローカルmarketplaceへの追加とinstalled/enabledを確認した。
+これはローカルMCPの起動を必要としない。実ツールの読込・既存接続の再利用はまだ未確認。
+ホストの再読込後、新しい会話でプラグインを選択してP1から開始する。
+公開プラグイン用の依存確認は未公開ローカルパッケージを解決しなかったため、この結果だけで接続可否を決めない。
+Codexアプリ画面の自動操作はツールの安全制限で拒否された。UI操作を別手段で迂回しない。
+登録・インストールに使った公式CLIと、ホスト上のモデル・ツール実行は区別する。
 
 P5に続くapply、期限切れ、409、権限変更、取消は追加の確認項目とする。
 applyを示す場合は、表示済みの同じ案への明示的な承認を別promptで入力し、15分以内・同じversionで実行する。
