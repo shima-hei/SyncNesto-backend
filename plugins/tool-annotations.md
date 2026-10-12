@@ -1,6 +1,6 @@
 # MCPツールのannotation根拠
 
-2026-10-10。公開申請の入力用資料。実際の配布先のtool scan結果と一致することを提出前に確認する。
+2026-10-12更新。公開申請の入力用資料。実際の配布先のtool scan結果との照合記録は末尾を参照する。
 定義は `app/services/mcp_catalog.py`、公開値は `McpOperationsService.catalog()` にある。
 利用者の現在の権限と接続で許可したProjectにより、表示されるツールはこの28件の一部になる。
 
@@ -49,3 +49,12 @@ annotationはホスト向けのヒントであり、実行時の権限・version
 
 根拠: [OpenAIのMCP審査要件](https://developers.openai.com/plugins/deploy/app-review)、
 `app/services/mcp_operations.py`、`app/repositories/mcp.py`、`tests/routers/test_mcp.py`。
+
+## 2026-10-12のOpenAI実ホストとの照合
+
+本人が許可した審査用1 ProjectのOAuth接続後、OpenAI管理画面で28件のScanned definition JSONを取得した。
+各description・inputSchema・4 annotationを現行catalogと比較し、28件すべてが一致した。
+`preview_task_schedule` は `readOnlyHint=false`、`destructiveHint=false`、
+`idempotentHint=true`、`openWorldHint=false` として検出された。
+最新scanのFindingsはNo findings。比較結果と画面証跡はGit外の審査準備用ディレクトリに保存した。
+この照合はホスト上の8ケースの実行結果や、認証・認可全体の安全性を保証するものではない。

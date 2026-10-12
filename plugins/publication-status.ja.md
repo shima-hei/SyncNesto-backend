@@ -15,8 +15,8 @@
 - MetadataのDeveloper欄は `shime-hei`。正式に活動名で公開できると確定したわけではない。
   担当者Christianの依頼に応じ、既存サポート会話へ上記IDと活動名の正式手順の質問を送信済み。
   同じ問い合わせやアップロードを重複実施しない。
-- MCP URLは `https://syncnesto-api.vercel.app/mcp`、AuthenticationはAuthorization required。
-  support/privacy/terms・審査情報が不足している。domain verificationは完了、OAuth同意・tool scanは未完了。
+- MCP URLは `https://syncnesto-api.vercel.app/mcp`、AuthenticationはAuthorized、MCP configurationはConfigured。
+  domain verification・OAuth同意・28ツールのscanは完了。support/privacy/terms・審査情報は不足している。
   Connectで実際のcallback `https://chatgpt.com/connector_platform_oauth_redirect` と、
   同一API hostの `/.well-known/openai-apps-challenge` 向け公開検証値を取得した。
   Backend環境変数 `MCP_PLUGIN_REDIRECT_URIS` / `MCP_PLUGIN_DOMAIN_CHALLENGE` で設定する。
@@ -45,10 +45,12 @@
 - OpenAIの新しい接続試行では757文字のrelay stateを観測した。API・DBの500文字制限で `invalid_request` になったため、1〜2,048文字へ広げ、migration `d4f8b1e6a902` を追加した。stateの内容・OAuth codeは記録せず、callbackの完全一致・PKCE・同意・権限検証を維持する。修正前の長いstateの回帰テスト2件失敗、修正後のMCP関連66テスト・ruff・pyright成功。
 - 上記2件の修正をBackend PR #27でマージ・公開した。main CI `38220735849` 成功、Vercel `dpl_6NM1M5LvGekL1wgaGcZnvcrPURfj` READY・公開commit `953fafc3d6424ed371780f4ecc81a630434f5bb1` 一致。
 - 両DBのrevisionは `d4f8b1e6a902`、state列上限は2,048。既存Role・所属・DB GRANTを維持し、審査許可は通常DB1件・デモDB0件のまま。公開challengeの200・正確な本文、直接authの403、許可外のmethod/path拒否、stateの上限を検証した。
-- OpenAI管理画面で **Domain verified** を確認した。新しい実接続は専用審査Identityの同意画面まで進み、審査用の許可Project1件だけを選択した。最終のアクセス権付与は操作直前の本人承認待ち。接続完了・tool scan・ホスト8ケースの成功として扱わない。
+- 操作直前の本人承認を受け、専用審査Identityの `Plugin review - consented` 1 ProjectだけをOpenAI申請準備用接続へ許可した。ほかの編集可能Projectと閲覧専用Projectは許可していない。Syncnesto側の有効な接続もこの1件だけで、期限は審査Identityと同じ2026-11-11T07:17:01Z。
+- OpenAI管理画面で **Domain verified / Configured / Authorized**、検出ツール28件、最新scanの **No findings** を確認した。各ツールのdescription・inputSchema・4つのannotationは現行catalogと28件すべて一致した。`preview_task_schedule.readOnlyHint=false` も実ホストのscanで確認済み。比較結果と画面証跡はGit外に保存した。
+- このscanはツール定義の確認であり、ホスト上の8ケース・動画や、MCP全体に脆弱性がないことの保証ではない。審査欄への資格情報送信・最終提出・公開は未実施。
+- Codex用の登録済みMCP mapping付きローカルテストパッケージをGit外に準備し、公式CLIでmarketplace追加・プラグインinstalled/enabledを確認した。常駐するローカルMCPはない。現在の会話への実ツール読込と既存接続の再利用は未確認で、再読込後の新しい会話でP1から検証する。Codex画面の自動操作はツールの安全制限で拒否された。
 
-次はOpenAI側のOAuth同意・接続/tool scan、
-公開規約の未決事項確定、ホスト上の8ケースと動画、必須情報の入力、審査提出の順で進める。
+次はホスト上の8ケースと動画、公開規約の未決事項確定・公開、必須情報の入力、審査提出へ進める。
 以下の「現在の状態」「再開確認」「残る作業」は下書き登録前の履歴で、最新状態は本節を優先する。
 
 ## ユーザーの条件

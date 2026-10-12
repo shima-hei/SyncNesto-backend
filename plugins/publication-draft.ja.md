@@ -128,8 +128,8 @@ Syncnestoの操作、不具合、個人情報の取扱いについては `syncne
 - 運営者の承認に基づく期限付き審査IdentityだけのMFA免除は実装・公開済み。公開APIで隔離・OAuthを検証した。
   通常利用者のMFA必須と、匿名デモのMCP不可・logout時の回収は維持する。
   [審査準備と動画台本](review-plan.ja.md)に従い、実際のホスト上の審査を準備する。
-- 管理画面で発行された正確なドメインchallengeとcallbackは設定・配布済み。ドメイン確認経路と長いOAuth stateの修正も公開済みで、実ポータルのDomain verifiedと専用審査Identityの同意画面への到達を確認した。最終の権限付与は本人承認待ち。
-- 分離した通常Projectと審査用アカウントは作成済み。本人のOAuth同意・全8審査ケース・動画を準備する。既存デモ利用者へMCP権限を開放しない。
+- 管理画面で発行された正確なドメインchallengeとcallbackは設定・配布済み。互換修正の公開後、本人承認を受けて審査用の1 Projectだけを接続した。実ポータルはDomain verified / Configured / Authorized、28ツールのscanは指摘なしで、定義も現行catalogと全件一致した。
+- 分離した通常Projectと審査用アカウントは作成済み。ホスト上の全8審査ケース・動画を準備する。既存デモ利用者へMCP権限を開放しない。
 - [各ツールのannotation根拠](tool-annotations.md) を準備した。日程previewは再送結果を保存するため
   `readOnlyHint=false` へ修正した。公開先への配布とtool scanの一致確認は残る。初版release notesはmanifestへ反映済み。
 - portable MCP schemaとOpenAI認証拡張の不一致を、管理画面の実受理結果で解消する。
