@@ -1,6 +1,7 @@
 # 公開MCP審査の準備と動画台本
 
-2026-10-12更新。非公開下書きの登録は完了。専用アカウント・fixtureは実装中で、公開作成・ホスト上の実行結果・動画は未完了。
+2026-10-12更新。非公開下書きの登録と、通常DB内の専用アカウント・fixtureの公開作成は完了。
+公開APIで隔離・OAuth・サンプル操作を検証済み。OpenAIホスト上の実行結果・動画は未完了。
 manifestの正常系5件・異常系3件と対応する。既存利用者・実業務・認証秘密を審査資料へ含めない。
 公開名は `shime-hei`、窓口は `syncnesto@gmail.com`。掲載される名前は選択した確認済みidentityと照合する。
 
@@ -9,9 +10,9 @@ manifestの正常系5件・異常系3件と対応する。既存利用者・実�
 | 項目 | 必要な確認 |
 | --- | --- |
 | 費用 | 追加請求0が条件。本人確認のVerifiedだけでは登録・審査等の料金を確定できない。購入、有料API、auto recharge、クラウド有料化を行わない。 |
-| 公開規約 | support/privacy/termsは未公開。保持・実削除・提供範囲・運営条件を運営者が確定し、公開済み実URLだけをlistingへ記載する。 |
-| 審査ログイン | 通常DBの独立審査組織・サンプルだけを扱う新規専用Identityに限定してMFA免除を承認済み。通常利用者・匿名デモの方針は維持する。期限・隔離・既存RBAC・OAuthの検証が必要。 |
-| ホスト設定 | 管理画面の正確なcallback・challengeを未取得。推測値や偽URLで準備完了にしない。 |
+| 公開規約 | support/privacy/termsは未公開。無料ポートフォリオ・通常アカウント招待制・稼働保証なし・通常アカウントも架空の業務サンプル限定を承認済み。保持・実削除等の未決事項を確定し、公開済み実URLだけをlistingへ記載する。 |
+| 審査ログイン | 通常DBの独立審査組織・新規専用Identityを作成済み。MFA免除はこのIdentityだけ、有効期限2026-11-11T07:17:01Z。期限・隔離・既存RBAC・OAuthの公開API検証済み。資格情報のOpenAIへの送信は未実施。 |
+| ホスト設定 | 正確なcallback・challengeをBackend Productionへ設定済み。ドメイン確認GETの403・長いOAuth stateをPR #27で修正・公開し、OpenAI管理画面でDomain verifiedを確認した。実接続は専用審査Identityの同意画面まで到達。最終の権限付与は本人承認待ち。 |
 | 公開状態 | previewのannotationとMFAの実配布状態を主担当の記録と本番で照合する。ローカルCI成功は公開確認と区別する。 |
 
 OpenAIへの本人確認はVerifiedで完了したため、再実施しない。
@@ -49,7 +50,9 @@ AIによる一般的な回答ではMFAを維持した代替手順を確認でき
 
 ## 分離したサンプルデータの準備
 
-以下は準備時に作成する候補名。現存するID・Project・アカウントではない。
+専用Identity・独立組織・3 Project（許可予定・同意対象外・閲覧専用）とセルfixtureは公開作成済み。
+実ID・資格情報はGit外の審査用ファイルで管理し、再発行やfixtureの重複作成を行わない。
+以下のP2以降の成果物はホスト上のケース実行時に作成する。API検証で作成したものと混同しない。
 専用Identityの仕様は[決定記録](../docs/decisions/2026-10-12-mcp-review-account.md)に従う。
 期限のある許可が有効で隔離を維持する場合だけMFAを免除する。logoutでサンプルは消さず、期限切れ・失効でWeb/MCPを拒否する。
 
@@ -58,7 +61,7 @@ AIによる一般的な回答ではMFAを維持した代替手順を確認でき
 | 専用審査アカウント | 新しい審査Identityと専用組織。必要なProject業務権限（P4の `requirement:link` を含む）だけを付与し、運営・組織管理権限は与えない。パスワード等はZIP・Git・動画へ入れず管理画面の安全な審査欄だけへ渡す。 |
 | 許可Project | 他利用者と分離した `Plugin review - consented`。審査アカウントが編集でき、OAuth同意でこのProjectだけを許可する。 |
 | 不許可Project | 同じアカウントが編集できてもOAuthでは許可しない `Plugin review - not consented`。サンプルの要件を1件用意し、N1の拒否を確認する。実IDは非公開の審査手順へ記録する。 |
-| 別組織/閲覧専用 | 別組織のサンプルProjectと、閲覧専用Projectを用意する場合は、P1に出ないことを確認する。無関係な既存Projectを使わない。 |
+| 別組織/閲覧専用 | 作成済みの `Plugin review - read only` と、審査組織外のProjectがP1に出ないことを確認する。無関係な既存Projectを直接操作しない。 |
 | 要件 | P2で `Plugin review - login requirements` 文書、`Authentication` セクション、`Sign in with email and password` 下書き要件を作成する。本文はmanifestの入力と一致させる。 |
 | セルfixture | `Plugin review - cell fixture` 設計書に `Password` 因子と `valid`/`invalid` 水準、`Invalid password` パターンを用意する。そのPasswordセルに意図的に `valid` を選び、期待値は `Sign-in rejected` とする。実UUIDとversionを取得し、P4でその既存セルへの1指摘を確認する。 |
 | 日程 | P5で担当者・日程未設定のタスクを作り、2026-11-02〜2026-11-03への変更をpreviewする。これはreviewer指定の入力で、稼働率・休日の推定結果ではない。実審査時に日付を更新するならmanifestと動画も同時に更新する。 |
