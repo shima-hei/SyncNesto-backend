@@ -52,7 +52,7 @@ class McpAuthorizationRequest(Base):
     redirect_uri: Mapped[str] = mapped_column(String(500))
     resource: Mapped[str] = mapped_column(String(500))
     scopes: Mapped[list[str]] = mapped_column(JSONB)
-    state: Mapped[str] = mapped_column(String(500))
+    state: Mapped[str] = mapped_column(String(2048))
     code_challenge: Mapped[str] = mapped_column(String(128))
     code_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
     connection_id: Mapped[UUID | None] = mapped_column(

@@ -99,7 +99,7 @@ class McpAuthService:
             or params.get("resource") != settings.mcp_resource_url
             or params.get("code_challenge_method") != "S256"
             or not re.fullmatch(r"[A-Za-z0-9_-]{43}", params.get("code_challenge", ""))
-            or not 1 <= len(params.get("state", "")) <= 500
+            or not 1 <= len(params.get("state", "")) <= 2048
             or set(scope) != set(SCOPES)
         ):
             raise McpOAuthError("invalid_request")

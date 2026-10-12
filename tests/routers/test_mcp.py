@@ -154,6 +154,34 @@ def test_removed_plugin_callback_cannot_be_approved(client, context, monkeypatch
     )
 
 
+@pytest.mark.parametrize("length", [757, 2048])
+def test_plugin_relay_state_round_trip(client, context, monkeypatch, length):
+    """ホストの長いopaque stateを保存し、同意後にも改変せず返す。"""
+    _, project, _ = context
+    callback = "https://chatgpt.com/connector_platform_oauth_redirect"
+    monkeypatch.setattr(settings, "mcp_plugin_redirect_uris", [callback])
+    state = "openai_platform_oauth_relay__".ljust(length, "a")
+    connect(
+        client,
+        project.id,
+        client_id=PLUGIN_CLIENT_ID,
+        redirect_uri=callback,
+        state=state,
+    )
+
+
+@pytest.mark.parametrize("length", [0, 2049])
+def test_plugin_relay_state_length_is_bounded(client, context, monkeypatch, length):
+    """空または上限を超えたstateは同意要求を作らず拒否する。"""
+    callback = "https://chatgpt.com/connector_platform_oauth_redirect"
+    monkeypatch.setattr(settings, "mcp_plugin_redirect_uris", [callback])
+    response, _, _ = begin(
+        client, client_id=PLUGIN_CLIENT_ID, redirect_uri=callback, state="a" * length
+    )
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_request"
+
+
 def test_availability_uses_live_project_permissions(client, db, context):
     """編集可能な外部協力者は利用でき、閲覧専用への降格を反映する。"""
     from app.models.rbac import Role

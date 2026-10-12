@@ -38,7 +38,8 @@
 - 検証用MCP接続の取消、審査アカウントのlogout・再loginでのサンプル保持、別DBの匿名デモ開始・MCP拒否・logout回収を確認した。検証後も既存Role・所属・DB GRANTを維持している。
 - 上記はAPI経由の公開検証で、OpenAIホスト上の8ケース・動画の完了ではない。資格情報はGit外・権限600で保存し、OpenAIへまだ送信していない。
 - 実callbackとdomain challengeはBackend Productionに設定・配布済み。公開確認GETがBFF ingressで403になる追加漏れを検出し、GET完全一致だけを許可する修正を準備した。修正前2件失敗、修正後の関連27テスト成功。ドメイン検証の成功は公開反映後に確認する。
-- Frontend PR #29はCI成功。審査専用状態・期限の表示は公開反映待ち。
+- Frontend PR #29はマージ・公開済み。main CI `38218449367` 成功、Vercel `dpl_6bdEL6s1PLMJaKn5L3mSMWcA2zhQ` READY・公開commit `2c1aaf663c9bbfc50ba3cc2267c6e6ac66dbee63` 一致。
+- OpenAIの新しい接続試行では757文字のrelay stateを観測した。API・DBの500文字制限で `invalid_request` になったため、1〜2,048文字へ広げる修正とmigration `d4f8b1e6a902` を準備した。stateの内容・OAuth codeは記録せず、callbackの完全一致・PKCE・同意・権限検証を維持する。修正前の長いstateの回帰テスト2件失敗、修正後のMCP関連66テスト・ruff・pyright成功。公開反映後にOpenAIの新しい接続で確認する。
 
 次はドメイン確認経路の修正公開とFrontend反映、OpenAI側のdomain verification・接続/tool scan、
 公開規約の未決事項確定、ホスト上の8ケースと動画、必須情報の入力、審査提出の順で進める。
