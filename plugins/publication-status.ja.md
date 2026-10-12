@@ -1,10 +1,37 @@
 # 公開申請の進捗と費用条件
 
 2026-10-12更新。ユーザー提示の画面でIndividualの **Verified** を確認した。
-発行者の本人確認は完了したが、プラグインのZIPアップロード・公開審査提出・公開は未完了。
+発行者の本人確認と非公開下書きのZIP登録が完了した。公開審査提出・公開は未完了。
 以下の本人確認前の料金確認・停止経緯は当時の記録として保持する。
 規約草案は [publication-draft.ja.md](publication-draft.ja.md)、
 実装・配布の記録は [決定記録](../docs/decisions/2026-10-10-codex-plugin.md) にある。
+
+## 最新の現在地（2026-10-12）
+
+- 本人によるZIPアップロード後、管理画面で0.1.0のDraft・Not publishedを確認した。
+  Plugin IDは `plugin_asdk_app_6acc60ad42d08191aa90fa9404caa5af`、
+  version/submission IDは `appsub_6acc60ad42fc81919c2ba02210da7423`。
+  関連MCP app IDは `asdk_app_6acc60ad42d08191aa90fa9404caa5af`。
+- MetadataのDeveloper欄は `shime-hei`。正式に活動名で公開できると確定したわけではない。
+  担当者Christianの依頼に応じ、既存サポート会話へ上記IDと活動名の正式手順の質問を送信済み。
+  同じ問い合わせやアップロードを重複実施しない。
+- MCP URLは `https://syncnesto-api.vercel.app/mcp`、AuthenticationはAuthorization required。
+  support/privacy/terms・審査情報が不足し、domain verification・接続・tool scanは未完了。
+  Connectで実際のcallback `https://chatgpt.com/connector_platform_oauth_redirect` と、
+  同一API hostの `/.well-known/openai-apps-challenge` 向け公開検証値を取得した。
+  Backend環境変数 `MCP_PLUGIN_REDIRECT_URIS` / `MCP_PLUGIN_DOMAIN_CHALLENGE` で設定する。
+  OAuth state/codeや審査資格情報は公開リポジトリに記載しない。
+- 運営者は通常DBの新しい独立審査組織・サンプルだけを扱う専用IdentityのMFA免除を承認した。
+  通常利用者のMFA必須と、別DBの匿名デモ（MCP不可）は維持する。
+  [限定審査アカウントの決定記録](../docs/decisions/2026-10-12-mcp-review-account.md)に実装・検証・運用を記録する。
+- `--draft` で固定4ファイルの非公開下書きZIPを生成できる。確定した公開URLを要求する
+  `--submission --listing` とは分け、未公開URLを申請済みと扱わない。
+- Chromeの設定変更はツールで拒否されたため実施していない。迂回せず本人の手動アップロードで進めた。
+  本作業で拡張の権限を変更していない。
+
+次は専用Identityの検証・公開適用とfixture作成、正確なcallback/challengeの取得、
+公開規約の未決事項確定、ホスト上の8ケースと動画、必須情報の入力、審査提出の順で進める。
+以下の「現在の状態」「再開確認」「残る作業」は下書き登録前の履歴で、最新状態は本節を優先する。
 
 ## ユーザーの条件
 
@@ -45,7 +72,7 @@
 費用条件を満たせない場合は、ユーザーと相談して配布方法を再検討する。
 公開審査を通さない方式へ無断で切り替えない。
 
-## 現在の状態と再開時の作業
+## 下書き登録前の状態と再開時の作業（履歴）
 
 2026-10-11、本人確認のVerifiedを受け、追加請求を発生させない条件で公開申請作業を再開する。
 本人確認をやり直さない。希望する公開名は `shime-hei`、窓口は `syncnesto@gmail.com`。
@@ -106,7 +133,7 @@ OpenAIが認める認証手順の代替を確認するか、運営者が方針�
   保持期間・提供対象などの未確定事項を決定したように公開せず、listingの未確定URLは空欄のまま維持する。
 - 私有の検証結果・ZIPはGit外に保存した。callback/challenge・審査用資格情報・録画は未取得、審査提出は未実施。
 
-### 残る作業
+### 下書き登録前に整理した残る作業（履歴）
 
 1. MFAはBackend [PR #19](https://github.com/shima-hei/SyncNesto-backend/pull/19)とFrontend [PR #25](https://github.com/shima-hei/SyncNesto-frontend/pull/25)を公開済み。
    [MFA公開確認](../docs/mfa.md#2026-10-11の公開適用記録)と、公開aliasのcommit `6813a3f` / `b3516a5`を照合した。

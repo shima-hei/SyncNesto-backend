@@ -80,3 +80,33 @@ def test_submission_requires_real_listing_and_preserves_oauth(tmp_path):
             "positive"
         ]:
             assert set(case["tools_triggered"].split(", ")) <= set(TOOLS)
+
+
+def test_portable_draft_omits_unconfirmed_urls_and_keeps_authenticated_mcp(tmp_path):
+    """非公開の下書きを作れても、未確定のURLや認証なしの設定を捏造しない。"""
+    output = tmp_path / "draft.zip"
+    build(output, draft=True)
+    with ZipFile(output) as archive:
+        assert set(archive.namelist()) == {*FILES, "plugin.json", "mcp.json"}
+        manifest = json.loads(archive.read("plugin.json"))
+        interface = manifest["extensions"]["com.openai"]["interface"]
+        for key in ("supportURL", "privacyPolicyURL", "termsOfServiceURL"):
+            assert key not in interface
+        server = json.loads(archive.read("mcp.json"))["mcpServers"]["syncnesto"]
+        assert server["type"] == "streamable-http"
+        assert server["extensions"]["com.openai"]["auth"]["type"] == "oauth"
+        assert (
+            server["extensions"]["com.openai"]["auth"]["client"]["clientId"]
+            == PLUGIN_CLIENT_ID
+        )
+    with pytest.raises(ValueError):
+        build(tmp_path / "submission.zip", submission=True)
+
+
+@pytest.mark.parametrize("kwargs", [{"submission": True}, {"listing": ROOT}])
+def test_portable_draft_cannot_override_submission_validation(tmp_path, kwargs):
+    """下書きモードで審査提出用の確定情報チェックを迂回しない。"""
+    output = tmp_path / "invalid.zip"
+    with pytest.raises(ValueError):
+        build(output, draft=True, **kwargs)
+    assert not output.exists()

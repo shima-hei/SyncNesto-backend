@@ -12,6 +12,7 @@ from app.models.rbac import Role
 from app.models.tenant import Tenant, TenantMember
 from app.models.user import User
 from app.services.authorization import AuthorizationService
+from app.services.review_account import ReviewAccountService
 
 
 def get_current_tenant(
@@ -20,6 +21,11 @@ def get_current_tenant(
     db: Session = Depends(get_db),
 ) -> Tenant:
     """選択IDを所属と組織状態で検証し、DB Contextを固定する。"""
+    review = ReviewAccountService().validate(db, user)
+    if review is not None:
+        if tenant_id is not None and tenant_id != review.tenant_id:
+            raise ForbiddenError()
+        tenant_id = review.tenant_id
     query = (
         db.query(Tenant, TenantMember, Role)
         .join(TenantMember, TenantMember.tenant_id == Tenant.id)

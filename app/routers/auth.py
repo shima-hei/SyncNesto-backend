@@ -29,6 +29,7 @@ from app.services.audit_log import AuditLogService
 from app.services.demo import DemoService
 from app.services.mfa import MfaService
 from app.services.onboarding import OnboardingService
+from app.services.review_account import ReviewAccountService
 from app.services.session import SessionService
 from app.services.storage import MAX_IMAGE_BYTES, StorageService
 from app.services.user import UserService
@@ -51,6 +52,8 @@ def current_user_response(
         demo = DemoService().repository.lock(db, demo_id)
         assert demo is not None
         result.demo = DemoService().status(demo)
+    elif review := ReviewAccountService().validate(db, user):
+        result.review_access_expires_at = review.expires_at
     return result
 
 
@@ -75,8 +78,9 @@ def login_user(
         ログイン成功レスポンス。
     """
     user = user_service.authenticate_user(db, user_in.email, user_in.password)
+    review = ReviewAccountService().validate(db, user)
     delete_flow_cookie(response)
-    if settings.mfa_required and not user.password_change_required:
+    if settings.mfa_required and not user.password_change_required and review is None:
         token, result = MfaService().login(db, user)
         delete_auth_cookie(response)
         if token:
@@ -174,6 +178,7 @@ def read_current_user(
         not current_user.password_change_required
         and not db.info.get("password_setup_only")
         and db.info.get("data_realm") != "demo"
+        and ReviewAccountService().validate(db, current_user) is None
     ):
         require_verified(current_user, db.info["auth_session"])
     system_roles = user_service.list_system_roles_by_user(db, current_user.id)

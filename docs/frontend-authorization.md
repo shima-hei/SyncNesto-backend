@@ -1,5 +1,15 @@
 # Syncnesto Frontend Authorization Guide
 
+## 2026-10-12 審査専用Identity
+
+通常ユーザーのMFA必須と匿名デモの別DB・使い捨て動作は維持する。
+専用Identityだけ、通常DB内の独立した審査組織に限定して期限付きでMFAを免除する。
+`GET /auth/me` の `review_access_expires_at` は審査Identityだけ日時を返し、その他はnull。
+Frontendでは審査用表示を出し、プロフィール・アバター・認証情報・MFAの編集欄を出さない。
+通常のOAuth同意とMCP接続管理は使える。`demo` はnull、DB realmはnormalのままである。
+Backendは期限・失効・所属・権限を毎回確認し、認証情報の変更をAPIでも拒否する。
+詳細は [審査用アカウントの決定記録](decisions/2026-10-12-mcp-review-account.md) を参照。
+
 ## 2026-10-11 MFA契約（公開環境は未適用）
 
 通常Identity全員が対象。匿名デモは除外。詳細と移行手順は [MFA運用手順](mfa.md) を参照。

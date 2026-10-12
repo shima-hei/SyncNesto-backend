@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.project import ProjectMember
 from app.models.rbac import Permission, Role, RolePermission, UserRole
+from app.models.review_account import ReviewAccountGrant
 from app.models.user import User
 
 
@@ -297,6 +298,9 @@ class RbacRepository:
                 UserRole.user_id == user_id,
                 Role.scope == "system",
                 Permission.code == permission_code,
+                ~select(ReviewAccountGrant.user_id)
+                .where(ReviewAccountGrant.user_id == user_id)
+                .exists(),
             )
             .first()
             is not None

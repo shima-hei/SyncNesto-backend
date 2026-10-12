@@ -166,6 +166,7 @@ class Settings:
     mcp_plugin_redirect_uris: list[str] = field(
         default_factory=get_mcp_plugin_redirect_uris
     )
+    mcp_plugin_domain_challenge: str = os.getenv("MCP_PLUGIN_DOMAIN_CHALLENGE", "")
     allowed_hosts: list[str] = field(default_factory=get_allowed_hosts)
     database_url: str = get_required_env("DATABASE_URL")
     log_level: str = os.getenv("LOG_LEVEL", "INFO")

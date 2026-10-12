@@ -30,6 +30,7 @@ from app.repositories.mcp import McpRepository
 from app.schemas.mcp import McpConsentRead, McpProjectChoice
 from app.services.audit_log import AuditLogService
 from app.services.authorization import AuthorizationService
+from app.services.review_account import ReviewAccountService
 
 EDIT_PERMISSIONS = (
     "requirement:create",
@@ -67,7 +68,8 @@ class McpAuthService:
             or user.password_change_required
         ):
             raise ForbiddenError()
-        if settings.mfa_required:
+        review = ReviewAccountService().validate(db, user)
+        if settings.mfa_required and review is None:
             from app.core.mfa import require_verified
 
             session = db.info.get("auth_session")
@@ -197,6 +199,8 @@ class McpAuthService:
             mfa_security_version=user.mfa_security_version,
             expires_at=datetime.now(UTC) + timedelta(days=30),
         )
+        if review := ReviewAccountService().validate(db, user):
+            connection.expires_at = min(connection.expires_at, review.expires_at)
         db.add(connection)
         db.flush()
         code = token_urlsafe(32)
@@ -244,14 +248,20 @@ class McpAuthService:
         membership = self.repository.membership(
             db, connection.user_id, connection.tenant_id
         )
+        try:
+            review = ReviewAccountService().validate(db, user) if user else None
+        except ForbiddenError:
+            raise McpOAuthError("invalid_token", 401) from None
         if (
             user is None
             or not user.is_active
             or user.password_change_required
             or membership is None
             or user.mfa_recovery_pending
+            or (review is not None and connection.tenant_id != review.tenant_id)
             or (
                 settings.mfa_required
+                and review is None
                 and (
                     connection.mfa_verified_at is None
                     or connection.mfa_security_version != user.mfa_security_version
