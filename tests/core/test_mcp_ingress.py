@@ -32,6 +32,7 @@ def test_exact_mcp_exemptions_and_shared_rate_limit(monkeypatch):
     @app.post("/mcp")
     @app.post("/mcp/other")
     @app.get("/.well-known/oauth-protected-resource/mcp")
+    @app.get("/.well-known/openai-apps-challenge")
     def endpoint():
         return {"reached": True}
 
@@ -43,6 +44,10 @@ def test_exact_mcp_exemptions_and_shared_rate_limit(monkeypatch):
     assert client.post("/mcp").status_code == 200
     assert client.post("/mcp/other").status_code == 403
     assert client.get("/.well-known/oauth-protected-resource/mcp").status_code == 200
+    assert client.get("/.well-known/openai-apps-challenge").status_code == 200
+    assert client.post("/.well-known/openai-apps-challenge").status_code == 403
+    assert client.get("/.well-known/openai-apps-challenge/other").status_code == 403
+    assert client.get("/auth/me").status_code == 403
     for index in range(10):
         assert (
             client.post(
@@ -56,3 +61,4 @@ def test_exact_mcp_exemptions_and_shared_rate_limit(monkeypatch):
     monkeypatch.setattr(settings, "mcp_enabled", False)
     assert client.get("/integrations/mcp/catalog").status_code == 403
     assert client.post("/mcp").status_code == 403
+    assert client.get("/.well-known/openai-apps-challenge").status_code == 403

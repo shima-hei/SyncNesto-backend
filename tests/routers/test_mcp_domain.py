@@ -14,8 +14,13 @@ def test_unconfigured_domain_challenge_is_not_published(client, monkeypatch, val
 
 
 def test_domain_challenge_is_exact_plain_text(client, monkeypatch):
-    """JSON化・改行・キャッシュを加えず、公開確認値を返す。"""
+    """BFF秘密を持たない公開検証者へ、正確なplain textを返す。"""
     monkeypatch.setattr(settings, "mcp_enabled", True)
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "bff_shared_secret", "s" * 48)
+    monkeypatch.setattr(settings, "mcp_issuer_url", "https://api.example")
+    monkeypatch.setattr(settings, "mcp_resource_url", "https://api.example/mcp")
+    monkeypatch.setattr("app.core.ingress.consume_request_budget", lambda *args: 0)
     monkeypatch.setattr(settings, "mcp_plugin_domain_challenge", "review-domain_123")
     result = client.get("/.well-known/openai-apps-challenge")
     assert result.status_code == 200
