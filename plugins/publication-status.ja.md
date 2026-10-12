@@ -16,7 +16,7 @@
   担当者Christianの依頼に応じ、既存サポート会話へ上記IDと活動名の正式手順の質問を送信済み。
   同じ問い合わせやアップロードを重複実施しない。
 - MCP URLは `https://syncnesto-api.vercel.app/mcp`、AuthenticationはAuthorization required。
-  support/privacy/terms・審査情報が不足し、domain verification・接続・tool scanは未完了。
+  support/privacy/terms・審査情報が不足している。domain verificationは完了、OAuth同意・tool scanは未完了。
   Connectで実際のcallback `https://chatgpt.com/connector_platform_oauth_redirect` と、
   同一API hostの `/.well-known/openai-apps-challenge` 向け公開検証値を取得した。
   Backend環境変数 `MCP_PLUGIN_REDIRECT_URIS` / `MCP_PLUGIN_DOMAIN_CHALLENGE` で設定する。
@@ -24,6 +24,9 @@
 - 運営者は通常DBの新しい独立審査組織・サンプルだけを扱う専用IdentityのMFA免除を承認した。
   通常利用者のMFA必須と、別DBの匿名デモ（MCP不可）は維持する。
   [限定審査アカウントの決定記録](../docs/decisions/2026-10-12-mcp-review-account.md)に実装・検証・運用を記録する。
+- 公開環境は無料ポートフォリオ試用、通常アカウントは運営者による招待、継続提供・稼働時間の保証なし。
+  業務データは通常アカウントも架空のサンプルだけに限定するとの回答を受領し、規約草案へ反映した。
+  実際のメールアドレス・MFA情報・操作ログ等の取扱いは別途説明する。保持・運営等の未決事項と草案全体の公開承認は残る。
 - `--draft` で固定4ファイルの非公開下書きZIPを生成できる。確定した公開URLを要求する
   `--submission --listing` とは分け、未公開URLを申請済みと扱わない。
 - Chromeの設定変更はツールで拒否されたため実施していない。迂回せず本人の手動アップロードで進めた。
@@ -37,11 +40,14 @@
 - 公開BFFでの審査ログイン・管理/認証情報変更の拒否、PKCEによるOAuth、28ツール、同意外Projectの拒否、サンプル作成、セル指定コメント・再送時の重複防止を確認した。
 - 検証用MCP接続の取消、審査アカウントのlogout・再loginでのサンプル保持、別DBの匿名デモ開始・MCP拒否・logout回収を確認した。検証後も既存Role・所属・DB GRANTを維持している。
 - 上記はAPI経由の公開検証で、OpenAIホスト上の8ケース・動画の完了ではない。資格情報はGit外・権限600で保存し、OpenAIへまだ送信していない。
-- 実callbackとdomain challengeはBackend Productionに設定・配布済み。公開確認GETがBFF ingressで403になる追加漏れを検出し、GET完全一致だけを許可する修正を準備した。修正前2件失敗、修正後の関連27テスト成功。ドメイン検証の成功は公開反映後に確認する。
+- 実callbackとdomain challengeはBackend Productionに設定・配布済み。公開確認GETがBFF ingressで403になる追加漏れを検出し、GET完全一致だけを許可した。修正前2件失敗、修正後の関連27テスト成功。
 - Frontend PR #29はマージ・公開済み。main CI `38218449367` 成功、Vercel `dpl_6bdEL6s1PLMJaKn5L3mSMWcA2zhQ` READY・公開commit `2c1aaf663c9bbfc50ba3cc2267c6e6ac66dbee63` 一致。
-- OpenAIの新しい接続試行では757文字のrelay stateを観測した。API・DBの500文字制限で `invalid_request` になったため、1〜2,048文字へ広げる修正とmigration `d4f8b1e6a902` を準備した。stateの内容・OAuth codeは記録せず、callbackの完全一致・PKCE・同意・権限検証を維持する。修正前の長いstateの回帰テスト2件失敗、修正後のMCP関連66テスト・ruff・pyright成功。公開反映後にOpenAIの新しい接続で確認する。
+- OpenAIの新しい接続試行では757文字のrelay stateを観測した。API・DBの500文字制限で `invalid_request` になったため、1〜2,048文字へ広げ、migration `d4f8b1e6a902` を追加した。stateの内容・OAuth codeは記録せず、callbackの完全一致・PKCE・同意・権限検証を維持する。修正前の長いstateの回帰テスト2件失敗、修正後のMCP関連66テスト・ruff・pyright成功。
+- 上記2件の修正をBackend PR #27でマージ・公開した。main CI `38220735849` 成功、Vercel `dpl_6NM1M5LvGekL1wgaGcZnvcrPURfj` READY・公開commit `953fafc3d6424ed371780f4ecc81a630434f5bb1` 一致。
+- 両DBのrevisionは `d4f8b1e6a902`、state列上限は2,048。既存Role・所属・DB GRANTを維持し、審査許可は通常DB1件・デモDB0件のまま。公開challengeの200・正確な本文、直接authの403、許可外のmethod/path拒否、stateの上限を検証した。
+- OpenAI管理画面で **Domain verified** を確認した。新しい実接続は専用審査Identityの同意画面まで進み、審査用の許可Project1件だけを選択した。最終のアクセス権付与は操作直前の本人承認待ち。接続完了・tool scan・ホスト8ケースの成功として扱わない。
 
-次はドメイン確認経路の修正公開とFrontend反映、OpenAI側のdomain verification・接続/tool scan、
+次はOpenAI側のOAuth同意・接続/tool scan、
 公開規約の未決事項確定、ホスト上の8ケースと動画、必須情報の入力、審査提出の順で進める。
 以下の「現在の状態」「再開確認」「残る作業」は下書き登録前の履歴で、最新状態は本節を優先する。
 

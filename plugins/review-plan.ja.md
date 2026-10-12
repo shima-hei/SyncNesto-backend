@@ -12,7 +12,7 @@ manifestの正常系5件・異常系3件と対応する。既存利用者・実�
 | 費用 | 追加請求0が条件。本人確認のVerifiedだけでは登録・審査等の料金を確定できない。購入、有料API、auto recharge、クラウド有料化を行わない。 |
 | 公開規約 | support/privacy/termsは未公開。無料ポートフォリオ・通常アカウント招待制・稼働保証なし・通常アカウントも架空の業務サンプル限定を承認済み。保持・実削除等の未決事項を確定し、公開済み実URLだけをlistingへ記載する。 |
 | 審査ログイン | 通常DBの独立審査組織・新規専用Identityを作成済み。MFA免除はこのIdentityだけ、有効期限2026-11-11T07:17:01Z。期限・隔離・既存RBAC・OAuthの公開API検証済み。資格情報のOpenAIへの送信は未実施。 |
-| ホスト設定 | 管理画面の正確なcallback・challengeを取得しBackend Productionへ設定済み。実接続で判明したドメイン確認GETの403・長いOAuth stateを修正し、公開反映と新しい接続の確認を進める。 |
+| ホスト設定 | 正確なcallback・challengeをBackend Productionへ設定済み。ドメイン確認GETの403・長いOAuth stateをPR #27で修正・公開し、OpenAI管理画面でDomain verifiedを確認した。実接続は専用審査Identityの同意画面まで到達。最終の権限付与は本人承認待ち。 |
 | 公開状態 | previewのannotationとMFAの実配布状態を主担当の記録と本番で照合する。ローカルCI成功は公開確認と区別する。 |
 
 OpenAIへの本人確認はVerifiedで完了したため、再実施しない。
