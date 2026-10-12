@@ -58,7 +58,9 @@ MCP本体は既存Backendの `/mcp` で提供します。公開resourceはissuer
 Frontendは承認・拒否レスポンスのredirect先がこのURLと一致することを確認します。
 既存loopbackのほか、plugin専用clientにはBackendで完全一致登録したOpenAI HTTPS callbackを許可します。
 これらのブラウザAPIのCookie・BFF・CSRF境界は維持します。追加migrationは不要です。
-Bearer専用の直接経路は `/mcp` とresource metadataの完全一致に限定し、同意・取消のFrontend API契約は維持します。
+Bearer専用の直接経路は `/mcp` の完全一致に限定します。OAuthのdiscovery・authorize・token・revokeとresource metadataは専用の直接経路を使い、同意・接続管理のFrontend API契約は維持します。
+公開ドメイン確認の `GET /.well-known/openai-apps-challenge` もMCP有効時だけBFF共有キーを要求しません。設定済みの公開検証値をplain text・no-storeで返し、未設定は404です。別メソッド・子path・通常APIへの例外は追加しません。
+OAuth `state` は1〜2,048文字のopaque値として保存し、同意後のcallbackへ改変せず返します。OpenAIのrelay stateが500文字を超えるため、migration `d4f8b1e6a902` で保存列も拡張します。Frontendはstateを解析せず、既存のrequest_idを使う同意手順を維持します。
 Backend/Frontend両方のサーバー環境変数 `MCP_ENABLED=true` と再デプロイが有効化に必要です。
 追加のFrontend実装・Orval再生成は不要です。リモート化では既存JSON APIの入出力やOpenAPIを変更していません。
 

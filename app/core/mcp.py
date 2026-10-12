@@ -128,6 +128,7 @@ def digest(value: str) -> str:
 def is_direct_mcp_request(path: str, method: str) -> bool:
     """BFF必須の例外を専用経路とメソッドに限定する。"""
     return settings.mcp_enabled and (method, path) in {
+        ("GET", "/.well-known/openai-apps-challenge"),
         ("GET", "/.well-known/oauth-protected-resource/mcp"),
         ("POST", "/mcp"),
         ("GET", "/mcp"),

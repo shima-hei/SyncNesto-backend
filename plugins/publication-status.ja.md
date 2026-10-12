@@ -29,7 +29,19 @@
 - Chromeの設定変更はツールで拒否されたため実施していない。迂回せず本人の手動アップロードで進めた。
   本作業で拡張の権限を変更していない。
 
-次は専用Identityの検証・公開適用とfixture作成、正確なcallback/challengeの取得、
+### 専用審査アカウントの公開適用と検証
+
+- Backend PR #26をマージし、main CI `38206759294` の成功とVercel Productionのcommit `3e02d38f30d8fd6270a4eddf1ce4862717e661d7` 一致を確認した。
+- 通常・デモ両DBへmigration `c2a7e491d6b8` を適用した。既存Role・所属・DB GRANTを維持し、新しい審査許可テーブルはruntime SELECTのみ。
+- 通常DBに新しい専用Identityと独立審査組織・3つのサンプルProjectを作成した。有効期限は2026-11-11T07:17:01Z。デモDBには審査許可を作成していない。
+- 公開BFFでの審査ログイン・管理/認証情報変更の拒否、PKCEによるOAuth、28ツール、同意外Projectの拒否、サンプル作成、セル指定コメント・再送時の重複防止を確認した。
+- 検証用MCP接続の取消、審査アカウントのlogout・再loginでのサンプル保持、別DBの匿名デモ開始・MCP拒否・logout回収を確認した。検証後も既存Role・所属・DB GRANTを維持している。
+- 上記はAPI経由の公開検証で、OpenAIホスト上の8ケース・動画の完了ではない。資格情報はGit外・権限600で保存し、OpenAIへまだ送信していない。
+- 実callbackとdomain challengeはBackend Productionに設定・配布済み。公開確認GETがBFF ingressで403になる追加漏れを検出し、GET完全一致だけを許可する修正を準備した。修正前2件失敗、修正後の関連27テスト成功。ドメイン検証の成功は公開反映後に確認する。
+- Frontend PR #29はマージ・公開済み。main CI `38218449367` 成功、Vercel `dpl_6bdEL6s1PLMJaKn5L3mSMWcA2zhQ` READY・公開commit `2c1aaf663c9bbfc50ba3cc2267c6e6ac66dbee63` 一致。
+- OpenAIの新しい接続試行では757文字のrelay stateを観測した。API・DBの500文字制限で `invalid_request` になったため、1〜2,048文字へ広げる修正とmigration `d4f8b1e6a902` を準備した。stateの内容・OAuth codeは記録せず、callbackの完全一致・PKCE・同意・権限検証を維持する。修正前の長いstateの回帰テスト2件失敗、修正後のMCP関連66テスト・ruff・pyright成功。公開反映後にOpenAIの新しい接続で確認する。
+
+次はドメイン確認経路の修正公開とFrontend反映、OpenAI側のdomain verification・接続/tool scan、
 公開規約の未決事項確定、ホスト上の8ケースと動画、必須情報の入力、審査提出の順で進める。
 以下の「現在の状態」「再開確認」「残る作業」は下書き登録前の履歴で、最新状態は本節を優先する。
 
