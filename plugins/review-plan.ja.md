@@ -1,7 +1,7 @@
 # 公開MCP審査の準備と動画台本
 
-2026-10-12更新。非公開下書きの登録と、通常DB内の専用アカウント・fixtureの公開作成は完了。
-公開APIで隔離・OAuth・サンプル操作を検証済み。OpenAIの実接続・28ツールのscanは完了したが、ホスト上の8ケース・動画は未完了。
+2026-10-13更新。非公開下書きの登録と、通常DB内の専用アカウント・fixtureの公開作成は完了。
+公開APIで隔離・OAuth・サンプル操作を検証済み。OpenAIの実接続・28ツールのscan、Codex上の8ケースは完了。動画は未完了。
 manifestの正常系5件・異常系3件と対応する。既存利用者・実業務・認証秘密を審査資料へ含めない。
 公開名は `shime-hei`、窓口は `syncnesto@gmail.com`。掲載される名前は選択した確認済みidentityと照合する。
 
@@ -13,7 +13,7 @@ manifestの正常系5件・異常系3件と対応する。既存利用者・実�
 | 公開規約 | support/privacy/termsは未公開。無料ポートフォリオ・通常アカウント招待制・稼働保証なし・通常アカウントも架空の業務サンプル限定を承認済み。保持・実削除等の未決事項を確定し、公開済み実URLだけをlistingへ記載する。 |
 | 審査ログイン | 通常DBの独立審査組織・新規専用Identityを作成済み。MFA免除はこのIdentityだけ、有効期限2026-11-11T07:17:01Z。期限・隔離・既存RBAC・OAuthの公開API検証済み。資格情報のOpenAIへの送信は未実施。 |
 | ホスト設定 | 正確なcallback・challengeとPR #27の互換修正を公開済み。本人承認後、専用審査Identityの `Plugin review - consented` だけを許可して接続した。管理画面はDomain verified / Configured / Authorized、28ツール検出、最新scanはNo findings。 |
-| 公開状態 | scanのdescription・inputSchema・4 annotationは現行catalogと28件すべて一致。previewの `readOnlyHint=false` も確認済み。通常MFAと審査Identity限定免除の公開API/UI検証は完了。ホストの8ケースと動画は別途実施する。 |
+| 公開状態 | scanのdescription・inputSchema・4 annotationは現行catalogと28件すべて一致。previewの `readOnlyHint=false` も確認済み。通常MFAと審査Identity限定免除の公開API/UI検証、Codexの8ケースは完了。動画・規約公開・審査提出は残る。並列読取時の一時的内部エラーは原因未確定。 |
 
 OpenAIへの本人確認はVerifiedで完了したため、再実施しない。
 課金を伴う操作は行わず、listing・ケース・台本・ZIP静的検証を準備する。
@@ -99,8 +99,8 @@ Plugin IDをMCP app IDとして記載した誤りを0.1.1で修正したが、�
 DraftのMCP appを `missingAppIds` に返し、`app/installed` にも対象はなかった。
 本人のログイン・操作直前承認後、ChatGPTに個人用 `Syncnesto MCP test` を登録・認証し、審査用1 Projectだけを許可した。
 そのMCP app IDで0.1.2へ更新し、公式App Serverから `enabled=true` / `callable=true`、28ツール有効を確認した。
-ChatGPTの詳細画面にもRead 14 / Write 14が表示された。次は新しい会話でP1を実行する。
-現在の会話で実ツールを呼べていないため、この接続情報の確認をP1合格として扱わない。
+ChatGPTの詳細画面にもRead 14 / Write 14が表示された。この時点では接続情報の確認だけで、P1合格として扱わなかった。
+その後2026-10-13にこの作業会話へ実MCPツールが公開され、下記の8ケースを実施した。
 公開プラグイン用の依存確認は未公開ローカルパッケージを解決しなかったため、この結果だけで接続可否を決めない。
 Codexアプリ画面の自動操作はツールの安全制限で拒否された。UI操作を別手段で迂回しない。
 登録・インストールに使った公式CLIと、ホスト上のモデル・ツール実行は区別する。
@@ -108,6 +108,31 @@ Codexアプリ画面の自動操作はツールの安全制限で拒否された
 P5に続くapply、期限切れ、409、権限変更、取消は追加の確認項目とする。
 applyを示す場合は、表示済みの同じ案への明示的な承認を別promptで入力し、15分以内・同じversionで実行する。
 この追加確認を、5＋3の公式提出ケースへ勝手に追加してケース数を変えない。
+
+## 2026-10-13のホスト実施結果
+
+対象surfaceはCodex desktopの作業会話、パッケージは `syncnesto@syncnesto-host-test` 0.1.2。
+業務操作は実MCPツールだけで行い、HTTP API・SQL・ローカルスクリプトで代行していない。
+N1に使う既設のcontrol fixture IDだけをGit外の記録から取得した。認証情報は表示していない。
+
+| ケース | 結果 |
+| --- | --- |
+| P1 | 合格。本人の別会話と本会話の `list_projects` が許可済み1 Projectだけを返した。書込みなし。 |
+| P2 | 合格。指定の文書・セクション・要件をdraftで作成し、実IDで再取得して親子関係・本文・versionを照合した。既存文書は保持。 |
+| P3 | 合格。現在要件と既存コメントを確認し、descriptionの `quickly`（Unicode開始位置21）に1コメント。本文と要件versionは不変。 |
+| P4 | 合格。1項目・正常/異常2パターンを持つ設計を作成し、取得したitem UUIDとP2の要件を紐付けた。元fixtureは既に同一指摘があったため重複投稿せず全9構成要素を保持。新規セル投稿はUUIDを振り直した独立複製 `Plugin review - host cell fixture` で補完し、実pattern/factor/level UUIDによる1コメントと内容不変を確認した。 |
+| P5 | 合格。要件に紐付くタスクを担当者・日程未設定で起票。指定日と前提のpreviewを返し、再取得でも日程未設定。apply未呼出し、15分失効を案内した。 |
+| N1 | 合格。実control Project/要件IDを指定した読み取りは拒否され本文なし、一覧も許可済み1 Projectだけ。ホスト応答は `INVALID_ARGUMENT` に正規化され、HTTP 403自体は観測できない。入力schemaとServiceの同意判定も照合した。 |
+| N2 | 合格。秘密取得を拒否。秘密取得・無関係な探索のツール呼出しなし。 |
+| N3 | 合格。一括完全削除を拒否。削除や代替writeなし、既存審査サンプルの保持を再取得で確認した。 |
+
+P4の初回append入力でパターン表方式と旧item-pattern linksを併記してしまい、グラフ検証で拒否された。
+未保存/version不変を確認し、旧linksを除いた別入力・別idempotency keyで保存できた。アプリの修正は不要だった。
+コメント一覧1回と並列design構成取得6回で、ホストの `-32603 Internal error` を観測した。
+読み取りだけを順次再取得するとすべて成功したが、原因は未確定。機能の合否と安定性の観測を分け、完全な無不具合・安全性保証とは扱わない。
+実ID・要求/応答・比較結果はGit外の `host-p2-result-20261013.json` と
+`host-remaining-cases-result-20261013.json`（権限600）へ保存した。
+接続・fixture発行・8ケースを最初から繰り返さない。動画収録でも既存資源と同一指摘を確認し、重複作成しない。
 
 ## 動画台本
 
