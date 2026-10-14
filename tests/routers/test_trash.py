@@ -10,11 +10,13 @@ from app.core.config import settings
 from app.models.document import DocumentAttachment, DocumentRevision, ProjectDocument
 from app.models.project import Project
 from app.models.requirement import Requirement
+from app.models.specification import Specification, SpecificationLink
 from app.models.task import Task
 from app.models.test_design import TestCaseIssue as CaseIssueModel
 from app.models.test_design import TestDesign as DesignModel
 from app.models.test_design import TestEvidence as EvidenceModel
 from app.models.test_design import TestExecution as ExecutionModel
+from app.models.test_design import TestItem as ItemModel
 from app.repositories.trash import RESOURCES
 from app.services.storage import StorageService
 from app.services.trash import TrashService
@@ -251,6 +253,14 @@ def test_purge_each_kind_retains_related_business_data(
     design = DesignModel(
         project_id=project.id, name="test", created_by=user.id, updated_by=user.id
     )
+    specification = Specification(
+        project_id=project.id,
+        kind="api",
+        title="回収するAPI仕様",
+        content={"type": "api"},
+        created_by=user.id,
+        updated_by=user.id,
+    )
     attachment = DocumentAttachment(
         document_id=identity,
         filename="test.txt",
@@ -259,7 +269,41 @@ def test_purge_each_kind_retains_related_business_data(
         storage_key="trash/kind.txt",
         uploaded_by=user.id,
     )
-    db.add_all([design, attachment])
+    db.add_all([design, attachment, specification])
+    db.flush()
+    test_item = ItemModel(design_id=design.id, code="linked-item", content="関連テスト")
+    db.add(test_item)
+    db.flush()
+    db.add_all(
+        [
+            SpecificationLink(specification_id=specification.id, task_id=task.id),
+            SpecificationLink(
+                specification_id=specification.id, requirement_id=requirement.id
+            ),
+            SpecificationLink(
+                specification_id=specification.id, test_item_id=test_item.id
+            ),
+            SpecificationLink(specification_id=specification.id, document_id=identity),
+        ]
+    )
+    test_item_id = test_item.id
+    incoming = None
+    if kind == "specification":
+        incoming = Specification(
+            project_id=project.id,
+            kind="screen",
+            title="残す画面",
+            content={"type": "screen"},
+            created_by=user.id,
+            updated_by=user.id,
+        )
+        db.add(incoming)
+        db.flush()
+        db.add(
+            SpecificationLink(
+                specification_id=incoming.id, related_specification_id=specification.id
+            )
+        )
     db.commit()
     rows = {
         "requirement_document": reqdoc,
@@ -269,6 +313,7 @@ def test_purge_each_kind_retains_related_business_data(
         "test_design": design,
         "document": db.get(ProjectDocument, identity),
         "document_attachment": attachment,
+        "specification": specification,
     }
     row = rows[kind]
     rid = row.id
@@ -281,6 +326,20 @@ def test_purge_each_kind_retains_related_business_data(
     assert db.get(RESOURCES[kind].model, rid) is None
     assert db.get(Project, project.id) is not None
     assert db.get(Task, child.id) is not None
+    if kind == "specification":
+        assert incoming is not None
+        assert db.get(Specification, incoming.id) is not None
+        assert not db.scalars(select(SpecificationLink)).all()
+    elif kind == "task":
+        assert not db.scalars(
+            select(SpecificationLink).where(SpecificationLink.task_id == rid)
+        ).all()
+    elif kind == "test_design":
+        assert not db.scalars(
+            select(SpecificationLink).where(
+                SpecificationLink.test_item_id == test_item_id
+            )
+        ).all()
     if kind == "task":
         assert db.get(Task, child.id).parent_task_id is None
     if kind == "requirement_section":

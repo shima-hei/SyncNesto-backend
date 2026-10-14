@@ -6,6 +6,8 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
+    DateTime,
+    Integer,
     String,
     cast,
     delete,
@@ -24,6 +26,7 @@ from app.models.demo import DemoSession
 from app.models.document import DocumentAttachment, ProjectDocument
 from app.models.project import Project
 from app.models.requirement import Requirement, RequirementDocument, RequirementSection
+from app.models.specification import Specification
 from app.models.task import Task
 from app.models.tenant import Tenant
 from app.models.test_design import TestDesign
@@ -42,6 +45,7 @@ class TrashResource:
 
 
 RESOURCES = {
+    "specification": TrashResource(Specification, "title", "document"),
     "requirement_document": TrashResource(RequirementDocument, "title", "requirement"),
     "requirement_section": TrashResource(
         RequirementSection,
@@ -166,10 +170,12 @@ class TrashRepository:
                 getattr(model, "version", literal(None)).label("version"),
                 getattr(model, spec.parent_key or "").label("container_id")
                 if parent is not None
-                else literal(None).label("container_id"),
+                else cast(literal(None), Integer).label("container_id"),
                 parent.deleted_at.label("parent_deleted_at")
                 if parent is not None
-                else literal(None).label("parent_deleted_at"),
+                else cast(literal(None), DateTime(timezone=True)).label(
+                    "parent_deleted_at"
+                ),
             ).where(project == project_id, model.deleted_at.is_not(None))
             if parent is not None:
                 statement = statement.join(
@@ -249,6 +255,13 @@ class TrashRepository:
             ("requirement_id", "requirements", "id"),
             ("task_id", "tasks", "id"),
             ("design_id", "test_designs", "id"),
+        ]
+        edges["specification_links"] = edges["specification_links"] + [
+            ("requirement_id", "requirements", "id"),
+            ("task_id", "tasks", "id"),
+            ("test_item_id", "test_items", "id"),
+            ("related_specification_id", "specifications", "id"),
+            ("document_id", "project_documents", "id"),
         ]
         edges["requirement_relations"] = edges["requirement_relations"] + [
             ("source_requirement_id", "requirements", "id")

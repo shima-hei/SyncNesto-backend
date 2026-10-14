@@ -9,6 +9,7 @@ SearchQuery = Annotated[
 ]
 SearchCategory = Literal["requirement", "task", "test", "document"]
 SearchKind = Literal[
+    "specification",
     "requirement_document",
     "requirement",
     "task",

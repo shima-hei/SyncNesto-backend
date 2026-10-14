@@ -15,6 +15,7 @@ class TrashKind(StrEnum):
     TASK = "task"
     TEST_DESIGN = "test_design"
     DOCUMENT = "document"
+    SPECIFICATION = "specification"
     DOCUMENT_ATTACHMENT = "document_attachment"
 
 

@@ -19,6 +19,7 @@ from app.models.document import ProjectDocument
 from app.models.project import Project, ProjectMember
 from app.models.rbac import Permission, Role, RolePermission
 from app.models.requirement import Requirement, RequirementDocument
+from app.models.specification import Specification
 from app.models.task import Task
 from app.models.test_design import TestCase, TestDesign, TestItem
 
@@ -242,6 +243,16 @@ class SearchRepository:
                 (ProjectDocument.body,),
                 "document:read",
                 conditions=(ProjectDocument.deleted_at.is_(None),),
+            ),
+            source(
+                "specification",
+                "document",
+                Specification,
+                Specification.title,
+                literal(""),
+                (Specification.summary, cast(Specification.content, String)),
+                "document:read",
+                conditions=(Specification.deleted_at.is_(None),),
             ),
         ).subquery()
 
