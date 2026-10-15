@@ -128,3 +128,21 @@ MFA_INVALID = (
 )
 MFA_UNAVAILABLE = "追加認証の設定を確認できません。運営者にお問い合わせください"
 MFA_LAST_FACTOR = "最後の認証手段は削除できません。先に別の手段を登録してください"
+
+# API・画面設計書
+SPECIFICATION_NOT_FOUND = "設計書が見つかりません。"
+SPECIFICATION_REVISION_NOT_FOUND = "版が見つかりません。"
+SPECIFICATION_KIND_IMMUTABLE = "設計書の種類は変更できません。"
+SPECIFICATION_UNRESOLVED_COMMENTS = (
+    "未解決の指摘があります。修正内容を確認してから解決してください。"
+)
+SPECIFICATION_COMMENT_TARGET_INVALID = "指摘箇所とコメントを確認してください。"
+SPECIFICATION_COMMENT_LIMIT = "設計書あたりの指摘の上限は500件です。"
+SPECIFICATION_COMMENT_NOT_FOUND = "指摘が見つかりません。"
+SPECIFICATION_TARGET_NOT_FOUND = "関連先が見つかりません。"
+SPECIFICATION_SELF_LINK = "設計書自身を関連先にはできません。"
+SPECIFICATION_LINK_NOT_FOUND = "関連が見つかりません。"
+SPECIFICATION_REVIEW_FIELDS_REQUIRED = (
+    "目的とパスを記入してからレビューを依頼してください。"
+)
+SPECIFICATION_LINK_LIMIT = "関連先の上限は200件です。"

@@ -138,6 +138,20 @@ class DuplicateResourceError(ConflictError):
     code = "DUPLICATE_RESOURCE"
 
 
+class SpecificationUnresolvedCommentsError(ConflictError):
+    """設計書の未解決指摘が承認を妨げている。"""
+
+    message = error_messages.SPECIFICATION_UNRESOLVED_COMMENTS
+    code = "SPECIFICATION_UNRESOLVED_COMMENTS"
+
+
+class SpecificationReviewFieldsError(BadRequestError):
+    """確認依頼・承認に必要な設計項目が不足している。"""
+
+    message = error_messages.SPECIFICATION_REVIEW_FIELDS_REQUIRED
+    code = "SPECIFICATION_REVIEW_FIELDS_REQUIRED"
+
+
 class VersionConflictError(ConflictError):
     """更新対象のバージョンが最新ではない場合の例外。"""
 
