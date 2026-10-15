@@ -434,13 +434,14 @@ system_role_keys
 
 ```text
 POST   /users              user:create
-GET    /users              user:read, page/page_size/q/is_active対応
+GET    /users              user:read, page/page_size/q/is_active/without_active_membership対応
 GET    /users/{user_id}    user:read
 PATCH  /users/{user_id}    user:update, version必須
 DELETE /users/{user_id}    user:delete
 ```
 
 `GET /users` は一覧用の軽量レスポンスです。
+運営者向けの全組織・所属参照と有効な所属なしの定義は [システム管理API](frontend-system-management-api.md) を参照してください。
 
 クエリ:
 

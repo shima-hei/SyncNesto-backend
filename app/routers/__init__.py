@@ -20,6 +20,7 @@ from app.routers import (
     requirements,
     search,
     specifications,
+    system_management,
     tasks,
     tenants,
     test_collaboration,
@@ -62,4 +63,5 @@ def register_routers(app: FastAPI) -> None:
         app.include_router(router, dependencies=[Depends(get_current_tenant)])
     app.include_router(users.router)
     app.include_router(tenants.router)
+    app.include_router(system_management.router)
     app.include_router(audit_logs.router)

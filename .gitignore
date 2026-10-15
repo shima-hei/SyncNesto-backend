@@ -232,6 +232,7 @@ docker/pgadmin/
 !/docs/frontend-home-api.md
 !/docs/frontend-file-upload.md
 !/docs/frontend-authorization.md
+!/docs/frontend-system-management-api.md
 !/docs/deployment.md
 !/docs/multi-tenancy.md
 !/docs/email-approval.md

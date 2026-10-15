@@ -6,10 +6,11 @@ Userテーブルに対するCRUD操作を提供する。
 
 from datetime import UTC, datetime
 
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.models.tenant import Tenant, TenantMember
 from app.models.user import User
 from app.schemas.user import UserCreate, UserProfileUpdate, UserUpdate
 
@@ -126,6 +127,7 @@ class UserRepository:
         page_size: int,
         q: str | None = None,
         is_active: bool | None = None,
+        without_active_membership: bool = False,
     ) -> tuple[list[User], int]:
         """削除されていないユーザー一覧をページング付きで取得する。
 
@@ -135,6 +137,7 @@ class UserRepository:
             page_size: 1ページあたりの件数。
             q: 検索キーワード。
             is_active: 有効状態の絞り込み。
+            without_active_membership: 有効な組織所属がないIdentityだけ取得する。
 
         Returns:
             ユーザー一覧と総件数。
@@ -152,6 +155,17 @@ class UserRepository:
             )
         if is_active is not None:
             query = query.filter(User.is_active == is_active)
+        if without_active_membership:
+            query = query.filter(
+                ~select(TenantMember.id)
+                .join(Tenant)
+                .where(
+                    TenantMember.user_id == User.id,
+                    TenantMember.status == "active",
+                    Tenant.status == "active",
+                )
+                .exists()
+            )
 
         total = query.count()
         users = (
