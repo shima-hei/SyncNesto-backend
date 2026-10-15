@@ -211,6 +211,7 @@ class UserService:
         page_size: int,
         q: str | None = None,
         is_active: bool | None = None,
+        without_active_membership: bool = False,
     ) -> tuple[list[User], int]:
         """ユーザー一覧をページング付きで取得する。
 
@@ -220,6 +221,7 @@ class UserService:
             page_size: 1ページあたりの件数。
             q: 検索キーワード。
             is_active: 有効状態の絞り込み。
+            without_active_membership: 有効な組織所属がないIdentityに限定する。
 
         Returns:
             ユーザー一覧と総件数。
@@ -230,6 +232,7 @@ class UserService:
             page_size=page_size,
             q=q,
             is_active=is_active,
+            without_active_membership=without_active_membership,
         )
 
     def list_system_roles_by_user_ids(

@@ -55,6 +55,7 @@ def list_users(
     page_size: int = Query(default=20, ge=1, le=100),
     q: str | None = Query(default=None),
     is_active: bool | None = Query(default=None),
+    without_active_membership: bool = Query(default=False),
     _: User = Depends(require_system_permission("user:read")),
     db: Session = Depends(get_db),
 ) -> UserListResponse:
@@ -76,6 +77,7 @@ def list_users(
         page_size=page_size,
         q=q,
         is_active=is_active,
+        without_active_membership=without_active_membership,
     )
     roles_by_user_id = user_service.list_system_roles_by_user_ids(
         db,
