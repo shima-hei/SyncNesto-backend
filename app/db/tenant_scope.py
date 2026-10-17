@@ -10,6 +10,10 @@ from app.db.base import Base
 
 # 所有関係は一箇所で定義する。認証Identityへの参照は所有関係に含めない。
 OWNERS = {
+    "artifact_preservations": [("release_id", "artifact_releases", "id")],
+    "artifact_preservation_objects": [
+        ("preservation_id", "artifact_preservations", "id")
+    ],
     "artifact_releases": [("project_id", "projects", "id")],
     "artifact_release_nodes": [("release_id", "artifact_releases", "id")],
     "mcp_connections": [],
