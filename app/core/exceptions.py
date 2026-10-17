@@ -26,6 +26,13 @@ class BadRequestError(AppError):
     code = "BAD_REQUEST"
 
 
+class ArtifactReleaseTooLargeError(AppError):
+    """本文を切り捨てず、容量超過を明示する。"""
+
+    message = error_messages.ARTIFACT_TOO_LARGE
+    code = "ARTIFACT_RELEASE_TOO_LARGE"
+
+
 class DemoLimitError(AppError):
     """一時環境の共有容量・発行上限を超えた。"""
 
