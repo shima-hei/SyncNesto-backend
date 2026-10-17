@@ -150,3 +150,10 @@ ARTIFACT_CURSOR_INVALID = "固定版の読み取り位置が無効です。最�
 ARTIFACT_SOURCE_OVERLAP = "固定対象に同じ内容が重複しています"
 ARTIFACT_TOO_LARGE = "固定対象が保存または分割取得の上限を超えています"
 ARTIFACT_RETRY_CONFLICT = "同時操作が発生しました。同じ操作IDで再試行してください"
+PRESERVATION_BUSY = "添付の保全処理が実行中です。しばらくして再試行してください"
+PRESERVATION_CANCELLED = "この添付保全は取り消されています"
+PRESERVATION_NOT_READY = "添付の保全が完了していません"
+PRESERVATION_IMMUTABLE = "保全完了後の添付構成は変更・取消できません"
+PRESERVATION_PLAN_CHANGED = (
+    "選択した資料または添付が変更されています。構成を確認し直してください"
+)

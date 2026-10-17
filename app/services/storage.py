@@ -259,7 +259,13 @@ class StorageService:
             ContentType=content_type,
         )
 
-    def private_object_url(self, key: str, download_filename: str | None = None) -> str:
+    def private_object_url(
+        self,
+        key: str,
+        download_filename: str | None = None,
+        *,
+        expires_in: int | None = None,
+    ) -> str:
         """権限検証後に呼び出す短期有効な非公開オブジェクトURL。"""
         from urllib.parse import quote
 
@@ -272,7 +278,9 @@ class StorageService:
         return self.s3_client.generate_presigned_url(
             "get_object",
             Params=params,
-            ExpiresIn=self.download_ttl(key),
+            ExpiresIn=min(self.download_ttl(key), expires_in)
+            if expires_in is not None
+            else self.download_ttl(key),
         )
 
     def presigned_upload_url(
