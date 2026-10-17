@@ -146,3 +146,7 @@ SPECIFICATION_REVIEW_FIELDS_REQUIRED = (
     "目的とパスを記入してからレビューを依頼してください。"
 )
 SPECIFICATION_LINK_LIMIT = "関連先の上限は200件です。"
+ARTIFACT_CURSOR_INVALID = "固定版の読み取り位置が無効です。最初から取得してください"
+ARTIFACT_SOURCE_OVERLAP = "固定対象に同じ内容が重複しています"
+ARTIFACT_TOO_LARGE = "固定対象が保存または分割取得の上限を超えています"
+ARTIFACT_RETRY_CONFLICT = "同時操作が発生しました。同じ操作IDで再試行してください"

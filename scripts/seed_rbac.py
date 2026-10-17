@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 
 PERMISSIONS = [
+    ("artifact_release:create", "成果物の固定版を作成する"),
+    ("artifact_release:read", "成果物の固定版を閲覧する"),
     ("mcp:connect", "本人の権限でMCPを利用する"),
     ("tenant:manage", "運営者として組織を作成・管理する"),
     ("user:read", "ユーザーを閲覧する"),
@@ -79,6 +81,8 @@ SYSTEM_ADMIN_PERMISSIONS = (
 ROLE_PERMISSIONS = {
     "system_admin": list(SYSTEM_ADMIN_PERMISSIONS),
     "project_admin": [
+        "artifact_release:create",
+        "artifact_release:read",
         "mcp:connect",
         "project:read",
         "project:update",
@@ -114,6 +118,8 @@ ROLE_PERMISSIONS = {
         "requirement:link",
     ],
     "manager": [
+        "artifact_release:create",
+        "artifact_release:read",
         "mcp:connect",
         "project:read",
         "task:read",

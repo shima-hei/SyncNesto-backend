@@ -942,3 +942,12 @@ CSRF token不正:
 # マルチテナント対応
 
 現行の組織境界・3階層Role・変更されたsystem_adminの扱いは [multi-tenancy.md](multi-tenancy.md) を参照してください。業務APIには検証対象の `X-Tenant-ID` を送ります。運営者のsystem権限はProjectの業務権限を迂回しません。`/projects/{id}/me` の互換フィールド `is_system_admin` は常にfalseで、Project Roleを表示制御に使います。
+
+# Phase 2A-1a 成果物固定版（隔離開発）
+
+Projectに`artifact_release:create`と`artifact_release:read`を追加。
+初期付与は`project_admin`と`manager`のみ。他の既存付与は保持する。
+作成には含む全種類の既存read/update、取得には全種類の既存readも必要。
+有効tenant・Project所属・Cookie/MFA/CSRFの既存条件を継承し、内部ユーザーだけを対象とする。
+guest・demo・MCPからの新API利用は拒否。顧客公開・承認の権限ではない。
+詳細は[固定版API](frontend-artifact-releases-api.md)。既存環境への適用は別判断。

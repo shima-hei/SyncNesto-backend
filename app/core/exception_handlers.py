@@ -12,6 +12,7 @@ from app.core.csrf import delete_csrf_cookie
 from app.core.exceptions import (
     AccountActionRateLimitedError,
     AppError,
+    ArtifactReleaseTooLargeError,
     BadRequestError,
     ConflictError,
     DemoLimitError,
@@ -29,6 +30,7 @@ from app.core.mcp import McpOAuthError
 logger = logging.getLogger(__name__)
 
 ERROR_STATUS_MAP: dict[type[AppError], int] = {
+    ArtifactReleaseTooLargeError: status.HTTP_413_CONTENT_TOO_LARGE,
     MfaUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
     DemoLimitError: status.HTTP_429_TOO_MANY_REQUESTS,
     EmailUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,

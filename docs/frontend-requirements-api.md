@@ -706,3 +706,10 @@ commented
 ## コメントのメンション
 
 要件コメントと要件定義対象コメントのAPIに `mentions` を追加した。本文形式は維持し、UTF-16単位の出現位置とユーザーIDを送受信する。候補は既存メンバー検索APIの `mention_permission=requirement:read` で取得する。詳細は [コメントのメンションAPI](frontend-comment-mentions-api.md) を参照。
+
+# Phase 2A-1a 要件の固定版（隔離開発）
+
+既存の要件・章・定義書・旧承認APIを変更せず、別の固定版APIを追加した。
+要件・定義書・型別詳細と採用した画面/API設計を、その時点の本文・構成として保存する。
+固定版は承認済み・顧客公開済みを意味しない。元の編集は既存APIで続け、固定版を上書きしない。
+契約・認可・再送・分割読取は[固定版API](frontend-artifact-releases-api.md)を参照。
