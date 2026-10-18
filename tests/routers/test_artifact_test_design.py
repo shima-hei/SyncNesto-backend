@@ -13,6 +13,7 @@ from app.models.rbac import Permission, Role, RolePermission
 from app.models.test_design import TestDesign as DesignModel
 from app.models.test_design import TestItem
 from tests.routers.test_artifact_releases import all_nodes
+from tests.routers.test_artifact_releases import context as release_context  # noqa: F401
 from tests.routers.test_test_designs import design_context, graph  # noqa: F401
 
 
@@ -171,3 +172,122 @@ def test_graph_total_capacity_and_node_limits(client, db, request, monkeypatch):
     monkeypatch.setattr(snapshots, "MAX_SNAPSHOT_NODES", 1)
     assert client.post(base + "/preview", json=source).status_code == 413
     assert db.scalar(select(func.count()).select_from(ArtifactRelease)) == 0
+
+
+def test_included_graph_and_data_preserving_downgrade_refusal(client, db, request):
+    """旧kind根への包含でも全種類の認可とdowngrade拒否が働く。"""
+    import importlib.util
+    from pathlib import Path
+
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    ctx = request.getfixturevalue("release_context")
+    design = client.post(
+        f"/projects/{ctx['project'].id}/test-designs", json={"name": "包含するテスト"}
+    ).json()
+    data = {
+        "source": {
+            "kind": "requirement_document",
+            "id": ctx["doc"].id,
+            "version": ctx["doc"].version,
+        },
+        "included_sources": [{"kind": "test_design", "id": design["id"], "version": 1}],
+    }
+    preview = client.post(ctx["base"] + "/preview", json=data)
+    assert preview.status_code == 200, preview.text
+    saved = client.post(
+        ctx["base"],
+        json={
+            **data,
+            "expected_scope_digest": preview.json()["scope_digest"],
+            "request_id": str(uuid4()),
+        },
+    )
+    assert saved.status_code == 201, saved.text
+    assert saved.json()["source_kind"] == "requirement_document"
+    assert any(
+        n["node_kind"] == "test_design"
+        for n in all_nodes(client, ctx, saved.json()["id"])
+    )
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "alembic/versions/b8d2f5a0c436_artifact_test_design.py"
+    )
+    spec = importlib.util.spec_from_file_location("test_graph_migration", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with db.get_bind().connect() as connection:
+        with Operations.context(MigrationContext.configure(connection)):
+            with pytest.raises(RuntimeError, match="downgrade"):
+                module.downgrade()
+        connection.rollback()
+    assert client.get(ctx["base"] + "/" + saved.json()["id"]).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "change", ["guest", "demo", "mcp", "read", "update", "session", "other_project"]
+)
+def test_graph_authorization_boundaries(client, db, request, change):
+    """新種別でも本人・現在権限・接続realmとProject境界を維持する。"""
+    from datetime import UTC, datetime
+
+    from app.models.project import Project
+    from app.models.session import UserSession
+    from app.models.user import User
+
+    _, _, design, user, project = request.getfixturevalue("design_context")
+    base = f"/projects/{project.id}/artifact-releases"
+    data = {"source": {"kind": "test_design", "id": design["id"], "version": 1}}
+    if change in {"read", "update"}:
+        role = db.scalar(
+            select(Role.id).where(Role.key == "project_admin", Role.scope == "project")
+        )
+        permission = db.scalar(
+            select(Permission.id).where(Permission.code == f"test_plan:{change}")
+        )
+        db.execute(
+            delete(RolePermission).where(
+                RolePermission.role_id == role,
+                RolePermission.permission_id == permission,
+            )
+        )
+    elif change == "guest":
+        db.execute(update(User).where(User.id == user.id).values(user_type="guest"))
+    elif change == "session":
+        db.execute(
+            update(UserSession)
+            .where(UserSession.user_id == user.id)
+            .values(revoked_at=datetime.now(UTC))
+        )
+    elif change == "other_project":
+        # 正しいProjectの権限を持っていても、別Projectの設計IDは読まない。
+        other = Project(
+            tenant_id=project.tenant_id, project_code="OTHER-GRAPH", name="別Project"
+        )
+        db.add(other)
+        db.flush()
+        db.execute(
+            update(DesignModel)
+            .where(DesignModel.id == design["id"])
+            .values(project_id=other.id)
+        )
+    db.commit()
+    if change in {"demo", "mcp"}:
+        # _transaction境界を直接確認し、実接続へ迂回させない。
+        from app.core.exceptions import ForbiddenError
+        from app.schemas.artifact_release import ArtifactPreviewRequest
+        from app.services.artifact_release import ArtifactReleaseService
+
+        db.info.update(tenant_id=project.tenant_id, tenant_user_id=user.id)
+        db.info["demo_id" if change == "demo" else "mcp_connection_id"] = str(uuid4())
+        with pytest.raises(ForbiddenError):
+            ArtifactReleaseService().preview(
+                db, user, project.id, ArtifactPreviewRequest.model_validate(data)
+            )
+    else:
+        response = client.post(base + "/preview", json=data)
+        assert response.status_code == (
+            {"session": 401, "other_project": 404}.get(change, 403)
+        ), response.text
