@@ -25,6 +25,7 @@ from app.core.logging import (
     set_request_metadata,
     user_agent_context,
 )
+from app.core.publication_cache import PublicationCacheMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +173,7 @@ def register_middleware(app: FastAPI) -> None:
     app.add_middleware(CsrfMiddleware)
     app.add_middleware(RequestLoggingMiddleware)
     app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(PublicationCacheMiddleware)
     app.add_middleware(IngressMiddleware)
     if settings.is_public_environment:
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)

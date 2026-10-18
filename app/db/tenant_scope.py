@@ -10,6 +10,8 @@ from app.db.base import Base
 
 # 所有関係は一箇所で定義する。認証Identityへの参照は所有関係に含めない。
 OWNERS = {
+    "artifact_publications": [("project_id", "projects", "id")],
+    "artifact_publication_nodes": [("publication_id", "artifact_publications", "id")],
     "fixed_approval_requests": [("project_id", "projects", "id")],
     "fixed_approval_events": [("approval_id", "fixed_approval_requests", "id")],
     "fixed_approval_requirement_bases": [

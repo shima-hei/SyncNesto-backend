@@ -5,6 +5,7 @@ from app.models.artifact_preservation import (
     ArtifactPreservation,
     ArtifactPreservationObject,
 )
+from app.models.artifact_publication import ArtifactPublication, ArtifactPublicationNode
 from app.models.artifact_release import ArtifactRelease, ArtifactReleaseNode
 from app.models.audit_log import AuditLog
 from app.models.comment_mention import CommentMention
@@ -92,6 +93,8 @@ from app.models.test_design import (
 from app.models.user import User
 
 __all__ = [
+    "ArtifactPublication",
+    "ArtifactPublicationNode",
     "FixedApprovalEvent",
     "FixedApprovalRequest",
     "FixedApprovalRequirementBasis",

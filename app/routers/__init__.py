@@ -6,6 +6,7 @@ from app.core.tenant import get_current_tenant
 from app.routers import (
     account_actions,
     artifact_preservations,
+    artifact_publications,
     artifact_releases,
     audit_logs,
     auth,
@@ -49,6 +50,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(drafts.router, dependencies=[Depends(get_current_tenant)])
     app.include_router(health.router)
     for router in (
+        artifact_publications.router,
         artifact_preservations.router,
         artifact_releases.router,
         fixed_approvals.router,

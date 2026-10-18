@@ -1,5 +1,13 @@
 # Syncnesto Frontend Authorization Guide
 
+## Phase 2A-3a 公開準備版（内部専用）
+
+契約は[公開準備API](frontend-artifact-publications-api.md)を参照。
+新 `artifact_publication:manage/read` をproject_admin/managerへ各付与（計4）。
+全操作で現在のartifact_release:readと全sourceのread、作成ではさらにartifact_release:createを要求する。
+guest/demo/MCPを内部固定版の権限へ変換しない。新たなゲスト公開・顧客判断・DL経路は追加しない。
+公開用metadata/contentと内部originを別schemaにし、全応答をprivate/no-storeとする。
+
 ## 2026-10-12 審査専用Identity
 
 通常ユーザーのMFA必須と匿名デモの別DB・使い捨て動作は維持する。

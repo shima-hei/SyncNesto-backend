@@ -1,5 +1,7 @@
 # Syncnesto Frontend Requirements API Guide
 
+Phase 2A-3aの[公開準備版API](frontend-artifact-publications-api.md)は、要件/定義書を含む既存固定版から未公開の表現を保存する別機能。既存要件・承認の状態/本文/URLは変更しない。
+
 Phase 2A-2の版固定合意・例外付き文書正式承認・従来履歴取込は[固定内容への承認API](frontend-fixed-approvals-api.md)を参照。既存承認は未切替なら従来どおり。switch済み旧申請の判断は409 APPROVAL_MIGRATED。新方式の判断結果で既存要件statusを自動更新しない。
 
 このドキュメントは、フロントエンド実装で要件定義APIを扱うための仕様です。

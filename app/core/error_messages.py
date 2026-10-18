@@ -147,6 +147,9 @@ SPECIFICATION_REVIEW_FIELDS_REQUIRED = (
 )
 SPECIFICATION_LINK_LIMIT = "関連先の上限は200件です。"
 ARTIFACT_CURSOR_INVALID = "固定版の読み取り位置が無効です。最初から取得してください"
+PUBLICATION_SOURCE_INVALID = (
+    "固定版の構成を公開用に検証できません。元の固定版を確認してください。"
+)
 ARTIFACT_SOURCE_OVERLAP = "固定対象に同じ内容が重複しています"
 ARTIFACT_TOO_LARGE = "固定対象が保存または分割取得の上限を超えています"
 ARTIFACT_TEST_GRAPH_INVALID = (
