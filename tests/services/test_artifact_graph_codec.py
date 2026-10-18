@@ -8,8 +8,15 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.exceptions import ArtifactReleaseTooLargeError
+from app.schemas.artifact_release import ArtifactPreviewRequest
 from app.schemas.test_design import TestDesignRead as DesignRead
-from app.services.artifact_release_snapshot import canonical_bytes
+from app.services.artifact_release_snapshot import (
+    MAX_SNAPSHOT_BYTES,
+    ArtifactSnapshotBuilder,
+    Snapshot,
+    canonical_bytes,
+)
 from app.services.artifact_test_design import MAX_GRAPH_NODE_BYTES, graph_nodes
 
 pytestmark = pytest.mark.no_db
@@ -110,3 +117,47 @@ def test_large_valid_graph_collections(kind, record_property):
     record_property("stored_bytes", sum(len(canonical_bytes(n)) for n in nodes))
     record_property("parts", len(nodes) - 1)
     record_property("seconds", time.perf_counter() - started)
+
+
+def test_real_32mib_boundary_is_atomic():
+    """実際の32MiBちょうどを受理し、次のnodeを部分追加しない。"""
+    snapshot = Snapshot(
+        ArtifactPreviewRequest.model_validate(
+            {"source": {"kind": "test_design", "id": 1, "version": 1}}
+        ),
+        datetime.now(UTC),
+    )
+    index = 0
+    while snapshot.byte_size < MAX_SNAPSHOT_BYTES:
+        node = {
+            "key": f"part:{index}",
+            "parent": None,
+            "position": index,
+            "node_kind": "test_design_part",
+            "source_id": 1,
+            "source_version": 1,
+            "payload": {"text": ""},
+        }
+        overhead = len(canonical_bytes(node))
+        remaining = MAX_SNAPSHOT_BYTES - snapshot.byte_size
+        length = min(MAX_GRAPH_NODE_BYTES - overhead, remaining - overhead)
+        assert length >= 0
+        node["payload"]["text"] = "x" * length
+        ArtifactSnapshotBuilder._append_node(snapshot, node)
+        index += 1
+    assert snapshot.byte_size == MAX_SNAPSHOT_BYTES
+    count = len(snapshot.nodes)
+    with pytest.raises(ArtifactReleaseTooLargeError):
+        ArtifactSnapshotBuilder._append_node(
+            snapshot,
+            {
+                "key": "overflow",
+                "parent": None,
+                "position": index,
+                "node_kind": "test_design_part",
+                "source_id": 1,
+                "source_version": 1,
+                "payload": {"text": "x"},
+            },
+        )
+    assert snapshot.byte_size == MAX_SNAPSHOT_BYTES and len(snapshot.nodes) == count
