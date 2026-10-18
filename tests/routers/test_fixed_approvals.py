@@ -151,6 +151,25 @@ def test_review_input_size_and_exception_limits(client, approval_context):
     assert result.status_code == 422
 
 
+def test_fixed_request_survives_original_document_purge(client, db, approval_context):
+    """元文書のpurge後も、固定対象・本人判断と変更未確認の証跡を保つ。"""
+    from app.repositories.trash import TrashRepository
+
+    ctx = approval_context
+    row, _ = request(client, ctx)
+    repository = TrashRepository()
+    targets = repository.purge_plan(db, "requirement_documents", ctx["doc"].id)
+    repository.purge(db, targets, repository.detachments(db, targets))
+    db.commit()
+    authorize_as(client, ctx["approver"])
+    path = f"{ctx['approvals']}/{row['id']}"
+    assert client.get(path).status_code == 200
+    preview = client.post(path + "/decision-preview")
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["observation"]["body_comparison"] == "unavailable"
+    assert decide(client, ctx, row)[0]["status"] == "approved"
+
+
 @pytest.fixture
 def approval_context(client, db, context, create_test_user, assign_project_role):
     """申請者・指定本人と、一つの固定文書を作る。"""
