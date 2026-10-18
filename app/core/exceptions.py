@@ -33,6 +33,13 @@ class ArtifactReleaseTooLargeError(AppError):
     code = "ARTIFACT_RELEASE_TOO_LARGE"
 
 
+class FixedApprovalTooLargeError(ArtifactReleaseTooLargeError):
+    """承認・証拠を切り捨てず上限超過を返す。"""
+
+    message = error_messages.FIXED_APPROVAL_TOO_LARGE
+    code = "FIXED_APPROVAL_TOO_LARGE"
+
+
 class DemoLimitError(AppError):
     """一時環境の共有容量・発行上限を超えた。"""
 
@@ -143,6 +150,20 @@ class DuplicateResourceError(ConflictError):
 
     message = error_messages.DUPLICATE_RESOURCE
     code = "DUPLICATE_RESOURCE"
+
+
+class FixedApprovalScopeConflictError(ConflictError):
+    """確認した内容・版・根拠が変更された。"""
+
+    message = error_messages.FIXED_APPROVAL_INVALID
+    code = "APPROVAL_SCOPE_CONFLICT"
+
+
+class FixedApprovalMigratedError(ConflictError):
+    """旧方式での二重判断を拒否する。"""
+
+    message = error_messages.FIXED_APPROVAL_MIGRATED
+    code = "APPROVAL_MIGRATED"
 
 
 class SpecificationUnresolvedCommentsError(ConflictError):

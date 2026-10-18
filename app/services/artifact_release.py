@@ -67,7 +67,7 @@ class ArtifactReleaseService:
 
     @contextmanager
     def _transaction(
-        self, original: Session, user: User, project_id: int, operation: str
+        self, original: Session, user: User, project_id: int, operation: str | None
     ) -> Iterator[tuple[Session, User]]:
         """最初のSQL前にisolationを設定し、検証済みcontextを再確認する。"""
         if (
@@ -113,7 +113,8 @@ class ArtifactReleaseService:
                 ):
                     raise TokenExpiredError()
                 require_verified(actor, current)
-            self._permission(db, actor, project_id, f"artifact_release:{operation}")
+            if operation is not None:
+                self._permission(db, actor, project_id, f"artifact_release:{operation}")
             yield db, actor
 
     def _permission(self, db, user, project_id, permission) -> None:

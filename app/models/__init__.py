@@ -16,6 +16,12 @@ from app.models.document import (
     ProjectDocument,
 )
 from app.models.draft import Draft
+from app.models.fixed_approval import (
+    FixedApprovalEvent,
+    FixedApprovalRequest,
+    FixedApprovalRequirementBasis,
+    LegacyApprovalImport,
+)
 from app.models.login_attempt import LoginAttempt
 from app.models.mcp import (
     McpAuthorizationRequest,
@@ -86,6 +92,10 @@ from app.models.test_design import (
 from app.models.user import User
 
 __all__ = [
+    "FixedApprovalEvent",
+    "FixedApprovalRequest",
+    "FixedApprovalRequirementBasis",
+    "LegacyApprovalImport",
     "ArtifactPreservation",
     "ArtifactPreservationObject",
     "ArtifactRelease",
