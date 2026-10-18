@@ -6,7 +6,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-SourceKind = Literal["requirement", "requirement_document", "specification"]
+SourceKind = Literal[
+    "requirement", "requirement_document", "specification", "test_design"
+]
 ProjectionVersion = Literal["internal-preview-v1"]
 
 
