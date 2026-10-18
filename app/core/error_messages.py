@@ -160,3 +160,12 @@ PRESERVATION_IMMUTABLE = "保全完了後の添付構成は変更・取消でき
 PRESERVATION_PLAN_CHANGED = (
     "選択した資料または添付が変更されています。構成を確認し直してください"
 )
+FIXED_APPROVAL_INVALID = "固定した承認対象または確認内容が一致しません"
+FIXED_APPROVAL_MIGRATED = (
+    "この申請は新方式へ移行済みです。承認履歴から移行先を確認してください"
+)
+FIXED_APPROVAL_TOO_LARGE = "承認・移行のデータが容量上限を超えています"
+FIXED_APPROVAL_REASON_REQUIRED = "差し戻し・取消・例外には理由を入力してください"
+FIXED_APPROVAL_CANDIDATE_INVALID = (
+    "指定先はこの内容を判断する権限を持つ別の本人にしてください"
+)

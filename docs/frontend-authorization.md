@@ -941,6 +941,10 @@ CSRF token不正:
 フロントエンドでは、`401 INVALID_CREDENTIALS` はログイン画面の入力エラー、`401 AUTHENTICATION_REQUIRED` は未ログイン、`401 TOKEN_EXPIRED` はセッション期限切れ、`401 INVALID_TOKEN` はCookie破棄後の再ログイン誘導として扱ってください。`TOKEN_EXPIRED` / `INVALID_TOKEN` ではバックエンドの `Set-Cookie` をBFFからブラウザへ中継してください。`403 FORBIDDEN` は権限なし表示、`403 CSRF_TOKEN_INVALID` はCSRF tokenの再取得または再ログイン誘導として扱ってください。`409 VERSION_CONFLICT` は最新データの再表示、`409 DUPLICATE_RESOURCE` は入力値の重複エラーとして扱ってください。
 # マルチテナント対応
 
+## Phase 2A-2 固定内容への内部承認
+
+[固定内容への承認API](frontend-fixed-approvals-api.md)を参照。既存permissionで申請（artifact_release:create＋requirement:review）と指定本人判断（requirement:approve）を分離する。全同梱source read、添付のdocument:read、有効internal所属・session・MFA・CSRFを実行時に確認。新role/permission割当はない。自己・代理・guest・demo・MCPからの利用は拒否。移行済み旧pendingのUPDATEはDBでも拒否し、旧APIは409 APPROVAL_MIGRATED。業務履歴を保持して停止するため旧buildへ単純rollbackしない。
+
 現行の組織境界・3階層Role・変更されたsystem_adminの扱いは [multi-tenancy.md](multi-tenancy.md) を参照してください。業務APIには検証対象の `X-Tenant-ID` を送ります。運営者のsystem権限はProjectの業務権限を迂回しません。`/projects/{id}/me` の互換フィールド `is_system_admin` は常にfalseで、Project Roleを表示制御に使います。
 
 # Phase 2A-1a 成果物固定版（隔離開発）

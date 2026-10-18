@@ -1,5 +1,7 @@
 # Syncnesto Frontend Requirements API Guide
 
+Phase 2A-2の版固定合意・例外付き文書正式承認・従来履歴取込は[固定内容への承認API](frontend-fixed-approvals-api.md)を参照。既存承認は未切替なら従来どおり。switch済み旧申請の判断は409 APPROVAL_MIGRATED。新方式の判断結果で既存要件statusを自動更新しない。
+
 このドキュメントは、フロントエンド実装で要件定義APIを扱うための仕様です。
 
 ## Requirements

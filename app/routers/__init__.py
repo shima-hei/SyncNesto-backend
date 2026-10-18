@@ -13,6 +13,7 @@ from app.routers import (
     demo,
     documents,
     drafts,
+    fixed_approvals,
     health,
     home,
     mcp,
@@ -50,6 +51,7 @@ def register_routers(app: FastAPI) -> None:
     for router in (
         artifact_preservations.router,
         artifact_releases.router,
+        fixed_approvals.router,
         home.router,
         search.router,
         trash.router,
