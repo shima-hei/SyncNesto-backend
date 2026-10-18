@@ -149,6 +149,9 @@ SPECIFICATION_LINK_LIMIT = "関連先の上限は200件です。"
 ARTIFACT_CURSOR_INVALID = "固定版の読み取り位置が無効です。最初から取得してください"
 ARTIFACT_SOURCE_OVERLAP = "固定対象に同じ内容が重複しています"
 ARTIFACT_TOO_LARGE = "固定対象が保存または分割取得の上限を超えています"
+ARTIFACT_TEST_GRAPH_INVALID = (
+    "テスト設計の参照関係を確認できません。元の設計を確認してください"
+)
 ARTIFACT_RETRY_CONFLICT = "同時操作が発生しました。同じ操作IDで再試行してください"
 PRESERVATION_BUSY = "添付の保全処理が実行中です。しばらくして再試行してください"
 PRESERVATION_CANCELLED = "この添付保全は取り消されています"

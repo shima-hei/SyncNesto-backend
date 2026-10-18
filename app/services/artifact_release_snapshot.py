@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from pydantic import ValidationError
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -26,6 +27,8 @@ from app.models.requirement import (
 )
 from app.models.specification import Specification
 from app.schemas.artifact_release import ArtifactPreview, ArtifactPreviewRequest
+from app.services.artifact_test_design import graph_nodes
+from app.services.test_design import TestDesignService
 
 MAX_PAGE_BYTES = 1024 * 1024
 MAX_SNAPSHOT_BYTES = 32 * 1024 * 1024
@@ -86,7 +89,21 @@ class ArtifactSnapshotBuilder:
         """元対象の版・所属を確認し、本文と構成のhashを作る。"""
         snapshot = Snapshot(data, captured_at)
         for index, ref in enumerate([data.source, *data.included_sources]):
-            if ref.kind == "specification":
+            if ref.kind == "test_design":
+                service = TestDesignService()
+                design = service.get(db, project_id, ref.id)
+                self._version(design, ref.version)
+                try:
+                    graph = service.read(db, design)
+                except ValidationError:
+                    raise BadRequestError(
+                        error_messages.ARTIFACT_TEST_GRAPH_INVALID
+                    ) from None
+                nodes = graph_nodes(graph, canonical_bytes)
+                nodes[0]["position"] = index
+                for node in nodes:
+                    self._append_node(snapshot, node)
+            elif ref.kind == "specification":
                 row = db.scalar(
                     select(Specification).where(
                         Specification.id == ref.id,
@@ -311,6 +328,14 @@ class ArtifactSnapshotBuilder:
             "source_version": getattr(row, "version", None),
             "payload": payload,
         }
+        return ArtifactSnapshotBuilder._append_node(snapshot, node)
+
+    @staticmethod
+    def _append_node(snapshot, node) -> str:
+        """旧形式とgraphの両方に保存サイズと重複の制約を適用する。"""
+        key = node["key"]
+        if key in snapshot.seen:
+            raise BadRequestError(error_messages.ARTIFACT_SOURCE_OVERLAP)
         size = len(canonical_bytes(node))
         if (
             size > MAX_PAGE_BYTES - 4096

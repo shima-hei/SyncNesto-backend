@@ -30,7 +30,8 @@ class ArtifactRelease(Base):
             "project_id", "created_by", "request_id", name="uq_artifact_release_request"
         ),
         CheckConstraint(
-            "source_kind IN ('requirement','requirement_document','specification')",
+            "source_kind IN "
+            "('requirement','requirement_document','specification','test_design')",
             name="ck_artifact_release_source_kind",
         ),
         Index("ix_artifact_release_source", "project_id", "source_kind", "source_id"),

@@ -446,7 +446,7 @@ def test_repeatable_snapshot_does_not_mix_later_child_update(
     )
 
 
-@pytest.mark.parametrize("kind", ["attachment", "test_design"])
+@pytest.mark.parametrize("kind", ["attachment", "test_case"])
 def test_future_kinds_are_not_silently_accepted(client, context, kind):
     """後続の公開対象をこの単位で実装済みと見せない。"""
     data = preview_data(context)

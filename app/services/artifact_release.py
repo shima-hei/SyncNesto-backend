@@ -25,6 +25,7 @@ from app.models.artifact_release import ArtifactRelease
 from app.models.requirement import Requirement, RequirementDocument
 from app.models.session import UserSession
 from app.models.specification import Specification
+from app.models.test_design import TestDesign
 from app.models.user import User, UserType
 from app.repositories.artifact_release import ArtifactReleaseRepository
 from app.schemas.artifact_release import (
@@ -51,6 +52,7 @@ SOURCE_PERMISSIONS = {
     "requirement": "requirement",
     "requirement_document": "requirement",
     "specification": "document",
+    "test_design": "test_plan",
 }
 
 
@@ -262,6 +264,7 @@ class ArtifactReleaseService:
             "requirement": Requirement,
             "requirement_document": RequirementDocument,
             "specification": Specification,
+            "test_design": TestDesign,
         }[row.source_kind]
         query = select(model).where(
             model.id == row.source_id, model.deleted_at.is_(None)
