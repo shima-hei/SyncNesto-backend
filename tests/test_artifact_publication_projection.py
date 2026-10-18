@@ -1,12 +1,14 @@
 """DBに依存せず、壊れた構成・未知schema・分割上限を検証する。"""
 
 import json
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 
 from app.core.exceptions import ArtifactReleaseTooLargeError, BadRequestError
+from app.schemas.test_design import DesignLayout
 from app.schemas.test_design import TestDesignRead as DesignSnapshot
 from app.services.artifact_publication_projection import build_projection
 from app.services.artifact_release_snapshot import canonical_bytes
@@ -20,7 +22,7 @@ def fixture():
     graph = DesignSnapshot(
         id=5,
         project_id=3,
-        updated_at="2026-10-18T00:00:00Z",
+        updated_at=datetime(2026, 10, 18, tzinfo=UTC),
         version=2,
         name="日本語🧪",
         description="ダミー",
@@ -31,7 +33,7 @@ def fixture():
         values=[],
         links=[],
         columns=[],
-        layout={"cells": {}, "widths": {}, "heights": {}},
+        layout=DesignLayout(),
     )
     source = graph_nodes(graph, canonical_bytes)
     ids = {n["key"]: uuid4() for n in source}

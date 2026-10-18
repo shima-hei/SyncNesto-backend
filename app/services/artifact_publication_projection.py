@@ -58,9 +58,9 @@ PAYLOAD_FIELDS = {
     "specification": ("title", "kind", "summary", "content", "status"),
 }
 EXCLUDED_METADATA = [
-    "担当者・作成者のID",
-    "内部の組織・Project・元資料ID",
-    "内部画面への関連リンク",
+    "管理項目としての担当者・作成者ID",
+    "管理項目としての組織・Project・元資料ID",
+    "関連先の自動取得・内部画面への操作リンク",
     "内部コメント・監査ログ・判断履歴",
     "テスト実行結果・Issue・Evidence",
     "Storageの保存先・署名URL",
