@@ -34,6 +34,14 @@ MCP_IDENTITY_OPERATIONS = {
     ("post", "/integrations/mcp/authorization-requests/{request_id}/deny"),
 }
 
+# 明示した共有GETだけは選択組織ではなく、現在本人への許可を検証する。
+SHARED_IDENTITY_OPERATIONS = {
+    ("get", "/shared/publications"),
+    ("get", "/shared/publications/{publication_id}"),
+    ("get", "/shared/publications/{publication_id}/nodes"),
+    ("get", "/shared/publications/{publication_id}/files"),
+}
+
 
 @pytest.mark.parametrize("action", ["add", "change", "remove"])
 def test_project_membership_changes_preserve_other_tenant_sessions(
@@ -345,6 +353,7 @@ def test_all_business_routes_require_tenant_context(client):
     from fastapi.routing import APIRoute
 
     from app.core.auth import get_current_user
+    from app.routers.artifact_publication_access import shared_router
     from app.routers.mcp import router as mcp_router
 
     def has_current_user(dependency):
@@ -354,12 +363,27 @@ def test_all_business_routes_require_tenant_context(client):
 
     count = 0
     identity_count = 0
+    shared_count = 0
     for path, operations in client.app.openapi()["paths"].items():
         if path == "/" or path.startswith(
             ("/auth", "/users", "/health", "/tenants", "/demo")
         ):
             continue
         for method, operation in operations.items():
+            if (method, path) in SHARED_IDENTITY_OPERATIONS:
+                route = next(
+                    route
+                    for route in shared_router.routes
+                    if isinstance(route, APIRoute)
+                    and route.path == path
+                    and method.upper() in route.methods
+                )
+                assert has_current_user(route.dependant), (method, path)
+                assert not any(
+                    p["name"] == "X-Tenant-ID" for p in operation.get("parameters", [])
+                )
+                shared_count += 1
+                continue
             if (method, path) in MCP_IDENTITY_OPERATIONS:
                 route = next(
                     route
@@ -378,6 +402,7 @@ def test_all_business_routes_require_tenant_context(client):
             count += 1
     assert count >= 130
     assert identity_count == len(MCP_IDENTITY_OPERATIONS)
+    assert shared_count == len(SHARED_IDENTITY_OPERATIONS)
 
 
 @pytest.mark.parametrize(
@@ -699,7 +724,7 @@ def test_every_business_operation_rejects_unowned_tenant(client, create_test_use
         ):
             continue
         for method, operation in operations.items():
-            if (method, path) in MCP_IDENTITY_OPERATIONS:
+            if (method, path) in MCP_IDENTITY_OPERATIONS | SHARED_IDENTITY_OPERATIONS:
                 continue
             url = path
             for parameter in operation.get("parameters", []):

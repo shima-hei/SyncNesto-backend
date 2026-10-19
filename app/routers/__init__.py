@@ -6,6 +6,7 @@ from app.core.tenant import get_current_tenant
 from app.routers import (
     account_actions,
     artifact_preservations,
+    artifact_publication_access,
     artifact_publications,
     artifact_releases,
     audit_logs,
@@ -41,6 +42,7 @@ def register_routers(app: FastAPI) -> None:
         app: ルーターを登録するFastAPIアプリケーション。
     """
     app.include_router(auth.router)
+    app.include_router(artifact_publication_access.shared_router)
     app.include_router(mfa.router)
     app.include_router(mfa.operator_router)
     app.include_router(mcp.router)
@@ -50,6 +52,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(drafts.router, dependencies=[Depends(get_current_tenant)])
     app.include_router(health.router)
     for router in (
+        artifact_publication_access.router,
         artifact_publications.router,
         artifact_preservations.router,
         artifact_releases.router,

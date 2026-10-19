@@ -66,6 +66,9 @@ class ArtifactReleaseNode(Base):
 
     __tablename__ = "artifact_release_nodes"
     __table_args__ = (
+        Index(
+            "ix_artifact_release_node_source", "node_kind", "source_id", "release_id"
+        ),
         UniqueConstraint("release_id", "id", name="uq_artifact_release_node_identity"),
         UniqueConstraint(
             "release_id", "ordinal", name="uq_artifact_release_node_ordinal"

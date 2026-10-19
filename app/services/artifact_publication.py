@@ -209,6 +209,8 @@ class ArtifactPublicationService:
     def _read(row):
         """公開用metadataへ内部対応を混ぜない。"""
         return PublicationRead(
+            state=row.publication_state,
+            publication_version=row.publication_version,
             content=PublicationContentMetadata(
                 id=row.id,
                 title=row.title,
@@ -262,7 +264,20 @@ class ArtifactPublicationService:
                 .limit(page_size)
             )
             return PublicationList(
-                items=[PublicationSummary.model_validate(r) for r in rows],
+                items=[
+                    PublicationSummary.model_validate(
+                        {
+                            **{
+                                k: getattr(r, k)
+                                for k in PublicationSummary.model_fields
+                                if k not in {"state", "publication_version"}
+                            },
+                            "state": r.publication_state,
+                            "publication_version": r.publication_version,
+                        }
+                    )
+                    for r in rows
+                ],
                 total=total,
                 page=page,
                 page_size=page_size,

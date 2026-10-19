@@ -25,6 +25,12 @@ class ArtifactPublication(Base):
 
     __tablename__ = "artifact_publications"
     __table_args__ = (
+        UniqueConstraint("project_id", "id", name="uq_artifact_publication_project"),
+        CheckConstraint(
+            "publication_state IN ('prepared','published','withdrawn') "
+            "AND publication_version>0",
+            name="ck_artifact_publication_state",
+        ),
         UniqueConstraint(
             "project_id",
             "created_by",
@@ -68,6 +74,10 @@ class ArtifactPublication(Base):
     request_id: Mapped[UUID]
     request_digest: Mapped[str] = mapped_column(String(64))
     sealed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    publication_state: Mapped[str] = mapped_column(
+        String(20), default="prepared", server_default="prepared"
+    )
+    publication_version: Mapped[int] = mapped_column(default=1, server_default="1")
 
 
 class ArtifactPublicationNode(Base):

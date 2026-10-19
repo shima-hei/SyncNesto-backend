@@ -11,6 +11,7 @@ from app.schemas.test_design import TestDesignUpdate
 
 PUBLIC_PROJECTION = "public-preview-v1"
 PublicProjection = Literal["public-preview-v1"]
+PublicationState = Literal["prepared", "published", "withdrawn"]
 PublicationKind = Literal[
     "requirement_document",
     "section",
@@ -84,7 +85,8 @@ class PublicationSummary(BaseModel):
     byte_size: int
     captured_at: datetime
     created_at: datetime
-    state: Literal["prepared"] = "prepared"
+    state: PublicationState = "prepared"
+    publication_version: int = 1
 
 
 class PublicationInternalOrigin(BaseModel):
@@ -99,7 +101,8 @@ class PublicationInternalOrigin(BaseModel):
 class PublicationRead(BaseModel):
     """社内準備版の詳細。相手向け本文はcontentだけで完結する。"""
 
-    state: Literal["prepared"] = "prepared"
+    state: PublicationState = "prepared"
+    publication_version: int = 1
     content: PublicationContentMetadata
     internal_origin: PublicationInternalOrigin
 

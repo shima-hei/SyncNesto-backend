@@ -14,11 +14,13 @@ class PublicationCacheMiddleware:
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
         """認可失敗やvalidationも含め、対象応答へno-storeを付ける。"""
         parts = scope.get("path", "").split("/")
-        target = (
-            scope["type"] == "http"
-            and len(parts) >= 4
-            and parts[1] == "projects"
-            and parts[3] == "artifact-publications"
+        target = scope["type"] == "http" and (
+            (
+                len(parts) >= 4
+                and parts[1] == "projects"
+                and parts[3] in {"artifact-publications", "guest-participations"}
+            )
+            or (len(parts) >= 3 and parts[1:3] == ["shared", "publications"])
         )
 
         async def private_send(message: Message):

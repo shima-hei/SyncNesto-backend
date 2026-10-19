@@ -369,8 +369,8 @@ def test_test_graph_public_projection_whole_and_multi_parts(client, db, design_c
     assert '"project_id"' not in raw
 
 
-def test_stop_write_keeps_reader_and_no_external_routes(client, context, monkeypatch):
-    """新生成だけを止めてもreader/本文は残る。公開やDLのAPIは作らない。"""
+def test_stop_write_keeps_reader_and_no_external_download(client, context, monkeypatch):
+    """準備版の新生成停止でもreaderを保持し、3bでも外部DLは作らない。"""
     row, data = create(client, context)
     base = publication_base(context)
     monkeypatch.setattr(
@@ -379,8 +379,8 @@ def test_stop_write_keeps_reader_and_no_external_routes(client, context, monkeyp
     assert client.post(base, json=data).status_code == 403
     assert client.get(f"{base}/{row['content']['id']}").status_code == 200
     paths = client.get("/openapi.json").json()["paths"]
-    assert not any(p.startswith("/shared") for p in paths)
-    assert len([p for p in paths if "artifact-publications" in p]) == 4
+    assert all("download" not in p for p in paths if p.startswith("/shared"))
+    assert len([p for p in paths if "artifact-publications" in p]) == 10
 
 
 def test_capacity_conflict_and_source_purge(client, db, context, monkeypatch):

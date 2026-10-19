@@ -6,6 +6,11 @@ from app.models.artifact_preservation import (
     ArtifactPreservationObject,
 )
 from app.models.artifact_publication import ArtifactPublication, ArtifactPublicationNode
+from app.models.artifact_publication_access import (
+    ArtifactPublicationEvent,
+    ArtifactPublicationGrant,
+    ProjectGuestParticipation,
+)
 from app.models.artifact_release import ArtifactRelease, ArtifactReleaseNode
 from app.models.audit_log import AuditLog
 from app.models.comment_mention import CommentMention
@@ -93,6 +98,9 @@ from app.models.test_design import (
 from app.models.user import User
 
 __all__ = [
+    "ArtifactPublicationEvent",
+    "ArtifactPublicationGrant",
+    "ProjectGuestParticipation",
     "ArtifactPublication",
     "ArtifactPublicationNode",
     "FixedApprovalEvent",

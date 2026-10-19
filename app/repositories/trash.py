@@ -254,7 +254,14 @@ class TrashRepository:
         edges = {
             name: parents
             for name, parents in OWNERS.items()
-            if name not in {"artifact_publications", "artifact_publication_nodes"}
+            if name
+            not in {
+                "artifact_publications",
+                "artifact_publication_nodes",
+                "project_guest_participations",
+                "artifact_publication_grants",
+                "artifact_publication_events",
+            }
         }
         edges["document_links"] = edges["document_links"] + [
             ("requirement_id", "requirements", "id"),
