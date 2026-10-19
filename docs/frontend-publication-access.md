@@ -1,5 +1,27 @@
 # 固定内容の公開許可と本人限定閲覧（Phase 2A-3b）
 
+## Phase 2A-3c 共有添付DL
+
+新POST `/shared/publications/{publication_id}/files/{file_id}/download`。
+Cookie/session/MFA/CSRF、本人参加資格＋grant＋公開中の現在状態を毎回確認する。
+入力は`expected_authorization_revision`のみ、成功JSONは`url, expires_in, expires_at, authorization_revision`。
+既存schema/permission/role/API応答に変更なし。未知/他人/停止/未採用fileは同じ404、世代違い409、
+配信先/コピー/digest/時計の不整合は503 `SHARED_FILE_UNAVAILABLE`。全応答private,no-store/no-referrer。
+
+Backend flag `SHARED_PUBLICATION_DOWNLOAD_ENABLED`は既定false。
+LOCAL専用の別非公開Storageに、ready保全実体のSHA256検証済み派生コピーを条件PUTする。
+元S3キー・bucketをURL発行入力に使わせない。コピーの前後で再認可し、外部IO中は資格/Projectロックを持たない。
+最終発行時にはsession行の共有ロックも取得し、JWT/session/資格/grantの期限と両時計で最大60秒に制限する。
+元Storage/SQSの設定や内部DLは変更しない。開始済み転送/保存済みコピーは回収対象外。
+
+Frontendは同名flagの可否のみをServer Componentから渡す。
+URLの新規発行は明示操作だけ。S3 GETはCookie/内部headerなし、no-store/no-referrer、redirect拒否。
+20MiB以内とSHA256を検査し、操作中のメモリだけで保存する。本人変更/logout/mask/取消でabortし、
+古いPOST/GET応答から保存を開始しない。署名URL・bytesを永続cache/通常ログへ残さない。
+新APIの監査はURLを発行した事実であり、受領・保存・合意の完了ではない。
+
+以下は3b時点の契約を保持する（新DLを含まないという記述は3b単体の範囲）。
+
 公開準備版の本文・添付構成を変えず、宛先と期限を明示する。公開は個別合意・正式承認とは別操作。
 招待・メール・共有先の承認操作・新しいダウンロード経路は含まない。
 

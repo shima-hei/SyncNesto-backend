@@ -34,12 +34,13 @@ MCP_IDENTITY_OPERATIONS = {
     ("post", "/integrations/mcp/authorization-requests/{request_id}/deny"),
 }
 
-# 明示した共有GETだけは選択組織ではなく、現在本人への許可を検証する。
+# 明示した共有取得/添付発行だけは、選択組織ではなく現在本人を検証する。
 SHARED_IDENTITY_OPERATIONS = {
     ("get", "/shared/publications"),
     ("get", "/shared/publications/{publication_id}"),
     ("get", "/shared/publications/{publication_id}/nodes"),
     ("get", "/shared/publications/{publication_id}/files"),
+    ("post", "/shared/publications/{publication_id}/files/{file_id}/download"),
 }
 
 

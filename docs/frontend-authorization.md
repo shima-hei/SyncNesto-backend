@@ -1,5 +1,14 @@
 # Syncnesto Frontend Authorization Guide
 
+## Phase 2A-3c 共有添付の発行
+
+共有の新POSTだけに、3bの本人資格/許可/公開状態の前後検証とsession行共有ロックを加える。
+初回認証で検証したJWTのexpだけをrequest内contextへ渡し、最終発行時の期限に含める。
+既存APIの認可結果・permission/role・Cookie/CSRF仕様は変更しない。
+feature無効403、失効/対象不明404、revision不一致409、実体/配信先障害503。
+配信先へのGETは短期bearer URLであり、発行後の最大60秒と開始済み転送の扱いは別。
+詳細は`frontend-publication-access.md`の3c節を参照。
+
 ## Phase 2A-3a 公開準備版（内部専用）
 
 契約は[公開準備API](frontend-artifact-publications-api.md)を参照。

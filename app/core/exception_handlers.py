@@ -21,6 +21,7 @@ from app.core.exceptions import (
     InvalidTokenError,
     MfaUnavailableError,
     NotFoundError,
+    SharedFileUnavailableError,
     TokenExpiredError,
     UnauthorizedError,
     VersionConflictError,
@@ -30,6 +31,7 @@ from app.core.mcp import McpOAuthError
 logger = logging.getLogger(__name__)
 
 ERROR_STATUS_MAP: dict[type[AppError], int] = {
+    SharedFileUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
     ArtifactReleaseTooLargeError: status.HTTP_413_CONTENT_TOO_LARGE,
     MfaUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
     DemoLimitError: status.HTTP_429_TOO_MANY_REQUESTS,

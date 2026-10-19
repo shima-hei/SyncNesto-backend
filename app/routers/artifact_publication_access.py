@@ -23,7 +23,12 @@ from app.schemas.artifact_publication_access import (
     SharedPublicationRead,
 )
 from app.schemas.artifact_release import SourceKind
+from app.schemas.publication_download import (
+    SharedFileDownload,
+    SharedFileDownloadRequest,
+)
 from app.services.artifact_publication_access import ArtifactPublicationAccessService
+from app.services.publication_download import PublicationDownloadService
 from app.services.shared_publication import SharedPublicationService
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["publication-access"])
@@ -44,6 +49,7 @@ ParticipantManager = Annotated[
 SharedReader = Annotated[User, Depends(get_current_user)]
 service = ArtifactPublicationAccessService()
 shared_service = SharedPublicationService()
+download_service = PublicationDownloadService()
 Page = Annotated[int, Query(ge=1)]
 PageSize = Annotated[int, Query(ge=1, le=100)]
 Cursor = Annotated[str | None, Query(max_length=1000)]
@@ -219,3 +225,17 @@ def shared_publication_nodes(
 def shared_publication_files(publication_id: UUID, db: Db, user: SharedReader):
     """公開添付の一覧だけを返す。新しいDL経路は含めない。"""
     return shared_service.files(db, user, publication_id)
+
+
+@shared_router.post(
+    "/{publication_id}/files/{file_id}/download", response_model=SharedFileDownload
+)
+def download_shared_publication_file(
+    publication_id: UUID,
+    file_id: UUID,
+    data: SharedFileDownloadRequest,
+    db: Db,
+    user: SharedReader,
+):
+    """現在許可された保全添付に限り、配信専用の短期URLを発行する。"""
+    return download_service.download(db, user, publication_id, file_id, data)

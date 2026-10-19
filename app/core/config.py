@@ -263,6 +263,21 @@ class Settings:
         3600,
     )
     default_avatar_key: str = os.getenv("DEFAULT_AVATAR_KEY", "default-avatar.png")
+    shared_publication_download_enabled: bool = get_bool_env(
+        "SHARED_PUBLICATION_DOWNLOAD_ENABLED"
+    )
+    shared_file_delivery_endpoint_url: str = os.getenv(
+        "SHARED_FILE_DELIVERY_ENDPOINT_URL", ""
+    )
+    shared_file_delivery_bucket_name: str = os.getenv(
+        "SHARED_FILE_DELIVERY_BUCKET_NAME", ""
+    )
+    shared_file_delivery_access_key_id: str = field(
+        default=os.getenv("SHARED_FILE_DELIVERY_ACCESS_KEY_ID", ""), repr=False
+    )
+    shared_file_delivery_secret_access_key: str = field(
+        default=os.getenv("SHARED_FILE_DELIVERY_SECRET_ACCESS_KEY", ""), repr=False
+    )
     cors_origins: list[str] = field(
         default_factory=lambda: [
             "http://localhost:3000",

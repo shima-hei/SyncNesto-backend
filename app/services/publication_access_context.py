@@ -126,6 +126,7 @@ class PublicationAccessContext:
         write=False,
         qualifying=False,
         management=None,
+        download=False,
     ):
         """共有閲覧には組織選択を要求せず、内部contextをそのまま開放しない。"""
         if (
@@ -154,18 +155,19 @@ class PublicationAccessContext:
             Session(bind=connection, info=info) as db,
             db.begin(),
         ):
-            if write:
+            if write or download:
                 # 既存APIが先に取るFOR UPDATEと新しいactor/Project FKを逆順にしない。
                 db.execute(
                     select(User.id)
                     .where(User.id == user.id)
                     .with_for_update(read=True, key_share=True)
                 )
-                db.execute(
-                    select(Project.id)
-                    .where(Project.id == project_id)
-                    .with_for_update(read=True, key_share=True)
-                )
+                if project_id is not None:
+                    db.execute(
+                        select(Project.id)
+                        .where(Project.id == project_id)
+                        .with_for_update(read=True, key_share=True)
+                    )
             lock = (
                 "pg_advisory_xact_lock"
                 if qualifying

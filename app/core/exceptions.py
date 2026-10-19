@@ -26,6 +26,13 @@ class BadRequestError(AppError):
     code = "BAD_REQUEST"
 
 
+class SharedFileUnavailableError(AppError):
+    """共有添付の実体・配信先・期限の整合を確認できない。"""
+
+    message = error_messages.SHARED_FILE_UNAVAILABLE
+    code = "SHARED_FILE_UNAVAILABLE"
+
+
 class ArtifactReleaseTooLargeError(AppError):
     """本文を切り捨てず、容量超過を明示する。"""
 

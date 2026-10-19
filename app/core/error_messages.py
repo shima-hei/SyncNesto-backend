@@ -172,3 +172,4 @@ FIXED_APPROVAL_REASON_REQUIRED = "差し戻し・取消・例外には理由を�
 FIXED_APPROVAL_CANDIDATE_INVALID = (
     "指定先はこの内容を判断する権限を持つ別の本人にしてください"
 )
+SHARED_FILE_UNAVAILABLE = "添付を取得できません。時間をおいてもう一度操作してください"
