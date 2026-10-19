@@ -115,6 +115,8 @@ class FixedApprovalHistoryItem(BaseModel):
     status: str
     requester_id: int
     approver_id: int
+    requester_name: str | None = None
+    approver_name: str | None = None
     created_at: datetime
     finalized_at: datetime | None = None
     evidence: dict[str, Any] | None = None

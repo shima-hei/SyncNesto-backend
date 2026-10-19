@@ -696,3 +696,48 @@ def test_archived_history_survives_original_approval_deletion(
     assert listing.status_code == 200, listing.text
     assert listing.json()["total"] == 1
     assert listing.json()["items"][0]["import_id"] == imported["id"]
+    assert listing.json()["items"][0]["approver_name"] == ctx["approver"].name
+
+
+@pytest.mark.parametrize("scheme", ["fixed", "legacy"])
+def test_history_names_follow_visible_people_without_exposing_email(
+    client, db, approval_context, scheme
+):
+    """同名・改名・削除でもIDに対応する現在氏名だけを一覧へ返す。"""
+    ctx = approval_context
+    if scheme == "fixed":
+        request(client, ctx)
+    else:
+        result = client.post(
+            f"/projects/{ctx['project'].id}/approvals/request",
+            json=dict(
+                target_type="requirement_item",
+                target_id=ctx["req"].id,
+                approver_id=ctx["approver"].id,
+            ),
+        )
+        assert result.status_code == 201, result.text
+    for identity in (ctx["user"].id, ctx["approver"].id):
+        db.get(User, identity).name = "同じ氏名"
+    db.commit()
+    for user in (ctx["user"], ctx["approver"]):
+        authorize_as(client, user)
+        result = client.get(ctx["approvals"], params={"mine": True, "page_size": 1})
+        assert result.status_code == 200, result.text
+        item = result.json()["items"][0]
+        assert item["requester_id"] == ctx["user"].id
+        assert item["approver_id"] == ctx["approver"].id
+        assert item["requester_name"] == item["approver_name"] == "同じ氏名"
+        assert "email" not in str(item)
+    authorize_as(client, ctx["user"])
+    db.get(User, ctx["approver"].id).name = "変更後の氏名"
+    db.commit()
+    assert (
+        client.get(ctx["approvals"]).json()["items"][0]["approver_name"]
+        == "変更後の氏名"
+    )
+    db.get(User, ctx["approver"].id).deleted_at = datetime.now(UTC)
+    db.commit()
+    item = client.get(ctx["approvals"]).json()["items"][0]
+    assert item["approver_name"] is None
+    assert item["requester_name"] == "同じ氏名"

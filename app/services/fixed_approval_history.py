@@ -5,6 +5,7 @@ from sqlalchemy import DateTime, exists, func, or_, select
 from app.core.exceptions import FixedApprovalTooLargeError
 from app.models.fixed_approval import FixedApprovalRequest, LegacyApprovalImport
 from app.models.requirement import RequirementApproval, RequirementDocument
+from app.models.user import User
 from app.schemas.fixed_approval import (
     FixedApprovalHistoryItem,
     FixedApprovalHistoryPage,
@@ -246,8 +247,34 @@ class FixedApprovalHistoryService:
             items.sort(
                 key=lambda item: (item.created_at, item.scheme, item.id), reverse=True
             )
+            visible_items = items[(page - 1) * page_size : page * page_size]
+            user_ids = {
+                identity
+                for item in visible_items
+                for identity in (item.requester_id, item.approver_id)
+            }
+            names = (
+                {
+                    identity: name
+                    for identity, name in db.execute(
+                        select(User.id, User.name).where(
+                            User.id.in_(user_ids), User.deleted_at.is_(None)
+                        )
+                    )
+                }
+                if user_ids
+                else {}
+            )
             return FixedApprovalHistoryPage(
-                items=items[(page - 1) * page_size : page * page_size],
+                items=[
+                    item.model_copy(
+                        update={
+                            "requester_name": names.get(item.requester_id),
+                            "approver_name": names.get(item.approver_id),
+                        }
+                    )
+                    for item in visible_items
+                ],
                 total=total,
                 page=page,
                 page_size=page_size,

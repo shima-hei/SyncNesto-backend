@@ -6,6 +6,8 @@
 
 正確な型・operationIdはOpenAPIを正本とし、FrontendのOrvalを生成する。
 
+一覧itemsの `requester_name` / `approver_name` はnullableの現在表示名。閲覧可能な返却ページに登場する申請者・承認者だけを一括取得し、削除済みはnull。メールや他組織の所属を返さず、当時の氏名の証明として扱わない。保存済み原記録・判断者ID・取込証拠は変更しない。
+
 | Method | Path | 内容 |
 | --- | --- | --- |
 | POST | /fixed-approvals/preview | 固定構成・本人・根拠と例外を確認。副作用なし |
