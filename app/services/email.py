@@ -11,7 +11,7 @@ from email.utils import getaddresses
 import httpx
 
 from app.core.config import settings
-from app.core.exceptions import EmailUnavailableError
+from app.core.exceptions import EmailUnavailableError, LocalEmailCaptureError
 
 RESEND_EMAILS_URL = "https://api.resend.com/emails"
 
@@ -108,6 +108,7 @@ class EmailService:
     @staticmethod
     def _send_capture(message: OutgoingEmail) -> str:
         """通常SMTPの値を読まず、失敗時も他の配信先へ切り替えない。"""
+        started = False
         try:
             sender = Address(
                 addr_spec=getaddresses([settings.local_email_capture_from])[0][1]
@@ -128,13 +129,20 @@ class EmailService:
                 settings.local_email_capture_port,
                 timeout=10,
             ) as client:
+                started = True
                 if client.send_message(
                     email, from_addr=str(sender), to_addrs=[message.to]
                 ):
-                    raise EmailUnavailableError()
+                    raise LocalEmailCaptureError(uncertain=False)
             return identity
+        except (
+            smtplib.SMTPRecipientsRefused,
+            smtplib.SMTPSenderRefused,
+            smtplib.SMTPDataError,
+        ):
+            raise LocalEmailCaptureError(uncertain=False) from None
         except (smtplib.SMTPException, OSError, ValueError, IndexError):
-            raise EmailUnavailableError() from None
+            raise LocalEmailCaptureError(uncertain=started) from None
 
     @staticmethod
     def _sender_address() -> str:

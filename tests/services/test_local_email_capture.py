@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.core.config import settings
-from app.core.exceptions import EmailUnavailableError
+from app.core.exceptions import EmailUnavailableError, LocalEmailCaptureError
 from app.services.email import EmailService, OutgoingEmail
 
 pytestmark = pytest.mark.no_db
@@ -74,6 +74,19 @@ def test_capture_failure_never_falls_back(capture, monkeypatch):
     )
     with pytest.raises(EmailUnavailableError):
         EmailService().send(message())
+
+
+@pytest.mark.parametrize("during_send", [False, True])
+def test_capture_distinguishes_pre_delivery_failure_and_unknown(capture, during_send):
+    """未接続と送信中断の確度を混同せず、自動再送しない。"""
+    client, constructor = capture
+    if during_send:
+        client.send_message.side_effect = TimeoutError("test only")
+    else:
+        constructor.side_effect = ConnectionRefusedError("test only")
+    with pytest.raises(LocalEmailCaptureError) as error:
+        EmailService().send(message())
+    assert error.value.uncertain is during_send
 
 
 @pytest.mark.parametrize(

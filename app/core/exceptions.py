@@ -232,6 +232,15 @@ class EmailUnavailableError(AppError):
     code = "EMAIL_UNAVAILABLE"
 
 
+class LocalEmailCaptureError(EmailUnavailableError):
+    """既知の配送失敗と、受付が確定できない失敗を分ける。"""
+
+    def __init__(self, *, uncertain: bool):
+        """秘密やSMTP応答本文を例外へ保持しない。"""
+        super().__init__()
+        self.uncertain = uncertain
+
+
 class AccountActionInvalidError(BadRequestError):
     """本人確認リンクが無効な場合の例外。ログインJWTとは区別する。"""
 

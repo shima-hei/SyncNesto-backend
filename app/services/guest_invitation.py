@@ -21,6 +21,7 @@ from app.core.exceptions import (
     DuplicateResourceError,
     EmailUnavailableError,
     ForbiddenError,
+    LocalEmailCaptureError,
     MfaRequiredError,
     NotFoundError,
     VersionConflictError,
@@ -389,6 +390,8 @@ class GuestInvitationService:
                 )
             )
             delivery = "sent"
+        except LocalEmailCaptureError as error:
+            delivery = "unknown" if error.uncertain else "failed"
         except EmailUnavailableError:
             delivery = "unknown"
         with self.management(original, user, project_id, write=True) as (db, actor):
