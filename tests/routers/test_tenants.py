@@ -52,6 +52,24 @@ INVITATION_IDENTITY_OPERATIONS = {
     ("post", "/guest-invitations/{invitation_id}/decline"),
 }
 
+# 固定した公開許可に結び付く指定本人の5操作だけを検証する。
+GUEST_APPROVAL_IDENTITY_OPERATIONS = {
+    ("get", "/shared/publications/approval-requests"),
+    ("get", "/shared/publications/{publication_id}/approval-requests/{approval_id}"),
+    (
+        "get",
+        "/shared/publications/{publication_id}/approval-requests/{approval_id}/bases",
+    ),
+    (
+        "post",
+        "/shared/publications/{publication_id}/approval-requests/{approval_id}/decision-preview",
+    ),
+    (
+        "post",
+        "/shared/publications/{publication_id}/approval-requests/{approval_id}/decisions",
+    ),
+}
+
 
 @pytest.mark.parametrize("action", ["add", "change", "remove"])
 def test_project_membership_changes_preserve_other_tenant_sessions(
@@ -364,6 +382,7 @@ def test_all_business_routes_require_tenant_context(client):
 
     from app.core.auth import get_current_user
     from app.routers.artifact_publication_access import shared_router
+    from app.routers.guest_fixed_approvals import shared_router as approval_router
     from app.routers.guest_invitations import (
         optional_user,
         recipient_router,
@@ -380,12 +399,27 @@ def test_all_business_routes_require_tenant_context(client):
     identity_count = 0
     shared_count = 0
     invitation_count = 0
+    approval_count = 0
     for path, operations in client.app.openapi()["paths"].items():
         if path == "/" or path.startswith(
             ("/auth", "/users", "/health", "/tenants", "/demo")
         ):
             continue
         for method, operation in operations.items():
+            if (method, path) in GUEST_APPROVAL_IDENTITY_OPERATIONS:
+                route = next(
+                    route
+                    for route in approval_router.routes
+                    if isinstance(route, APIRoute)
+                    and route.path == path
+                    and method.upper() in route.methods
+                )
+                assert has_current_user(route.dependant), (method, path)
+                assert not any(
+                    p["name"] == "X-Tenant-ID" for p in operation.get("parameters", [])
+                )
+                approval_count += 1
+                continue
             if (method, path) in INVITATION_IDENTITY_OPERATIONS:
                 route = next(
                     route
@@ -443,6 +477,7 @@ def test_all_business_routes_require_tenant_context(client):
     assert identity_count == len(MCP_IDENTITY_OPERATIONS)
     assert shared_count == len(SHARED_IDENTITY_OPERATIONS)
     assert invitation_count == len(INVITATION_IDENTITY_OPERATIONS)
+    assert approval_count == len(GUEST_APPROVAL_IDENTITY_OPERATIONS)
 
 
 @pytest.mark.parametrize(
@@ -769,6 +804,7 @@ def test_every_business_operation_rejects_unowned_tenant(client, create_test_use
                 in MCP_IDENTITY_OPERATIONS
                 | SHARED_IDENTITY_OPERATIONS
                 | INVITATION_IDENTITY_OPERATIONS
+                | GUEST_APPROVAL_IDENTITY_OPERATIONS
             ):
                 continue
             url = path
