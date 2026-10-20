@@ -675,3 +675,140 @@ def test_local_optional_mfa_still_requires_verified_invitation_session(
     assert client.get(path).json()["next_step"] == "accept"
     post(path + "/accept", command(row))
     assert settings.mfa_required is False
+
+
+def test_manager_cannot_invite_without_existing_permission(
+    client, db, context, invitation_settings
+):
+    """通常managerを招待権限へ拡張しない。"""
+    from app.models.rbac import Role
+
+    manager = db.scalar(
+        select(Role).where(Role.key == "manager", Role.scope == "project")
+    )
+    db.execute(
+        update(ProjectMember)
+        .where(
+            ProjectMember.project_id == context["project"].id,
+            ProjectMember.user_id == context["user"].id,
+        )
+        .values(role_id=manager.id)
+    )
+    db.commit()
+    assert client.get(base(context)).status_code == 403
+    assert (
+        client.post(
+            base(context),
+            json=dict(
+                request_id=str(uuid4()),
+                email=EMAIL,
+                display_label="お客様",
+                participation_expires_at=(
+                    datetime.now(UTC) + timedelta(days=30)
+                ).isoformat(),
+            ),
+        ).status_code
+        == 403
+    )
+    assert not invitation_settings
+
+
+@pytest.mark.parametrize("change", ["email", "disabled", "membership", "session"])
+def test_recipient_is_rechecked_before_acceptance(
+    client, db, context, create_test_user, invitation_settings, change
+):
+    """確認後に本人の資格やsessionが変化したら確定できない。"""
+    person = guest(db, create_test_user)
+    row, token, _ = create(client, context, invitation_settings)
+    client.cookies.clear()
+    inspect(client, row, token)
+    authorize_recipient(client, person)
+    if change == "email":
+        person.email = "ux-changed@example.com"
+    elif change == "disabled":
+        person.is_active = False
+    elif change == "membership":
+        db.execute(
+            update(TenantMember)
+            .where(TenantMember.user_id == person.id)
+            .values(status="active")
+        )
+    else:
+        db.execute(
+            update(UserSession)
+            .where(UserSession.user_id == person.id)
+            .values(revoked_at=datetime.now(UTC), revoked_reason="test")
+        )
+    db.commit()
+    response = client.post(
+        f"/guest-invitations/{row['id']}/accept", json=command(row), headers=ORIGIN
+    )
+    assert response.status_code in {401, 403, 404}
+    assert db.scalar(select(func.count()).select_from(ProjectGuestParticipation)) == 0
+
+
+def test_delivery_unknown_does_not_accept_or_retry(
+    client, context, invitation_settings, monkeypatch
+):
+    """SMTPの結果が不明でも受諾扱いや自動再送にしない。"""
+    from app.core.exceptions import EmailUnavailableError
+
+    calls = []
+
+    def fail(self, message):
+        calls.append(message)
+        raise EmailUnavailableError()
+
+    monkeypatch.setattr(EmailService, "send", fail)
+    data = dict(
+        request_id=str(uuid4()),
+        email=EMAIL,
+        display_label="お客様",
+        participation_expires_at=(datetime.now(UTC) + timedelta(days=30)).isoformat(),
+    )
+    response = client.post(base(context), json=data)
+    assert response.status_code == 201, response.text
+    row = response.json()
+    assert row["state"] == "pending" and row["delivery_state"] == "unknown"
+    assert client.post(base(context), json=data).json() == row
+    assert len(calls) == 1
+
+
+def test_expired_confirmation_does_not_allow_registration(
+    client, db, context, invitation_settings
+):
+    """期限の短い確認Cookieも各操作でDB時計を照合する。"""
+    import hashlib
+    import secrets
+    import time
+
+    from sqlalchemy import insert
+
+    row, _, _ = create(client, context, invitation_settings)
+    proof = secrets.token_urlsafe(32)
+    db.execute(
+        insert(ProjectGuestInvitationCheck.__table__).values(
+            id=uuid4(),
+            project_id=context["project"].id,
+            invitation_id=row["id"],
+            token_generation=1,
+            proof_hash=hashlib.sha256(proof.encode()).hexdigest(),
+            expires_at=datetime.now(UTC) + timedelta(seconds=0.5),
+        )
+    )
+    db.commit()
+    client.cookies.clear()
+    client.cookies.set(
+        "guest_invitation_check", proof, domain="testserver.local", path="/"
+    )
+    time.sleep(0.6)
+    path = f"/guest-invitations/{row['id']}"
+    assert client.get(path).status_code == 404
+    assert (
+        client.post(
+            path + "/register",
+            json=command(row, name="本人", password="dummy-long-password"),
+            headers=ORIGIN,
+        ).status_code
+        == 404
+    )
