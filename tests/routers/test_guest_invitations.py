@@ -787,7 +787,7 @@ def test_expired_confirmation_does_not_allow_registration(
     row, _, _ = create(client, context, invitation_settings)
     proof = secrets.token_urlsafe(32)
     db.execute(
-        insert(ProjectGuestInvitationCheck.__table__).values(
+        insert(ProjectGuestInvitationCheck).values(
             id=uuid4(),
             project_id=context["project"].id,
             invitation_id=row["id"],
