@@ -230,6 +230,15 @@ class Settings:
     initial_admin_password: str | None = os.getenv("INITIAL_ADMIN_PASSWORD")
     initial_admin_name: str = os.getenv("INITIAL_ADMIN_NAME", "Initial Admin")
     email_provider: str = os.getenv("EMAIL_PROVIDER", "disabled")
+    guest_invitations_enabled: bool = get_bool_env("GUEST_INVITATIONS_ENABLED")
+    local_email_capture_recipients: str = os.getenv(
+        "LOCAL_EMAIL_CAPTURE_RECIPIENTS", ""
+    )
+    local_email_capture_host: str = os.getenv("LOCAL_EMAIL_CAPTURE_HOST", "127.0.0.1")
+    local_email_capture_port: int = get_int_env("LOCAL_EMAIL_CAPTURE_PORT", 1025)
+    local_email_capture_from: str = os.getenv(
+        "LOCAL_EMAIL_CAPTURE_FROM", "Syncnesto LOCAL <syncnesto@example.com>"
+    )
     email_from: str = os.getenv("EMAIL_FROM", "")
     frontend_public_url: str = os.getenv("FRONTEND_PUBLIC_URL", "http://localhost:3000")
     resend_api_key: str = field(default=os.getenv("RESEND_API_KEY", ""), repr=False)
@@ -403,6 +412,10 @@ class Settings:
 
     def validate_production(self) -> None:
         """公開環境の設定漏れを起動時に拒否する。"""
+        if self.is_public_environment and self.local_email_capture_recipients:
+            raise RuntimeError(
+                "LOCAL email capture is forbidden in public environments"
+            )
         if not 0 <= self.deleted_data_retention_days <= 3650:
             raise RuntimeError("DELETED_DATA_RETENTION_DAYS must be between 0 and 3650")
         if self.app_env not in {"development", "test", "production"}:

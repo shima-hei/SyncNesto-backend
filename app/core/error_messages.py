@@ -27,6 +27,13 @@ ACCOUNT_ACTION_RATE_LIMITED = "申請が多すぎます。1分ほど待って再
 
 INVALID_SYSTEM_ROLE_KEY = "Invalid system role key: {role_key}"
 GUEST_SYSTEM_ADMIN_NOT_ALLOWED = "Guest users cannot have system_admin role"
+GUEST_INVITATION_FUTURE_EXPIRY = "参加期限を未来にしてください"
+GUEST_INVITATION_PENDING = "この宛先への招待は返答待ちです"
+GUEST_INVITATION_RECREATE = "期限・招待者を確認し、新しい招待を作成してください"
+GUEST_INVITATION_LOGIN = "登録済みアカウントでログインしてください"
+GUEST_INVITATION_REVOKE_PARTICIPATION = (
+    "既存の参加を管理者が停止してから、新しく招待してください"
+)
 
 UNSUPPORTED_IMAGE_CONTENT_TYPE = "Unsupported image content type"
 IMAGE_FILE_REQUIRED = "Image file is required"

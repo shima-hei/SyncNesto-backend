@@ -987,3 +987,7 @@ Projectに`artifact_release:create`と`artifact_release:read`を追加。
 有効tenant・Project所属・Cookie/MFA/CSRFの既存条件を継承し、内部ユーザーだけを対象とする。
 guest・demo・MCPからの新API利用は拒否。顧客公開・承認の権限ではない。
 詳細は[固定版API](frontend-artifact-releases-api.md)。既存環境への適用は別判断。
+
+# ゲスト招待
+
+Phase 2B-1の限定Cookie・匿名Origin・通常MFA・既存permissionとの接続は [frontend-guest-invitations.md](frontend-guest-invitations.md) を参照。

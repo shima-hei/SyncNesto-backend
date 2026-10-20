@@ -16,6 +16,7 @@ from app.routers import (
     documents,
     drafts,
     fixed_approvals,
+    guest_invitations,
     health,
     home,
     mcp,
@@ -43,6 +44,7 @@ def register_routers(app: FastAPI) -> None:
     """
     app.include_router(auth.router)
     app.include_router(artifact_publication_access.shared_router)
+    app.include_router(guest_invitations.recipient_router)
     app.include_router(mfa.router)
     app.include_router(mfa.operator_router)
     app.include_router(mcp.router)
@@ -57,6 +59,7 @@ def register_routers(app: FastAPI) -> None:
         artifact_preservations.router,
         artifact_releases.router,
         fixed_approvals.router,
+        guest_invitations.router,
         home.router,
         search.router,
         trash.router,

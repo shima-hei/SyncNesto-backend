@@ -18,9 +18,15 @@ class PublicationCacheMiddleware:
             (
                 len(parts) >= 4
                 and parts[1] == "projects"
-                and parts[3] in {"artifact-publications", "guest-participations"}
+                and parts[3]
+                in {
+                    "artifact-publications",
+                    "guest-participations",
+                    "guest-invitations",
+                }
             )
             or (len(parts) >= 3 and parts[1:3] == ["shared", "publications"])
+            or (len(parts) >= 2 and parts[1] == "guest-invitations")
         )
 
         async def private_send(message: Message):

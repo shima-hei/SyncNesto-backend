@@ -28,6 +28,11 @@ from app.models.fixed_approval import (
     FixedApprovalRequirementBasis,
     LegacyApprovalImport,
 )
+from app.models.guest_invitation import (
+    ProjectGuestInvitation,
+    ProjectGuestInvitationCheck,
+    ProjectGuestInvitationEvent,
+)
 from app.models.login_attempt import LoginAttempt
 from app.models.mcp import (
     McpAuthorizationRequest,
@@ -98,6 +103,9 @@ from app.models.test_design import (
 from app.models.user import User
 
 __all__ = [
+    "ProjectGuestInvitation",
+    "ProjectGuestInvitationCheck",
+    "ProjectGuestInvitationEvent",
     "ArtifactPublicationEvent",
     "ArtifactPublicationGrant",
     "ProjectGuestParticipation",

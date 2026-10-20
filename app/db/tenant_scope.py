@@ -10,6 +10,9 @@ from app.db.base import Base
 
 # 所有関係は一箇所で定義する。認証Identityへの参照は所有関係に含めない。
 OWNERS = {
+    "project_guest_invitations": [("project_id", "projects", "id")],
+    "project_guest_invitation_checks": [("project_id", "projects", "id")],
+    "project_guest_invitation_events": [("project_id", "projects", "id")],
     "project_guest_participations": [("project_id", "projects", "id")],
     "artifact_publication_grants": [("project_id", "projects", "id")],
     "artifact_publication_events": [("project_id", "projects", "id")],

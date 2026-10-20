@@ -43,6 +43,15 @@ SHARED_IDENTITY_OPERATIONS = {
     ("post", "/shared/publications/{publication_id}/files/{file_id}/download"),
 }
 
+# メール確認Cookieと本人の認証で検査する新しい5操作だけを分離する。
+INVITATION_IDENTITY_OPERATIONS = {
+    ("post", "/guest-invitations/{invitation_id}/inspect"),
+    ("get", "/guest-invitations/{invitation_id}"),
+    ("post", "/guest-invitations/{invitation_id}/register"),
+    ("post", "/guest-invitations/{invitation_id}/accept"),
+    ("post", "/guest-invitations/{invitation_id}/decline"),
+}
+
 
 @pytest.mark.parametrize("action", ["add", "change", "remove"])
 def test_project_membership_changes_preserve_other_tenant_sessions(
@@ -355,6 +364,11 @@ def test_all_business_routes_require_tenant_context(client):
 
     from app.core.auth import get_current_user
     from app.routers.artifact_publication_access import shared_router
+    from app.routers.guest_invitations import (
+        optional_user,
+        recipient_router,
+        same_origin,
+    )
     from app.routers.mcp import router as mcp_router
 
     def has_current_user(dependency):
@@ -365,12 +379,36 @@ def test_all_business_routes_require_tenant_context(client):
     count = 0
     identity_count = 0
     shared_count = 0
+    invitation_count = 0
     for path, operations in client.app.openapi()["paths"].items():
         if path == "/" or path.startswith(
             ("/auth", "/users", "/health", "/tenants", "/demo")
         ):
             continue
         for method, operation in operations.items():
+            if (method, path) in INVITATION_IDENTITY_OPERATIONS:
+                route = next(
+                    route
+                    for route in recipient_router.routes
+                    if isinstance(route, APIRoute)
+                    and route.path == path
+                    and method.upper() in route.methods
+                )
+                dependencies = {
+                    dependency.call for dependency in route.dependant.dependencies
+                }
+                assert (
+                    get_current_user in dependencies
+                    if path.endswith("/accept")
+                    else optional_user in dependencies
+                )
+                if method == "post":
+                    assert same_origin in dependencies
+                assert not any(
+                    p["name"] == "X-Tenant-ID" for p in operation.get("parameters", [])
+                )
+                invitation_count += 1
+                continue
             if (method, path) in SHARED_IDENTITY_OPERATIONS:
                 route = next(
                     route
@@ -404,6 +442,7 @@ def test_all_business_routes_require_tenant_context(client):
     assert count >= 130
     assert identity_count == len(MCP_IDENTITY_OPERATIONS)
     assert shared_count == len(SHARED_IDENTITY_OPERATIONS)
+    assert invitation_count == len(INVITATION_IDENTITY_OPERATIONS)
 
 
 @pytest.mark.parametrize(
@@ -725,7 +764,12 @@ def test_every_business_operation_rejects_unowned_tenant(client, create_test_use
         ):
             continue
         for method, operation in operations.items():
-            if (method, path) in MCP_IDENTITY_OPERATIONS | SHARED_IDENTITY_OPERATIONS:
+            if (
+                (method, path)
+                in MCP_IDENTITY_OPERATIONS
+                | SHARED_IDENTITY_OPERATIONS
+                | INVITATION_IDENTITY_OPERATIONS
+            ):
                 continue
             url = path
             for parameter in operation.get("parameters", []):
