@@ -587,7 +587,7 @@ def test_cancel_and_decision_have_one_terminal_event(
         original = SharedFixedApprovalService.get
         calls = [0]
 
-        def hold(self, *args, **kwargs):
+        def hold_decision(self, *args, **kwargs):
             value = original(self, *args, **kwargs)
             if kwargs.get("write"):
                 calls[0] += 1
@@ -596,18 +596,18 @@ def test_cancel_and_decision_have_one_terminal_event(
                     assert release.wait(10)
             return value
 
-        monkeypatch.setattr(SharedFixedApprovalService, "get", hold)
+        monkeypatch.setattr(SharedFixedApprovalService, "get", hold_decision)
     else:
         original = FixedApprovalRepository.get
 
-        def hold(self, *args, **kwargs):
+        def hold_cancel(self, *args, **kwargs):
             value = original(self, *args, **kwargs)
             if kwargs.get("lock"):
                 acquired.set()
                 assert release.wait(10)
             return value
 
-        monkeypatch.setattr(FixedApprovalRepository, "get", hold)
+        monkeypatch.setattr(FixedApprovalRepository, "get", hold_cancel)
 
     def judge():
         return other.post(
