@@ -562,6 +562,96 @@ def test_decision_and_revocation_serialize_at_publication_boundary(
     other.close()
 
 
+@pytest.mark.parametrize("first", ["decision", "cancel"])
+def test_cancel_and_decision_have_one_terminal_event(
+    client, db, guest_approval_context, monkeypatch, first
+):
+    """取消と本人判断の両順で、後着の判断を上書きしない。"""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+    from app.repositories.fixed_approval import FixedApprovalRepository
+    from app.services.shared_fixed_approval import SharedFixedApprovalService
+
+    ctx = guest_approval_context
+    row, _ = create_request(client, ctx)
+    other = TestClient(create_app())
+    guest_login(other, db, ctx)
+    path = approval_path(ctx, row)
+    proof = other.post(path + "/decision-preview").json()["review_proof"]
+    acquired, release = Event(), Event()
+    if first == "decision":
+        original = SharedFixedApprovalService.get
+        calls = [0]
+
+        def hold(self, *args, **kwargs):
+            value = original(self, *args, **kwargs)
+            if kwargs.get("write"):
+                calls[0] += 1
+                if calls[0] == 2:
+                    acquired.set()
+                    assert release.wait(10)
+            return value
+
+        monkeypatch.setattr(SharedFixedApprovalService, "get", hold)
+    else:
+        original = FixedApprovalRepository.get
+
+        def hold(self, *args, **kwargs):
+            value = original(self, *args, **kwargs)
+            if kwargs.get("lock"):
+                acquired.set()
+                assert release.wait(10)
+            return value
+
+        monkeypatch.setattr(FixedApprovalRepository, "get", hold)
+
+    def judge():
+        return other.post(
+            path + "/decisions",
+            json=dict(
+                version=1,
+                operation_id=str(uuid4()),
+                review_proof=proof,
+                decision="approve",
+                confirm_fixed_scope=True,
+                confirm_changed_or_unknown=True,
+            ),
+        )
+
+    def cancel():
+        return client.post(
+            f"/projects/{ctx['project'].id}/fixed-approvals/{row['id']}/cancel",
+            json=dict(version=1, operation_id=str(uuid4()), reason="競合時の取消"),
+        )
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            leading = pool.submit(judge if first == "decision" else cancel)
+            assert acquired.wait(10)
+            trailing = pool.submit(cancel if first == "decision" else judge)
+            release.set()
+            before, after = leading.result(timeout=15), trailing.result(timeout=15)
+        assert before.status_code == 200, before.text
+        assert after.status_code == 409, after.text
+        db.expire_all()
+        assert db.get(FixedApprovalRequest, UUID(row["id"])).status == (
+            "approved" if first == "decision" else "cancelled"
+        )
+        assert db.scalar(
+            select(func.count()).select_from(FixedApprovalEvent).where(
+                FixedApprovalEvent.approval_id == UUID(row["id"]),
+                FixedApprovalEvent.seq == 2,
+            )
+        ) == 1
+    finally:
+        release.set()
+        other.close()
+
+
 def test_changed_child_content_requires_fresh_explicit_confirmation(
     client, db, guest_approval_context
 ):
