@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query, Response
 from app.core.auth import require_project_permission
 from app.models.user import User
 from app.routers.artifact_releases import Creator, Db
+from app.routers.guest_invitations import InvitationRoute
 from app.schemas.fixed_approval import (
     ApprovalBasisPage,
     ApprovalCancelInput,
@@ -38,9 +39,6 @@ history = FixedApprovalHistoryService()
 migration = FixedApprovalMigrationService()
 
 
-@router.get(
-    "/fixed-approvals/{approval_id}/next-actions", response_model=ApprovalNextActions
-)
 def read_approval_next_actions(
     project_id: int, approval_id: UUID, db: Db, user: Reader, response: Response
 ):
@@ -48,6 +46,15 @@ def read_approval_next_actions(
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
     return ApprovalNextActionsService().read(db, user, project_id, approval_id)
+
+
+router.add_api_route(
+    "/fixed-approvals/{approval_id}/next-actions",
+    read_approval_next_actions,
+    methods=["GET"],
+    response_model=ApprovalNextActions,
+    route_class_override=InvitationRoute,
+)
 
 
 @router.post("/fixed-approvals/preview", response_model=FixedApprovalPreview)

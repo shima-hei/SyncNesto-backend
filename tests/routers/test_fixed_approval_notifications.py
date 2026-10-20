@@ -463,3 +463,20 @@ def test_shared_errors_are_private_and_do_not_echo_input(client):
         assert response.status_code == 401
         assert "no-store" in response.headers["cache-control"]
         assert response.headers["referrer-policy"] == "no-referrer"
+
+
+def test_new_validation_errors_do_not_echo_input(client, approval_context):
+    """新規5操作の検証失敗へ入力値を転記しない。"""
+    ctx = approval_context
+    marker = "do-not-echo-private-input"
+    for path in [
+        f"{ctx['approvals']}/{marker}/next-actions",
+        f"/shared/notifications?page_size={marker}",
+    ]:
+        response = client.get(path)
+        assert response.status_code == 422, response.text
+        assert marker not in response.text
+        assert all(
+            "input" not in error and "ctx" not in error
+            for error in response.json()["detail"]
+        )
