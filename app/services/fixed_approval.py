@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from uuid import uuid4, uuid5
 
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import DBAPIError
 
 from app.core import error_messages
@@ -41,6 +41,7 @@ from app.schemas.fixed_approval import (
     FixedApprovalEventRead,
     FixedApprovalPreview,
     FixedApprovalRead,
+    GuestApprovalContext,
 )
 from app.services.artifact_release import SOURCE_PERMISSIONS, ArtifactReleaseService
 from app.services.artifact_release_snapshot import (
@@ -434,6 +435,7 @@ class FixedApprovalService:
         request_id,
         request_digest,
         import_id=None,
+        guest_binding=None,
     ):
         """依頼・根拠・イベント・封印を同じtransactionへ保存する。"""
         manifest = preview.scope_manifest
@@ -447,7 +449,9 @@ class FixedApprovalService:
             preservation_id=data.preservation_id,
             scope_manifest=manifest,
             scope_digest=preview.scope_digest,
-            policy_version="fixed-approval-v1",
+            policy_version="fixed-approval-guest-v1"
+            if guest_binding
+            else "fixed-approval-v1",
             requester_id=actor.id,
             approver_id=data.approver_id,
             request_note=data.request_note,
@@ -458,8 +462,30 @@ class FixedApprovalService:
             request_digest=request_digest,
             legacy_import_id=import_id,
         )
-        db.add(row)
-        db.flush()
+        if guest_binding:
+            # 外部Identityを組織内Identityとして汎用ORM検証へ渡さない。
+            # 呼出元の本人別許可検証と新DBガードを通した専用insert。
+            values = {
+                column.name: getattr(row, column.name)
+                for column in row.__table__.columns
+                if getattr(row, column.name) is not None
+            }
+            from app.repositories.guest_fixed_approval import (
+                GuestFixedApprovalRepository,
+            )
+
+            db.execute(GuestFixedApprovalRepository.requests.insert().values(**values))
+            saved = db.get(FixedApprovalRequest, row.id)
+            assert saved is not None
+            row = saved
+        else:
+            db.add(row)
+            db.flush()
+        if guest_binding:
+            from app.models.guest_fixed_approval import FixedApprovalGuestBinding
+
+            db.add(FixedApprovalGuestBinding(approval_id=row.id, **guest_binding))
+            db.flush()
         db.add(
             FixedApprovalEvent(
                 id=uuid4(),
@@ -563,13 +589,38 @@ class FixedApprovalService:
             event.model_copy(update={"actor_name": names.get(event.actor_id)})
             for event in events
         ]
+        from app.repositories.guest_fixed_approval import GuestFixedApprovalRepository
+
+        binding = GuestFixedApprovalRepository().binding(db, row.id, project_id)
+        guest_context = None
+        if binding:
+            accessible = bool(
+                db.scalar(
+                    text("SELECT guest_approval_has_access(:target,:actor)"),
+                    {"target": row.id, "actor": row.approver_id},
+                )
+            )
+            guest_context = GuestApprovalContext(
+                publication_id=binding["publication_id"],
+                target_node_id=binding["public_target_node_id"],
+                can_access=accessible,
+                blocked_reason=None
+                if accessible
+                else (
+                    "公開状態・参加資格・公開許可・期限を確認し、"
+                    "取消後に再依頼してください"
+                ),
+            )
         auth = self.releases.authorization
         return FixedApprovalRead.model_validate(row).model_copy(
             update={
                 "events": events,
                 "requester_name": names.get(row.requester_id),
                 "approver_name": names.get(row.approver_id),
+                "audience": "guest" if binding else "internal",
+                "guest_context": guest_context,
                 "can_decide": row.status == "requested"
+                and not binding
                 and actor.id == row.approver_id
                 and auth.has_project_permission(
                     db,
@@ -742,6 +793,8 @@ class FixedApprovalService:
 
     def review(self, db, actor, project_id, row):
         """指定本人が確認する対象と、内容変化を束縛するdigest。"""
+        if row.policy_version == "fixed-approval-guest-v1":
+            raise ForbiddenError()
         self.releases._permission(db, actor, project_id, "requirement:approve")
         if actor.id != row.approver_id or actor.id == row.requester_id:
             raise ForbiddenError()
@@ -789,6 +842,8 @@ class FixedApprovalService:
         def operation():
             with self.access(original, user, project_id) as (db, actor):
                 row = self.get_row(db, actor, project_id, approval_id, lock=True)
+                if row.policy_version == "fixed-approval-guest-v1":
+                    raise ForbiddenError()
                 self.releases._permission(db, actor, project_id, "requirement:approve")
                 if actor.id != row.approver_id or actor.id == row.requester_id:
                     raise ForbiddenError()
@@ -846,6 +901,14 @@ class FixedApprovalService:
 
     def cancel(self, original, user, project_id, approval_id, data):
         """現在の申請権限を持つ管理担当者が、理由付きで取消す。"""
+
+        from app.repositories.guest_fixed_approval import GuestFixedApprovalRepository
+        from app.services.guest_fixed_approval import GuestFixedApprovalService
+
+        if GuestFixedApprovalRepository().binding(original, approval_id, project_id):
+            return GuestFixedApprovalService().cancel(
+                original, user, project_id, approval_id, data
+            )
 
         def operation():
             with self.access(original, user, project_id, write=True) as (db, actor):

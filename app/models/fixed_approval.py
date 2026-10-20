@@ -85,7 +85,8 @@ class FixedApprovalRequest(Base):
             "requester_id <> approver_id", name="ck_fixed_approval_not_self"
         ),
         CheckConstraint(
-            "target_kind IN ('requirement','requirement_document')",
+            "target_kind IN ('requirement','requirement_document',"
+            "'specification','test_design')",
             name="ck_fixed_approval_kind",
         ),
         CheckConstraint(

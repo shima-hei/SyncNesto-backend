@@ -28,6 +28,7 @@ from app.models.fixed_approval import (
     FixedApprovalRequirementBasis,
     LegacyApprovalImport,
 )
+from app.models.guest_fixed_approval import FixedApprovalGuestBinding
 from app.models.guest_invitation import (
     ProjectGuestInvitation,
     ProjectGuestInvitationCheck,
@@ -103,6 +104,7 @@ from app.models.test_design import (
 from app.models.user import User
 
 __all__ = [
+    "FixedApprovalGuestBinding",
     "ProjectGuestInvitation",
     "ProjectGuestInvitationCheck",
     "ProjectGuestInvitationEvent",

@@ -991,3 +991,7 @@ guest・demo・MCPからの新API利用は拒否。顧客公開・承認の権�
 # ゲスト招待
 
 Phase 2B-1の限定Cookie・匿名Origin・通常MFA・既存permissionとの接続は [frontend-guest-invitations.md](frontend-guest-invitations.md) を参照。
+
+# Phase 2B-2 外部固定承認
+
+具体契約は [frontend-guest-fixed-approvals.md](frontend-guest-fixed-approvals.md)。共有の指定本人にだけ新しい判断APIを設け、通常Project role/permissionを外部へ付与しない。現行のread-only共有とは別に、共有判断5操作にはglobal設定と独立した実MFAを要求する。公開停止/参加・許可失効後は本人の今回の判断履歴も取得不可。既存内部判断経路は外部依頼を拒否し、既存取消URLは外部依頼のみRCへ分岐する。

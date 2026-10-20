@@ -127,6 +127,8 @@ class PublicationAccessContext:
         qualifying=False,
         management=None,
         download=False,
+        related_user_ids=(),
+        related_project_ids=(),
     ):
         """共有閲覧には組織選択を要求せず、内部contextをそのまま開放しない。"""
         if (
@@ -159,13 +161,21 @@ class PublicationAccessContext:
                 # 既存APIが先に取るFOR UPDATEと新しいactor/Project FKを逆順にしない。
                 db.execute(
                     select(User.id)
-                    .where(User.id == user.id)
+                    .where(User.id.in_(sorted({user.id, *related_user_ids})))
+                    .order_by(User.id)
                     .with_for_update(read=True, key_share=True)
                 )
-                if project_id is not None:
+                project_ids = sorted(
+                    {
+                        *related_project_ids,
+                        *([project_id] if project_id is not None else []),
+                    }
+                )
+                if project_ids:
                     db.execute(
                         select(Project.id)
-                        .where(Project.id == project_id)
+                        .where(Project.id.in_(project_ids))
+                        .order_by(Project.id)
                         .with_for_update(read=True, key_share=True)
                     )
             lock = (

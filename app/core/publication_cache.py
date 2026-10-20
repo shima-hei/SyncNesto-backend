@@ -23,6 +23,7 @@ class PublicationCacheMiddleware:
                     "artifact-publications",
                     "guest-participations",
                     "guest-invitations",
+                    "guest-fixed-approvals",
                 }
             )
             or (len(parts) >= 3 and parts[1:3] == ["shared", "publications"])

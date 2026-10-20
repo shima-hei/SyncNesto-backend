@@ -53,7 +53,9 @@ class FixedApprovalPreview(BaseModel):
     """本文を再編集させず、対象・根拠・例外の構成を提示する。"""
 
     title: str
-    target_kind: Literal["requirement", "requirement_document"]
+    target_kind: Literal[
+        "requirement", "requirement_document", "specification", "test_design"
+    ]
     source_id: int
     scope_manifest: dict[str, Any]
     scope_digest: str
@@ -74,6 +76,15 @@ class FixedApprovalEventRead(BaseModel):
     observation: dict[str, Any]
     occurred_at: datetime
     recorded_at: datetime
+
+
+class GuestApprovalContext(BaseModel):
+    """社内で外部依頼を追跡するための最小の対応情報。"""
+
+    publication_id: UUID
+    target_node_id: UUID
+    can_access: bool
+    blocked_reason: str | None = None
 
 
 class FixedApprovalRead(BaseModel):
@@ -102,6 +113,8 @@ class FixedApprovalRead(BaseModel):
     events: list[FixedApprovalEventRead] = Field(default_factory=list)
     can_decide: bool = False
     can_cancel: bool = False
+    audience: Literal["internal", "guest"] = "internal"
+    guest_context: GuestApprovalContext | None = None
 
 
 class FixedApprovalHistoryItem(BaseModel):
@@ -122,6 +135,7 @@ class FixedApprovalHistoryItem(BaseModel):
     evidence: dict[str, Any] | None = None
     import_id: UUID | None = None
     migrated_to: UUID | None = None
+    audience: Literal["internal", "guest"] = "internal"
 
 
 class FixedApprovalHistoryPage(BaseModel):

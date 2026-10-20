@@ -1,9 +1,10 @@
 """旧履歴と新依頼を、権限・時点・IDを混同せず一覧する。"""
 
-from sqlalchemy import DateTime, exists, func, or_, select
+from sqlalchemy import DateTime, exists, false, func, or_, select
 
 from app.core.exceptions import FixedApprovalTooLargeError
 from app.models.fixed_approval import FixedApprovalRequest, LegacyApprovalImport
+from app.models.guest_fixed_approval import FixedApprovalGuestBinding
 from app.models.requirement import RequirementApproval, RequirementDocument
 from app.models.user import User
 from app.schemas.fixed_approval import (
@@ -82,6 +83,8 @@ class FixedApprovalHistoryService:
         scheme,
         page,
         page_size,
+        audience=None,
+        publication_id=None,
     ):
         """必要な件数だけ各集合から取得して、申請時刻でマージする。"""
         with self.approvals.access(original, user, project_id) as (db, actor):
@@ -121,6 +124,18 @@ class FixedApprovalHistoryService:
 
             archive_model = aliased(LegacyApprovalImport, archive_latest)
             archive = select(archive_model)
+            external = select(FixedApprovalGuestBinding.approval_id).where(
+                FixedApprovalGuestBinding.approval_id == FixedApprovalRequest.id
+            )
+            if publication_id:
+                external = external.where(
+                    FixedApprovalGuestBinding.publication_id == publication_id
+                )
+            if audience == "guest" or publication_id:
+                native = native.where(exists(external))
+                legacy, archive = legacy.where(false()), archive.where(false())
+            elif audience == "internal":
+                native = native.where(~exists(external))
             if target_kind:
                 native = native.where(FixedApprovalRequest.target_kind == target_kind)
                 legacy = legacy.where(RequirementApproval.target_type == legacy_kind)
@@ -194,6 +209,9 @@ class FixedApprovalHistoryService:
                             approver_id=row.approver_id,
                             created_at=row.created_at,
                             finalized_at=row.finalized_at,
+                            audience="guest"
+                            if row.policy_version == "fixed-approval-guest-v1"
+                            else "internal",
                         )
                     )
             if scheme != "fixed":

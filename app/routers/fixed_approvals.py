@@ -70,6 +70,8 @@ def list_fixed_approvals(
     scheme: Literal["fixed", "legacy"] | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    audience: Literal["internal", "guest"] | None = None,
+    publication_id: UUID | None = None,
 ):
     """新旧の依頼を、許可された集合と件数だけで一覧する。"""
     return history.list(
@@ -83,6 +85,8 @@ def list_fixed_approvals(
         scheme,
         page,
         page_size,
+        audience,
+        publication_id,
     )
 
 

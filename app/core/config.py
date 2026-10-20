@@ -231,6 +231,7 @@ class Settings:
     initial_admin_name: str = os.getenv("INITIAL_ADMIN_NAME", "Initial Admin")
     email_provider: str = os.getenv("EMAIL_PROVIDER", "disabled")
     guest_invitations_enabled: bool = get_bool_env("GUEST_INVITATIONS_ENABLED")
+    guest_fixed_approvals_enabled: bool = get_bool_env("GUEST_FIXED_APPROVALS_ENABLED")
     local_email_capture_recipients: str = os.getenv(
         "LOCAL_EMAIL_CAPTURE_RECIPIENTS", ""
     )
