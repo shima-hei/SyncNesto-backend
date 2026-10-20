@@ -27,6 +27,7 @@ from app.schemas.guest_fixed_approval import (
 )
 from app.services.artifact_release_snapshot import canonical_bytes, digest
 from app.services.fixed_approval import FixedApprovalService
+from app.services.fixed_approval_notification import emit_fixed_approval
 from app.services.guest_approval_scope import (
     POLICY,
     counts,
@@ -366,4 +367,5 @@ class GuestFixedApprovalService:
             )
             self.approvals.audit(db, actor, project_id, row.id, "cancelled")
             db.flush()
+            emit_fixed_approval(db, row.id, "cancelled")
             return self.approvals.read(db, actor, project_id, row)

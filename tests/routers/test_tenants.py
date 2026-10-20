@@ -70,6 +70,13 @@ GUEST_APPROVAL_IDENTITY_OPERATIONS = {
     ),
 }
 
+SHARED_NOTIFICATION_IDENTITY_OPERATIONS = {
+    ("get", "/shared/notifications"),
+    ("get", "/shared/notifications/unread-count"),
+    ("post", "/shared/notifications/read-all"),
+    ("post", "/shared/notifications/{event_id}/read"),
+}
+
 
 @pytest.mark.parametrize("action", ["add", "change", "remove"])
 def test_project_membership_changes_preserve_other_tenant_sessions(
@@ -389,6 +396,7 @@ def test_all_business_routes_require_tenant_context(client):
         same_origin,
     )
     from app.routers.mcp import router as mcp_router
+    from app.routers.shared_notifications import router as notification_router
 
     def has_current_user(dependency):
         return dependency.call is get_current_user or any(
@@ -400,12 +408,27 @@ def test_all_business_routes_require_tenant_context(client):
     shared_count = 0
     invitation_count = 0
     approval_count = 0
+    notification_count = 0
     for path, operations in client.app.openapi()["paths"].items():
         if path == "/" or path.startswith(
             ("/auth", "/users", "/health", "/tenants", "/demo")
         ):
             continue
         for method, operation in operations.items():
+            if (method, path) in SHARED_NOTIFICATION_IDENTITY_OPERATIONS:
+                route = next(
+                    route
+                    for route in notification_router.routes
+                    if isinstance(route, APIRoute)
+                    and route.path == path
+                    and method.upper() in route.methods
+                )
+                assert has_current_user(route.dependant), (method, path)
+                assert not any(
+                    p["name"] == "X-Tenant-ID" for p in operation.get("parameters", [])
+                )
+                notification_count += 1
+                continue
             if (method, path) in GUEST_APPROVAL_IDENTITY_OPERATIONS:
                 route = next(
                     route
@@ -478,6 +501,7 @@ def test_all_business_routes_require_tenant_context(client):
     assert shared_count == len(SHARED_IDENTITY_OPERATIONS)
     assert invitation_count == len(INVITATION_IDENTITY_OPERATIONS)
     assert approval_count == len(GUEST_APPROVAL_IDENTITY_OPERATIONS)
+    assert notification_count == len(SHARED_NOTIFICATION_IDENTITY_OPERATIONS)
 
 
 @pytest.mark.parametrize(
@@ -805,6 +829,7 @@ def test_every_business_operation_rejects_unowned_tenant(client, create_test_use
                 | SHARED_IDENTITY_OPERATIONS
                 | INVITATION_IDENTITY_OPERATIONS
                 | GUEST_APPROVAL_IDENTITY_OPERATIONS
+                | SHARED_NOTIFICATION_IDENTITY_OPERATIONS
             ):
                 continue
             url = path

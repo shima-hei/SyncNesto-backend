@@ -29,6 +29,7 @@ from app.services.artifact_release_snapshot import (
 )
 from app.services.fixed_approval import FixedApprovalService
 from app.services.fixed_approval_cursor import decode_cursor, encode_cursor
+from app.services.fixed_approval_notification import emit_fixed_approval
 from app.services.guest_approval_scope import compare_current
 from app.services.guest_fixed_approval import GuestFixedApprovalService
 from app.services.guest_invitation import GuestInvitationService
@@ -399,6 +400,7 @@ class SharedFixedApprovalService:
             )
             self.approvals.audit(db, actor, row["project_id"], row["id"], status)
             db.flush()
+            emit_fixed_approval(db, row["id"], status)
             final = self.repository.request(db, approval_id, publication_id)
             return self.read(db, actor, final, binding, publication, revision)
 

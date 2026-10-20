@@ -1,5 +1,11 @@
 # Syncnesto Frontend Authorization Guide
 
+## Phase 2B-3a 固定承認の通知
+
+新しい共有通知4操作は、tenant選択ではなく指定本人のsession・実MFAと現在の公開世代を検証する。
+社内の次操作1操作は既存固定本文のreadとactionごとの権限を要求する。既存permission/roleは増やさない。
+一覧/件数/既読を同じ集合で制限し、失効済みを外部へ返さない。詳細は[専用契約](frontend-fixed-approval-notifications.md)。
+
 ## Phase 2A-3c 共有添付の発行
 
 共有の新POSTだけに、3bの本人資格/許可/公開状態の前後検証とsession行共有ロックを加える。

@@ -17,6 +17,9 @@ from app.models.task import Task, TaskComment
 from app.models.test_design import TestDesign, TestDesignComment
 from app.models.user import User
 from app.repositories.comment_mention import CommentMentionRepository
+from app.repositories.fixed_approval_notification import (
+    FixedApprovalNotificationRepository,
+)
 from app.repositories.notification import NotificationRepository
 from app.schemas.notification import (
     NotificationContext,
@@ -195,9 +198,55 @@ class NotificationService:
     ) -> list[NotificationRead]:
         """名前変更や対象削除があっても、過去の表示を再現する。"""
         available = self.repository.available_targets(db, items)
+        fixed = FixedApprovalNotificationRepository()
+        fixed_items = (
+            {
+                row["id"]: row
+                for row in db.execute(
+                    fixed.internal(user.id, db.info.get("tenant_id", -1)).where(
+                        fixed.n.c.id.in_(
+                            [i.id for i in items if i.target_type == "fixed_approval"]
+                        )
+                    )
+                ).mappings()
+            }
+            if any(i.target_type == "fixed_approval" for i in items)
+            else {}
+        )
         permissions = {}
         result = []
         for item in items:
+            if item.target_type == "fixed_approval":
+                value = fixed_items.get(item.id)
+                if value is None:
+                    continue
+                result.append(
+                    NotificationRead(
+                        id=item.id,
+                        type=NotificationType(item.type),
+                        actor_user_id=item.actor_user_id,
+                        project_id=item.project_id,
+                        target_type=Target.FIXED_APPROVAL,
+                        target_id=str(value["approval_id"]),
+                        snapshot=NotificationSnapshot(
+                            actor_name=value["actor_name"],
+                            project_name=value["project_name"],
+                            target_title=value["fixed_scope"]["title"],
+                        ),
+                        context=NotificationContext(
+                            approval_id=value["approval_id"],
+                            event_id=value["event_id"],
+                            action=value["action"],
+                            current_status=value["current_status"],
+                            target_kind=value["target_kind"],
+                        ),
+                        target_status="available",
+                        is_read=item.read_at is not None,
+                        read_at=item.read_at,
+                        created_at=item.created_at,
+                    )
+                )
+                continue
             permission = TARGET_PERMISSIONS[Target(item.target_type)]
             key = (item.project_id, permission)
             if key not in permissions:
@@ -277,7 +326,10 @@ class NotificationService:
             raise NotFoundError(error_messages.NOTIFICATION_NOT_FOUND)
         self.repository.mark_read(db, user.id, notification_id)
         db.refresh(item)
-        return self.present(db, user, [item])[0]
+        presented = self.present(db, user, [item])
+        if not presented:
+            raise NotFoundError(error_messages.NOTIFICATION_NOT_FOUND)
+        return presented[0]
 
     def unread_count(self, db: Session, user: User, project_id: int | None) -> int:
         """本人の未読件数を返す。"""

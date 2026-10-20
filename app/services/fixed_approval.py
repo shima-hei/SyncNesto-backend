@@ -50,6 +50,7 @@ from app.services.artifact_release_snapshot import (
 )
 from app.services.audit_log import AuditLogService
 from app.services.fixed_approval_cursor import decode_cursor, encode_cursor
+from app.services.fixed_approval_notification import emit_fixed_approval
 from app.services.fixed_approval_scope import MAX_REVIEW_INPUT, requirement_digest
 
 
@@ -522,6 +523,7 @@ class FixedApprovalService:
         row.sealed = True
         db.flush()
         self.audit(db, actor, project_id, row.id, "requested")
+        emit_fixed_approval(db, row.id, "requested")
         return row
 
     def create(self, original, user, project_id, data):
@@ -895,6 +897,7 @@ class FixedApprovalService:
                 )
                 self.audit(db, actor, project_id, row.id, row.status)
                 db.flush()
+                emit_fixed_approval(db, row.id, row.status)
                 return self.read(db, actor, project_id, row)
 
         return self.retry(operation)
@@ -945,6 +948,7 @@ class FixedApprovalService:
                 )
                 self.audit(db, actor, project_id, row.id, "cancelled")
                 db.flush()
+                emit_fixed_approval(db, row.id, "cancelled")
                 return self.read(db, actor, project_id, row)
 
         return self.retry(operation)

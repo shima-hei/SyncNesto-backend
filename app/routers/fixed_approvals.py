@@ -24,6 +24,8 @@ from app.schemas.fixed_approval import (
     LegacyApprovalPreview,
     LegacyApprovalPreviewInput,
 )
+from app.schemas.fixed_approval_notification import ApprovalNextActions
+from app.services.approval_next_actions import ApprovalNextActionsService
 from app.services.fixed_approval import FixedApprovalService
 from app.services.fixed_approval_history import FixedApprovalHistoryService
 from app.services.fixed_approval_migration import FixedApprovalMigrationService
@@ -34,6 +36,18 @@ Decider = Annotated[User, Depends(require_project_permission("requirement:approv
 service = FixedApprovalService()
 history = FixedApprovalHistoryService()
 migration = FixedApprovalMigrationService()
+
+
+@router.get(
+    "/fixed-approvals/{approval_id}/next-actions", response_model=ApprovalNextActions
+)
+def read_approval_next_actions(
+    project_id: int, approval_id: UUID, db: Db, user: Reader, response: Response
+):
+    """現在の権限で利用できる既存画面への次操作を返す。"""
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return ApprovalNextActionsService().read(db, user, project_id, approval_id)
 
 
 @router.post("/fixed-approvals/preview", response_model=FixedApprovalPreview)

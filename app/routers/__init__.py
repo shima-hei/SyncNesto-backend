@@ -26,6 +26,7 @@ from app.routers import (
     projects,
     requirements,
     search,
+    shared_notifications,
     specifications,
     tasks,
     tenants,
@@ -44,6 +45,7 @@ def register_routers(app: FastAPI) -> None:
         app: ルーターを登録するFastAPIアプリケーション。
     """
     app.include_router(auth.router)
+    app.include_router(shared_notifications.router)
     app.include_router(guest_fixed_approvals.shared_router)
     app.include_router(artifact_publication_access.shared_router)
     app.include_router(guest_invitations.recipient_router)

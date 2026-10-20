@@ -27,6 +27,13 @@ class PublicationCacheMiddleware:
                 }
             )
             or (len(parts) >= 3 and parts[1:3] == ["shared", "publications"])
+            or (len(parts) >= 3 and parts[1:3] == ["shared", "notifications"])
+            or (
+                len(parts) == 6
+                and parts[1] == "projects"
+                and parts[3] == "fixed-approvals"
+                and parts[5] == "next-actions"
+            )
             or (len(parts) >= 2 and parts[1] == "guest-invitations")
         )
 
