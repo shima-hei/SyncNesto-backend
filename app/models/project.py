@@ -3,6 +3,7 @@
 from datetime import date, datetime
 
 from sqlalchemy import (
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -23,10 +24,20 @@ class Project(Base):
     __tablename__ = "projects"
     __table_args__ = (
         UniqueConstraint("tenant_id", "project_code", name="uq_projects_tenant_code"),
+        CheckConstraint("goal_source_version > 0", name="ck_project_goal_version"),
+        # 同案件の参照FKはmigrationで管理し、ORMの所有関係はtenantに保つ。
         {"comment": db_comment("プロジェクト", "プロジェクト情報を管理するテーブル")},
     )
 
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), index=True)
+    goal_document_id: Mapped[int | None] = mapped_column(
+        Integer, comment=db_comment("目標参照文書", "概要に参照する同案件の要件定義書")
+    )
+    goal_source_version: Mapped[int] = mapped_column(
+        default=1,
+        server_default="1",
+        comment=db_comment("目標参照版", "参照選択専用の排他制御版"),
+    )
 
     id: Mapped[int] = mapped_column(
         primary_key=True,

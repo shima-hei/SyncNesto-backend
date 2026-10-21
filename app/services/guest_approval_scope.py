@@ -5,9 +5,15 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid5
 
+from pydantic import ValidationError
 from sqlalchemy import select
 
-from app.core.exceptions import AppError, FixedApprovalScopeConflictError, NotFoundError
+from app.core.exceptions import (
+    AppError,
+    FixedApprovalScopeConflictError,
+    NotFoundError,
+    ObjectiveProjectionUpgradeError,
+)
 from app.db.base import Base
 from app.models.fixed_approval import FixedApprovalRequest
 from app.models.guest_fixed_approval import FixedApprovalGuestBinding
@@ -211,11 +217,17 @@ def compare_current(db, project_id, release):
         snapshot = ArtifactSnapshotBuilder().build(
             db,
             project_id,
-            ArtifactPreviewRequest(source=refs[0], included_sources=refs[1:]),
+            ArtifactPreviewRequest(
+                source=refs[0],
+                included_sources=refs[1:],
+                projection_version=release.projection_version,
+            ),
             datetime.now(UTC),
         )
         return "equal" if snapshot.scope_digest == release.content_digest else "changed"
-    except AppError:
+    except ObjectiveProjectionUpgradeError:
+        return "changed"
+    except (AppError, ValidationError):
         return "unavailable"
 
 

@@ -231,6 +231,7 @@ class Settings:
     initial_admin_name: str = os.getenv("INITIAL_ADMIN_NAME", "Initial Admin")
     email_provider: str = os.getenv("EMAIL_PROVIDER", "disabled")
     fixed_approval_email_enabled: bool = get_bool_env("FIXED_APPROVAL_EMAIL_ENABLED")
+    project_objectives_enabled: bool = get_bool_env("PROJECT_OBJECTIVES_ENABLED")
     guest_invitations_enabled: bool = get_bool_env("GUEST_INVITATIONS_ENABLED")
     guest_fixed_approvals_enabled: bool = get_bool_env("GUEST_FIXED_APPROVALS_ENABLED")
     fixed_approval_notifications_enabled: bool = get_bool_env(

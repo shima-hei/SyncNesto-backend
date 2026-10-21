@@ -1,13 +1,12 @@
 """MCPの小さな操作単位。通常APIの入力を再利用する。"""
 
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.requirement import (
     RequirementCreate,
-    RequirementDocumentCreate,
     RequirementSectionCreate,
 )
 from app.schemas.task import (
@@ -73,6 +72,23 @@ class RequirementGetInput(ToolInput):
 
     target_type: Literal["document", "section", "requirement_item", "open_issue"]
     target_id: int = Field(gt=0)
+
+
+class RequirementDocumentCreate(BaseModel):
+    """要件定義書作成リクエストで受け取るschema。"""
+
+    # 既存のMCP入力は、通常APIの任意目標項目追加から分離する。
+    title: str
+    document_code: str
+    status: str = "draft"
+    purpose: str | None = None
+    target_system_name: str | None = None
+    client_name: str | None = None
+    vendor_name: str | None = None
+    author_id: int | None = None
+    reviewer_id: int | None = None
+    approver_id: int | None = None
+    approved_at: datetime | None = None
 
 
 class DocumentCreateInput(WriteInput):

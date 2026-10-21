@@ -1,6 +1,7 @@
 """内部の現在権限を確認して公開準備版を保存・閲覧する。"""
 
 from contextlib import contextmanager
+from typing import cast
 from uuid import UUID, uuid5
 
 from sqlalchemy import func, select
@@ -20,7 +21,6 @@ from app.models.artifact_publication import ArtifactPublication
 from app.models.artifact_release import ArtifactReleaseNode
 from app.repositories.artifact_publication import ArtifactPublicationRepository
 from app.schemas.artifact_publication import (
-    PUBLIC_PROJECTION,
     PublicationContentMetadata,
     PublicationInternalOrigin,
     PublicationList,
@@ -29,6 +29,7 @@ from app.schemas.artifact_publication import (
     PublicationPreview,
     PublicationRead,
     PublicationSummary,
+    PublicProjection,
 )
 from app.services.artifact_publication_projection import NAMESPACE, build_projection
 from app.services.artifact_release import SOURCE_PERMISSIONS, ArtifactReleaseService
@@ -71,6 +72,10 @@ class ArtifactPublicationService:
     def sources(self, db, actor, project_id, data):
         """封印済み本文と、同じ本文の完成した添付構成を確認する。"""
         release = self.releases._get(db, actor, project_id, data.release_id)
+        if data.projection_version != release.projection_version.replace(
+            "internal-", "public-", 1
+        ):
+            raise BadRequestError(error_messages.OBJECTIVE_PROJECTION_UPGRADE)
         preservation = None
         if data.preservation_id is not None:
             self.releases._permission(db, actor, project_id, "document:read")
@@ -145,7 +150,7 @@ class ArtifactPublicationService:
                             release_id=release.id,
                             preservation_id=data.preservation_id,
                             schema_version=1,
-                            projection_version=PUBLIC_PROJECTION,
+                            projection_version=data.projection_version,
                             title=projection.title,
                             source_kinds=release.source_kinds,
                             source_manifest=projection.source_manifest,
@@ -215,7 +220,7 @@ class ArtifactPublicationService:
                 id=row.id,
                 title=row.title,
                 schema_version=row.schema_version,
-                projection_version=row.projection_version,
+                projection_version=cast(PublicProjection, row.projection_version),
                 public_digest=row.public_digest,
                 node_count=row.node_count,
                 byte_size=row.byte_size,
@@ -295,7 +300,7 @@ class ArtifactPublicationService:
                 raise BadRequestError(error_messages.ARTIFACT_CURSOR_INVALID)
             result = PublicationNodePage(
                 publication_id=identity,
-                projection_version=PUBLIC_PROJECTION,
+                projection_version=cast(PublicProjection, row.projection_version),
                 items=[],
                 total=row.node_count,
                 next_cursor=None,

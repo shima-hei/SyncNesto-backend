@@ -3,6 +3,7 @@
 from collections import Counter
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from typing import cast
 from uuid import uuid4, uuid5
 
 from pydantic import ValidationError
@@ -18,6 +19,7 @@ from app.core.exceptions import (
     FixedApprovalTooLargeError,
     ForbiddenError,
     NotFoundError,
+    ObjectiveProjectionUpgradeError,
     VersionConflictError,
 )
 from app.models.artifact_preservation import ArtifactPreservation
@@ -31,7 +33,7 @@ from app.models.specification import Specification
 from app.models.test_design import TestDesign
 from app.models.user import User
 from app.repositories.fixed_approval import FixedApprovalRepository
-from app.schemas.artifact_release import ArtifactPreviewRequest
+from app.schemas.artifact_release import ArtifactPreviewRequest, ProjectionVersion
 from app.schemas.fixed_approval import (
     ApprovalBasisPage,
     ApprovalBasisRead,
@@ -762,7 +764,11 @@ class FixedApprovalService:
                 refs.append({**ref, "version": current.version})
                 if ref["kind"] == row.target_kind and ref["id"] == row.source_id:
                     result["current_source_version"] = current.version
-            request = ArtifactPreviewRequest(source=refs[0], included_sources=refs[1:])
+            request = ArtifactPreviewRequest(
+                source=refs[0],
+                included_sources=refs[1:],
+                projection_version=cast(ProjectionVersion, release.projection_version),
+            )
             snapshot = self.releases.builder.build(
                 db, project_id, request, datetime.now(UTC)
             )
@@ -789,6 +795,8 @@ class FixedApprovalService:
                 result["current_source_version"] = (
                     current_req.version if current_req else None
                 )
+        except ObjectiveProjectionUpgradeError:
+            result["body_comparison"] = "changed"
         except (AppError, ValidationError):
             pass
         return result

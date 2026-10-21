@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 SourceKind = Literal[
     "requirement", "requirement_document", "specification", "test_design"
 ]
-ProjectionVersion = Literal["internal-preview-v1"]
+ProjectionVersion = Literal["internal-preview-v1", "internal-preview-v2"]
 
 
 class ArtifactSource(BaseModel):

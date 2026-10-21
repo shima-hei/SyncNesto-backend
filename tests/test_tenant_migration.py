@@ -12,7 +12,6 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
-from app.models.requirement import Requirement, RequirementDocument
 from app.models.task import Task
 
 
@@ -85,23 +84,28 @@ def test_legacy_data_survives_tenant_migration(fail):
                         "VALUES ('tenant_owner','Already exists','tenant')"
                     )
                 )
+        # 目標列追加前の文書は、当時の列でfixtureを作る。
         with Session(legacy) as db:
-            task = Task(project_id=1, task_code="KEEP", title="Preserved Task")
-            document = RequirementDocument(
-                project_id=1, document_code="KEEP", title="Preserved Document"
-            )
-            db.add_all([task, document])
-            db.flush()
-            db.add(
-                Requirement(
-                    document_id=document.id,
-                    requirement_code="KEEP",
-                    requirement_type="functional",
-                    title="Preserved Requirement",
+            db.add(Task(project_id=1, task_code="KEEP", title="Preserved Task"))
+            db.commit()
+        with legacy.begin() as connection:
+            document_id = connection.scalar(
+                text(
+                    "INSERT INTO requirement_documents "
+                    "(project_id,document_code,title,status,version) "
+                    "VALUES (1,'KEEP','Preserved Document','draft',1) RETURNING id"
                 )
             )
-            # 新しいtenant_id列を含むモデルを古いDBへ書かず、既存形式の通知を作成する。
-            db.commit()
+            connection.execute(
+                text(
+                    "INSERT INTO requirements "
+                    "(document_id,requirement_code,requirement_type,title,"
+                    "status,priority,version) VALUES "
+                    "(:document,'KEEP','functional','Preserved Requirement',"
+                    "'draft','must',1)"
+                ),
+                {"document": document_id},
+            )
         with legacy.begin() as connection:
             connection.execute(
                 text(

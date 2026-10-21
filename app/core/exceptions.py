@@ -187,6 +187,13 @@ class SpecificationReviewFieldsError(BadRequestError):
     code = "SPECIFICATION_REVIEW_FIELDS_REQUIRED"
 
 
+class ObjectiveProjectionUpgradeError(ConflictError):
+    """目標を落とさず固定するため新形式での再確認を求める。"""
+
+    message = error_messages.OBJECTIVE_PROJECTION_UPGRADE
+    code = "OBJECTIVE_PROJECTION_UPGRADE_REQUIRED"
+
+
 class VersionConflictError(ConflictError):
     """更新対象のバージョンが最新ではない場合の例外。"""
 

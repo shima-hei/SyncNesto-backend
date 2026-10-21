@@ -71,9 +71,7 @@ class RequirementExportService:
             document_repository or RequirementDocumentRepository()
         )
         self.section_repository = section_repository or RequirementSectionRepository()
-        self.requirement_repository = (
-            requirement_repository or RequirementRepository()
-        )
+        self.requirement_repository = requirement_repository or RequirementRepository()
         self.open_issue_repository = (
             open_issue_repository or RequirementOpenIssueRepository()
         )
@@ -251,11 +249,7 @@ class RequirementExportService:
         offsets = [0]
         for index, payload in enumerate(objects, start=1):
             offsets.append(sum(len(chunk) for chunk in chunks))
-            chunks.append(
-                f"{index} 0 obj\n".encode("ascii")
-                + payload
-                + b"\nendobj\n"
-            )
+            chunks.append(f"{index} 0 obj\n".encode("ascii") + payload + b"\nendobj\n")
         xref_offset = sum(len(chunk) for chunk in chunks)
         xref_lines = [
             b"xref\n",
@@ -400,6 +394,9 @@ class RequirementExportService:
             f"- バージョン: {document.version}",
             f"- ステータス: {document.status}",
             f"- 目的: {self._value(document.purpose)}",
+            f"- 案件ゴール: {self._value(document.project_goal)}",
+            f"- 案件スコープ: {self._value(document.project_scope)}",
+            f"- 案件完了条件: {self._value(document.project_completion_criteria)}",
             f"- クライアント: {self._value(document.client_name)}",
             f"- ベンダー: {self._value(document.vendor_name)}",
             f"- 承認日時: {self._format_value(document.approved_at)}",
@@ -475,10 +472,7 @@ class RequirementExportService:
         selected_comments = [
             comment
             for comment in comments
-            if (
-                comment.target_type == "section"
-                and comment.target_id in requested_ids
-            )
+            if (comment.target_type == "section" and comment.target_id in requested_ids)
             or (
                 comment.target_type == "requirement"
                 and comment.target_id in selected_requirement_ids

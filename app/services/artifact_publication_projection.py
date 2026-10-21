@@ -21,6 +21,7 @@ from app.schemas.specification import ApiSpecification, ScreenSpecification
 from app.services.artifact_release_snapshot import (
     MAX_SNAPSHOT_BYTES,
     MAX_SNAPSHOT_NODES,
+    OBJECTIVE_FIELDS,
     canonical_bytes,
     digest,
 )
@@ -83,12 +84,13 @@ class PublicationProjection:
     source_manifest_digest: str
     public_digest: str
     byte_size: int
+    projection_version: str = PUBLIC_PROJECTION
 
     def preview(self) -> dict:
         """本文を含まない確認用の要約。"""
         return dict(
             title=self.title,
-            projection_version=PUBLIC_PROJECTION,
+            projection_version=self.projection_version,
             public_digest=self.public_digest,
             source_manifest_digest=self.source_manifest_digest,
             node_count=len(self.nodes),
@@ -99,9 +101,11 @@ class PublicationProjection:
         )
 
 
-def public_id(kind: str, identity: Any) -> str:
+def public_id(
+    kind: str, identity: Any, projection_version: str = PUBLIC_PROJECTION
+) -> str:
     """表示参照を用途別の不透明なUUIDへ写す。認可の代わりにはしない。"""
-    return str(uuid5(NAMESPACE, f"{PUBLIC_PROJECTION}:{kind}:{identity}"))
+    return str(uuid5(NAMESPACE, f"{projection_version}:{kind}:{identity}"))
 
 
 def _test_graph(root, parts, project_id: int) -> dict:
@@ -203,12 +207,14 @@ def build_projection(
     """公開schemaと値を明示し、不明な構成は欠落させず拒否する。"""
     if (
         release.schema_version != 1
-        or release.projection_version != "internal-preview-v1"
+        or release.projection_version
+        not in {"internal-preview-v1", "internal-preview-v2"}
         or not source_nodes
     ):
         raise invalid_projection()
     if len(source_nodes) != release.node_count:
         raise invalid_projection()
+    version = release.projection_version.replace("internal-", "public-", 1)
     nodes, consumed, id_map = [], set(), {}
     for row in source_nodes:
         if row.id in consumed:
@@ -222,6 +228,8 @@ def build_projection(
             consumed.update(p.id for p in parts)
             continue
         fields = PAYLOAD_FIELDS.get(row.node_kind)
+        if row.node_kind == "requirement_document" and version == "public-preview-v2":
+            fields = (*PAYLOAD_FIELDS["requirement_document"], *OBJECTIVE_FIELDS)
         if fields is None or set(row.payload) != set(fields):
             raise invalid_projection()
         payload = {k: copy.deepcopy(row.payload[k]) for k in fields}
@@ -270,7 +278,7 @@ def build_projection(
         for index, item in enumerate(preservation.manifest["files"]):
             files.append(
                 PublicFile(
-                    id=UUID(public_id("file", f"{preservation.id}:{index}")),
+                    id=UUID(public_id("file", f"{preservation.id}:{index}", version)),
                     **{
                         k: item[k]
                         for k in (
@@ -283,7 +291,7 @@ def build_projection(
                 ).model_dump(mode="json")
             )
     manifest = dict(
-        projection_version=PUBLIC_PROJECTION,
+        projection_version=version,
         release_id=str(release.id),
         body_digest=release.content_digest,
         preservation_id=str(preservation.id) if preservation else None,
@@ -305,7 +313,7 @@ def build_projection(
     ]
     subject = dict(
         schema_version=1,
-        projection_version=PUBLIC_PROJECTION,
+        projection_version=version,
         title=release.title,
         nodes=subject_nodes,
         files=files,
@@ -314,5 +322,12 @@ def build_projection(
     if size > MAX_SNAPSHOT_BYTES or len(nodes) > MAX_SNAPSHOT_NODES:
         raise ArtifactReleaseTooLargeError()
     return PublicationProjection(
-        release.title, nodes, files, manifest, digest(manifest), digest(subject), size
+        release.title,
+        nodes,
+        files,
+        manifest,
+        digest(manifest),
+        digest(subject),
+        size,
+        version,
     )

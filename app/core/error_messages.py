@@ -183,3 +183,5 @@ SHARED_FILE_UNAVAILABLE = "添付を取得できません。時間をおいて�
 NOTIFICATION_EMAIL_UNAVAILABLE = (
     "この環境では、この通知先へのメール配信を有効にできません"
 )
+OBJECTIVE_REASON_REQUIRED = "参照文書の変更・解除理由を入力してください。"
+OBJECTIVE_PROJECTION_UPGRADE = "目標を含む内容はv2で再プレビューしてください。"

@@ -49,6 +49,7 @@ from app.models.notification_email import (
     NotificationEmailPreference,
 )
 from app.models.project import Project, ProjectMember
+from app.models.project_goal_source_event import ProjectGoalSourceEvent
 from app.models.rbac import Permission, Role, RolePermission, UserRole
 from app.models.request_limit import RequestLimit
 from app.models.requirement import (
@@ -184,6 +185,7 @@ __all__ = [
     "Permission",
     "Project",
     "ProjectMember",
+    "ProjectGoalSourceEvent",
     "Requirement",
     "RequirementApproval",
     "RequirementChangeLog",

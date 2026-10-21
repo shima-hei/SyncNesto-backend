@@ -1007,3 +1007,11 @@ Phase 2B-1の限定Cookie・匿名Origin・通常MFA・既存permissionとの接
 `/notification-preferences` GET/PATCHはtenant非依存の通常MFA済み本人に限る。
 PATCHは `X-Syncnesto-Expected-User` と現在の認証Userの一致を必須にし、headerで本人を選択しない。
 Cookie/CSRF/Originを維持し、全応答をprivate/no-storeとする。詳細は [approval-email.md](approval-email.md)。
+
+## 案件目標の共通出典（Phase 3A）
+
+新permission `project:manage_goal_source` はproject_admin/managerへ各1割当。組織管理者/運営管理者のProjectメタデータ権限は業務本文の認可ではない。目標APIは現在tenant・Project所属・project:readを確認し、requirement:readを持たない本人には出典の存在・ID・本文・参照版を返さない。ゲストは既存/shared経路を利用し、内部目標APIを使わない。MCP経路から新参照APIへ接続しない。
+
+共通出典の選択には専用permissionとrequirement:readを要求し、同じ案件の有効文書と版を確認する。選択と追記専用業務履歴・監査を同一transactionで保存し、専用versionの条件付きUPDATEで競合を拒否する。本文編集権限を管理者/managerに制限し直すものではない。UIはserver capabilityを使用する。新GETはno-store、Frontendはtenant/本人/Project別のquery keyを使用する。
+
+形式追加は新しい公開許可を付与しない。v1/v2の保存済み形式をmetadata/node/cursorへ伝搬し、既存の参加/本人許可/失効/MFA/DL期限を維持する。旧版の形式だけをv2へ更新したり、旧承認へ新本文を引き継ぐ処理はない。

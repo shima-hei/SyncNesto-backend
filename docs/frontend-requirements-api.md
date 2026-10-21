@@ -717,3 +717,15 @@ commented
 要件・定義書・型別詳細と採用した画面/API設計を、その時点の本文・構成として保存する。
 固定版は承認済み・顧客公開済みを意味しない。元の編集は既存APIで続け、固定版を上書きしない。
 契約・認可・再送・分割読取は[固定版API](frontend-artifact-releases-api.md)を参照。
+
+## Phase 3A: 文書の目標と案件共通の出典
+
+要件定義書のcreate/read/list/updateに任意の `project_goal`、`project_scope`、`project_completion_criteria`（各20,000文字まで）を追加した。既存purpose/Project.descriptionから転記せず、未送信は保持、明示nullは解除、空白だけの新本文はnullにする。`PROJECT_OBJECTIVES_ENABLED=false`は新項目の書込を停止するが、旧フィールドだけの更新と保存済み本文の読取を維持する。文書作成/更新と変更履歴は同一transaction、更新時は文書をロックしてversion競合を検査する。
+
+`GET /projects/{id}/objectives`は認可された出典と本文・操作capabilityを返す。stateはdisabled/restricted/unselected/available/unavailable。requirement:readなしは参照の版/ID/名称/本文を返さない。本文がnullなら未登録であり、達成率ではない。
+
+`PATCH /projects/{id}/objectives`は専用のversion、document_id（nullで解除）、選択時のexpected_document_version、reasonを受ける。変更/解除の理由は必須。同じ出典への再指定はno-op。案件共通の指定はproject:manage_goal_source（標準project_admin/managerのみ）とproject:read/requirement:readが必要。本文編集は従来のrequirement:updateのまま。`GET /projects/{id}/objectives/events`でページ付き選択履歴を取得する。文書名は現在参照可能なものだけで、当時の本文の固定版ではない。
+
+参照だけの変更はgoal_source_versionを増加し、既存Project.version/更新者/更新日時を変更しない。別案件文書は複合FKでも拒否する。論理削除時は参照不可、同じIDを復元した場合は現在本文を再表示する。承認や公開の復活を伴わない。
+
+固定版はinternal-preview-v1/v2、公開はpublic-preview-v1/v2を扱う。新UIはv2を明示し、APIの旧入力既定v1は保持する。新本文がある文書のv1新規固定は409 OBJECTIVE_PROJECTION_UPGRADE_REQUIRED。旧固定版を更新せず、v2の文書payloadに3項目を固定し、v2の公開前確認にも含める。個別REQの同じ内容への合意と文書の正式承認は別。

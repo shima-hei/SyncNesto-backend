@@ -14,7 +14,6 @@ from app.core.exceptions import (
 )
 from app.repositories.artifact_publication_access import PublicationAccessRepository
 from app.schemas.artifact_publication import (
-    PUBLIC_PROJECTION,
     PublicationContentMetadata,
     PublicationNodeRead,
 )
@@ -176,7 +175,7 @@ class SharedPublicationService:
                 raise BadRequestError()
             result = SharedPublicationNodePage(
                 publication_id=identity,
-                projection_version=PUBLIC_PROJECTION,
+                projection_version=row["projection_version"],
                 items=[],
                 total=row["node_count"],
                 next_cursor=None,

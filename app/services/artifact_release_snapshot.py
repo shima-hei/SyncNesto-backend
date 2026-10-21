@@ -17,6 +17,7 @@ from app.core.exceptions import (
     ArtifactReleaseTooLargeError,
     BadRequestError,
     NotFoundError,
+    ObjectiveProjectionUpgradeError,
     VersionConflictError,
 )
 from app.models.requirement import (
@@ -29,6 +30,8 @@ from app.models.specification import Specification
 from app.schemas.artifact_release import ArtifactPreview, ArtifactPreviewRequest
 from app.services.artifact_test_design import graph_nodes
 from app.services.test_design import TestDesignService
+
+OBJECTIVE_FIELDS = ("project_goal", "project_scope", "project_completion_criteria")
 
 MAX_PAGE_BYTES = 1024 * 1024
 MAX_SNAPSHOT_BYTES = 32 * 1024 * 1024
@@ -127,6 +130,10 @@ class ArtifactSnapshotBuilder:
             elif ref.kind == "requirement_document":
                 document = self._document(db, project_id, ref.id)
                 self._version(document, ref.version)
+                if data.projection_version == "internal-preview-v1" and any(
+                    getattr(document, key) is not None for key in OBJECTIVE_FIELDS
+                ):
+                    raise ObjectiveProjectionUpgradeError()
                 key = self._append(
                     snapshot,
                     "requirement_document",
@@ -142,6 +149,11 @@ class ArtifactSnapshotBuilder:
                             "target_system_name",
                             "client_name",
                             "status",
+                            *(
+                                OBJECTIVE_FIELDS
+                                if data.projection_version == "internal-preview-v2"
+                                else ()
+                            ),
                         )
                     },
                 )

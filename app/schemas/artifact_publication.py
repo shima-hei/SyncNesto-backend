@@ -10,7 +10,7 @@ from app.schemas.artifact_release import SourceKind
 from app.schemas.test_design import TestDesignUpdate
 
 PUBLIC_PROJECTION = "public-preview-v1"
-PublicProjection = Literal["public-preview-v1"]
+PublicProjection = Literal["public-preview-v1", "public-preview-v2"]
 PublicationState = Literal["prepared", "published", "withdrawn"]
 PublicationKind = Literal[
     "requirement_document",

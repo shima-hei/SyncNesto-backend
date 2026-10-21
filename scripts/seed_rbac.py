@@ -29,6 +29,7 @@ PERMISSIONS = [
     ("project:read", "プロジェクトを閲覧する"),
     ("project:create", "プロジェクトを作成する"),
     ("project:update", "プロジェクトを更新する"),
+    ("project:manage_goal_source", "案件共通の目標参照文書を指定する"),
     ("project:delete", "プロジェクトを削除する"),
     ("project:invite_member", "プロジェクトメンバーを招待する"),
     ("project:remove_member", "プロジェクトメンバーを削除する"),
@@ -84,6 +85,7 @@ SYSTEM_ADMIN_PERMISSIONS = (
 ROLE_PERMISSIONS = {
     "system_admin": list(SYSTEM_ADMIN_PERMISSIONS),
     "project_admin": [
+        "project:manage_goal_source",
         "artifact_publication:manage",
         "artifact_publication:read",
         "artifact_publication:publish",
@@ -124,6 +126,7 @@ ROLE_PERMISSIONS = {
         "requirement:link",
     ],
     "manager": [
+        "project:manage_goal_source",
         "artifact_publication:manage",
         "artifact_publication:read",
         "artifact_publication:publish",

@@ -38,7 +38,8 @@ class ArtifactPublication(Base):
             name="uq_artifact_publication_request",
         ),
         CheckConstraint(
-            "schema_version = 1 AND projection_version = 'public-preview-v1'",
+            "schema_version = 1 AND projection_version IN "
+            "('public-preview-v1','public-preview-v2')",
             name="ck_artifact_publication_schema",
         ),
         CheckConstraint(
