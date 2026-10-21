@@ -225,6 +225,28 @@ def seed_rbac_data(clean_database: None, request: pytest.FixtureRequest) -> None
 
 
 @pytest.fixture
+def request_limit_clock(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
+    """共有カウンターのSQL時刻だけ固定し、実upsertと別Sessionを保持する。"""
+    from app.repositories import request_limit
+
+    functions = request_limit.func
+    clock = {"seconds": 1_800_000_010}
+
+    class ClockFunctions:
+        """時刻以外のSQL関数は元のSQLAlchemy実装へ委譲する。"""
+
+        def __getattr__(self, name: str):
+            return getattr(functions, name)
+
+        def clock_timestamp(self):
+            """DBが評価するtimestamp式を返す。"""
+            return functions.to_timestamp(clock["seconds"])
+
+    monkeypatch.setattr(request_limit, "func", ClockFunctions())
+    return clock
+
+
+@pytest.fixture
 def db(request: pytest.FixtureRequest) -> Generator[Session, None, None]:
     """テスト用DBセッションを作成する。
 

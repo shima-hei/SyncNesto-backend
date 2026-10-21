@@ -107,6 +107,22 @@ def test_ci_gate_requires_every_case_exactly_once(tmp_path, damage):
         assert check(tmp_path, 2) == 2
 
 
+def test_ci_gate_accepts_four_complete_independent_shards(tmp_path):
+    universe = [str(n) for n in range(1, 5)]
+    for number in universe:
+        folder = tmp_path / number
+        folder.mkdir()
+        result = {
+            "status": "passed",
+            "complete": True,
+            "scope": {"shard": f"{number}/4"},
+        }
+        report = {"all_collected": universe, "selected": [number]}
+        (folder / "result.json").write_text(json.dumps(result))
+        (folder / "report.json").write_text(json.dumps(report))
+    assert check(tmp_path, 4) == 4
+
+
 def test_failed_setup_and_teardown_are_never_hidden():
     report = {
         "finished": True,

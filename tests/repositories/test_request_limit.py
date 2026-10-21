@@ -12,12 +12,8 @@ from app.repositories.request_limit import RequestLimitRepository
 
 
 @pytest.fixture
-def stable_window(db: Session) -> None:
-    """同時実行テストが一分の境界を跨ぐ場合だけ避ける。"""
-    now = db.scalar(select(func.extract("epoch", func.clock_timestamp())))
-    assert now is not None
-    if float(now) % 60 > 55:
-        pytest.skip("Rate limit test is too close to a real clock window boundary")
+def stable_window(request_limit_clock: dict[str, int]) -> None:
+    """同じ時間枠の実DB検証を、実時刻によるskipなしで必ず実行する。"""
 
 
 def test_counters_shared_across_instances(stable_window: None) -> None:
@@ -68,3 +64,19 @@ def test_expired_counters_cleaned_and_budget_reset(db: Session) -> None:
     counter = db.get(RequestLimit, "login:client")
     assert counter is not None
     assert counter.count == 1
+
+
+def test_budget_resets_only_when_window_changes(
+    db: Session, request_limit_clock: dict[str, int]
+) -> None:
+    """同じ枠の拒否と、次の分での削除・再計数を実upsertで確認する。"""
+    repository = RequestLimitRepository(db)
+    assert repository.consume("login:clock", 1) == 0
+    assert repository.consume("login:clock", 1) > 0
+    request_limit_clock["seconds"] += 60
+    assert repository.consume("login:clock", 1) == 0
+    db.expire_all()
+    counter = db.get(RequestLimit, "login:clock")
+    assert counter is not None
+    assert counter.count == 1
+    assert counter.window_start == request_limit_clock["seconds"] // 60 * 60

@@ -20,7 +20,7 @@ uv run python scripts/verify.py --profile full tests/routers/test_notifications.
 
 DBは毎ケース全表を一括TRUNCATE+RESTART IDENTITYする。最初に実際のseed関数で作ったRBAC初期行をプロセス内に保管し、次のケースでは全行をbulk投入、採番も復元する。commit/複数Session/並行処理の既存テストを保持し、transaction rollbackや同一DBでの並列化へは変更しない。seed自体の既存テストも保持する。
 
-CIは静的検査/依存監査→独立VM・独立DBの2分割→`checks`で全成功とケース集合の完全一致を照合する。ファイル単位の決定的分割なのでクラス/ケース順序を分断しない。分割失敗・欠落・重複・異なる収集集合を拒否する。全ログ/JUnit/JSONは成功・失敗とも7日保存し、PRだけ旧実行を中断する。mainのdeploy条件と必須`checks`名は維持する。
+CIは静的検査/依存監査→独立VM・独立DBの4分割→`checks`で全成功とケース集合の完全一致を照合する。ファイル単位の決定的分割なのでクラス/ケース順序を分断しない。分割失敗・欠落・重複・異なる収集集合を拒否する。全ログ/JUnit/JSONは成功・失敗とも7日保存し、PRだけ旧実行を中断する。mainのdeploy条件と必須`checks`名は維持する。
 
 依存監査は独立した必須jobとし、監査失敗でも静的検査に通ったテストの診断を収集できる。最終`checks`は監査を含む全jobの成功を要求し、監査を迂回してmerge/deployできる構成にはしない。
 
@@ -38,3 +38,5 @@ uv run python scripts/verify.py --profile full tests/routers/test_mfa.py tests/r
 ```
 
 MFAテーブル追加時はデモの所有者定義へ追記し、未定義テーブルで回収を止める安全策を維持する。実装・LOCAL適用・公開適用の区別は[MFA運用手順](mfa.md)を参照する。
+
+共有レート制限の「同じ時間枠」と「次の時間枠」の検証は、`request_limit_clock`でRepositoryが使うSQL時刻だけを固定/進行する。実DBのupsert・並行要求・別Session・上限拒否を保持し、製品の時計/認可や他のMFA時計は変更しない。実時刻の分境界によるskipや期待値の緩和を行わない。
