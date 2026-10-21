@@ -48,7 +48,7 @@ workerを止め、lease終了後のunknownだけを期待version付きで解決�
 uv run --frozen python -m scripts.deliver_approval_mail resolve <配送UUID> --version <版> --outcome accepted --reason 'Mailpit実体を確認' --evidence-file /absolute/private/evidence.json
 ```
 
-根拠は `attempt_id` と期待 `message_id`（`<sha256(approval-mail/配送UUID)@example.com>`）を必須にする。acceptedは `mailpit_id` のrawメールをloopback8025から取得しMessage-IDを照合する。not-acceptedは運用者が確認した `basis:"smtp_rejection", smtp_code:400〜599, reply_received:true` が必要で、受信一覧にないことだけでは再送しない。後者は再試行候補に戻すが、送信前に資格/設定/24時間を再検証する。根拠digestと理由をlocal_operatorとして追記し、過去の試行や人の承認を改変しない。
+根拠は `attempt_id` と期待 `message_id`（`<sha256(approval-mail/配送UUID)@example.com>`）を必須にする。acceptedは `mailpit_id` のrawメールをloopback8025から取得しMessage-IDを照合する。not-acceptedは運用者が確認した `basis:"smtp_rejection", smtp_code:400〜599, reply_received:true` が必要で、受信一覧にないことだけでは再送しない。4xxかつ4試行/24時間の上限内だけを再試行候補に戻し、5xx/回数上限はfailed、期限超過はsuppressed。送信前に資格/設定を再検証する。根拠digestと理由をlocal_operatorとして追記し、過去の試行や人の承認を改変しない。
 
 ## 停止・戻し方
 

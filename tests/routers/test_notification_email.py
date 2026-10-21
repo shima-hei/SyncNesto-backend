@@ -413,8 +413,18 @@ def test_external_revocation_suppresses_pending_mail(
     assert not messages
 
 
+@pytest.mark.parametrize(
+    "smtp_code, exhausted, expired, expected",
+    [
+        (451, False, False, "retry_wait"),
+        (550, False, False, "failed"),
+        (451, True, False, "failed"),
+        (451, False, True, "suppressed"),
+        (None, False, False, "accepted"),
+    ],
+)
 def test_unknown_resolution_requires_positive_evidence(
-    client, db, approval_context, monkeypatch
+    client, db, approval_context, monkeypatch, smtp_code, exhausted, expired, expected
 ):
     """Mailpitにないことだけで再送せず、根拠・世代・履歴を保持する。"""
     import hashlib
@@ -426,6 +436,10 @@ def test_unknown_resolution_requires_positive_evidence(
     assert mail_worker.run_once() == {"unknown": 1}
     row = only_delivery(db)
     row.lease_until = db.scalar(select(func.clock_timestamp())) - timedelta(seconds=1)
+    if exhausted:
+        row.attempt_count = 4
+    if expired:
+        row.expires_at = row.lease_until
     db.commit()
     evidence: dict = {
         "attempt_id": str(row.claim_token),
@@ -437,10 +451,33 @@ def test_unknown_resolution_requires_positive_evidence(
     with pytest.raises(ValueError, match="positive_nonacceptance"):
         mail_worker.resolve(row.id, row.version, False, "受信一覧だけを確認", evidence)
     assert only_delivery(db).state == "unknown"
-    evidence.update(basis="smtp_rejection", smtp_code=451, reply_received=True)
     version = row.version
-    mail_worker.resolve(row.id, version, False, "SMTPの明示拒否を確認", evidence)
-    assert only_delivery(db).state == "retry_wait"
+    if expected == "accepted":
+        from email.message import EmailMessage
+        from email.policy import SMTP
+
+        captured = EmailMessage(policy=SMTP)
+        captured["Message-ID"] = evidence["message_id"]
+        captured.set_content("LOCAL捕捉の実体")
+
+        def receipt(url, **kwargs):
+            assert url == "http://127.0.0.1:8025/api/v1/message/captured-id/raw"
+            return SimpleNamespace(status_code=200, content=captured.as_bytes())
+
+        monkeypatch.setattr("httpx.get", receipt)
+        evidence.update(basis="mailpit_receipt", mailpit_id="captured-id")
+    else:
+        evidence.update(
+            basis="smtp_rejection", smtp_code=smtp_code, reply_received=True
+        )
+    mail_worker.resolve(
+        row.id, version, expected == "accepted", "明示した根拠を確認", evidence
+    )
+    assert only_delivery(db).state == expected
+    if expected == "retry_wait":
+        assert only_delivery(db).next_attempt_at > db.scalar(
+            select(func.clock_timestamp())
+        ) + timedelta(seconds=50)
     assert (
         db.scalar(
             select(func.count())

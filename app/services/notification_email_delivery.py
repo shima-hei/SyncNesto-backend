@@ -403,7 +403,18 @@ class ApprovalMailWorker:
                         or evidence.get("reply_received") is not True
                     ):
                         raise ValueError("positive_nonacceptance_evidence_required")
-                    row.state, row.next_attempt_at = "retry_wait", now
+                    row.state = (
+                        "suppressed"
+                        if now >= row.expires_at
+                        else "failed"
+                        if evidence["smtp_code"] >= 500 or row.attempt_count >= 4
+                        else "retry_wait"
+                    )
+                    row.next_attempt_at = now + timedelta(
+                        seconds=[60, 300, 1800][row.attempt_count - 1]
+                        if row.state == "retry_wait"
+                        else 0
+                    )
                 row.version += 1
                 digest = hashlib.sha256(
                     json.dumps(evidence, sort_keys=True).encode()
