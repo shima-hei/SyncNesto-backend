@@ -329,6 +329,15 @@ def test_email_change_requires_old_approval_and_new_confirmation(
 ):
     """両方のメールで本人が確定するまでIdentityを維持し、完了後に全セッションを失効する。"""
     user = create_test_user(email="old-address@example.com")
+    from app.models.notification_email import NotificationEmailPreference
+    from app.services.notification_email_preferences import email_identity
+
+    # 新配送flag停止中にも、旧ONはメール変更のtransaction内で停止する。
+    preference = NotificationEmailPreference(
+        user_id=user.id, enabled=True, email_digest=email_identity(user), version=1
+    )
+    db.add(preference)
+    db.commit()
     old_hash = user.hashed_password
     session_id = authorize_as(client, user)
     old_token = _request_email_change(client, "new-address@example.com", mail)
@@ -365,6 +374,8 @@ def test_email_change_requires_old_approval_and_new_confirmation(
     assert confirmed.status_code == 200
     db.expire_all()
     assert user.email == "new-address@example.com"
+    db.refresh(preference)
+    assert not preference.enabled and preference.version == 2
     assert user.hashed_password == old_hash
     assert db.get(UserSession, session_id).revoked_at is not None
     _assert_invalid(

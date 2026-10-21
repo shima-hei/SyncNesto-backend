@@ -342,6 +342,12 @@ class UserService:
         next_user_type = user_in.user_type or UserType(user.user_type)
         self._validate_user_type_roles(user_type=next_user_type, roles=roles)
 
+        if user_in.email is not None and user_in.email != user.email:
+            from app.services.notification_email_preferences import (
+                pause_email_selection,
+            )
+
+            pause_email_selection(db, user.id)
         user = self.repository.update(
             db,
             user=user,

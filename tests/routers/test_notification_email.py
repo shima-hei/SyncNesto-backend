@@ -162,7 +162,17 @@ def test_internal_event_delivery_and_no_backfill(
     assert row["status"] == "requested"
 
 
-@pytest.mark.parametrize("change", ["off_on", "email", "permission", "decided"])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "off_on",
+        "email",
+        "email_roundtrip",
+        "email_while_disabled",
+        "permission",
+        "decided",
+    ],
+)
 def test_pending_delivery_reauthorizes_and_never_revives(
     client, db, approval_context, monkeypatch, change
 ):
@@ -190,6 +200,29 @@ def test_pending_delivery_reauthorizes_and_never_revives(
     elif change == "email":
         ctx["approver"].email = "ux-mail-new@example.com"
         db.commit()
+    elif change in {"email_roundtrip", "email_while_disabled"}:
+        from app.schemas.user import UserUpdate
+        from app.services.notification_email_preferences import preference_read
+        from app.services.user import UserService
+
+        original_email = ctx["approver"].email
+        if change == "email_while_disabled":
+            monkeypatch.setattr(settings, "fixed_approval_email_enabled", False)
+        for email in ["ux-mail-new@example.com", original_email]:
+            UserService().update_user(
+                db,
+                user_id=ctx["approver"].id,
+                user_in=UserUpdate(version=ctx["approver"].version, email=email),
+            )
+            db.commit()
+        monkeypatch.setattr(settings, "fixed_approval_email_enabled", True)
+        assert not db.get(Preference, ctx["approver"].id).enabled
+        assert (
+            preference_read(
+                db.get(Preference, ctx["approver"].id), ctx["approver"]
+            ).pause_reason
+            == "identity_changed"
+        )
     elif change == "permission":
         role = db.scalar(
             select(Role.id).where(Role.key == "project_admin", Role.scope == "project")

@@ -3,7 +3,7 @@
 import hashlib
 import hmac
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, inspect, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -51,9 +51,40 @@ def capture_available(user: User) -> bool:
         return False
 
 
+def pause_email_selection(db: Session, user_id: int) -> None:
+    """宛先変更と同じtransactionで旧ONを停止し、元のアドレスでも復活させない。"""
+    if (
+        settings.is_public_environment
+        or settings.demo_mode
+        or db.info.get("data_realm") == "demo"
+        or db.info.get("mcp_connection_id")
+    ):
+        return
+    # flag停止中にも宛先変更を追跡する。移行前の互換runtimeには新表がない。
+    if not inspect(db.connection()).has_table("notification_email_preferences"):
+        return
+    db.execute(text("SELECT pg_advisory_xact_lock(1398362932,0)"))
+    db.execute(
+        update(NotificationEmailPreference)
+        .where(
+            NotificationEmailPreference.user_id == user_id,
+            NotificationEmailPreference.enabled.is_(True),
+        )
+        .values(
+            enabled=False,
+            version=NotificationEmailPreference.version + 1,
+            updated_at=func.clock_timestamp(),
+        )
+    )
+
+
 def preference_read(row, user: User) -> NotificationEmailPreferences:
     """宛先変更後の旧ONを実効OFFとして返す。"""
-    changed = bool(row and row.enabled and row.email_digest != email_identity(user))
+    changed = bool(
+        row
+        and row.email_digest
+        and (not row.enabled or row.email_digest != email_identity(user))
+    )
     return NotificationEmailPreferences(
         fixed_approval_email_enabled=bool(row and row.enabled and not changed),
         version=row.version if row else 0,

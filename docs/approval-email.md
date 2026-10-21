@@ -16,6 +16,8 @@ PATCH本文は `fixed_approval_email_enabled`（厳密bool）と `version`（厳
 
 全応答に `Cache-Control: private, no-store` と `Referrer-Policy: no-referrer`。宛先文字列は返さず、保存はUser/emailの用途分離HMAC。email変更後の旧ONは実効OFF/identity_changedとして扱い、本人が再選択する。再ONや再公開で旧配送を復活させない。
 
+通常LOCALの管理者によるメール更新・本人による新メール確認は、同じtransactionで新しい通知設定だけをOFFにしversionを進める。新配送flag停止中も追跡し、元のアドレスに戻しても旧ONへ戻さない。既存APIの入出力・メール送信契約・User列・DB guardは変更しない。直接SQLや旧互換buildで宛先を保守した場合は、worker再開前に通知設定を本人が再確認する。
+
 ## LOCAL起動
 
 既存DBを保全・復元検証し、`uv run --frozen alembic upgrade head` で空の3表を追加する。既存設定を保持してBackend/Frontend server側に `FIXED_APPROVAL_EMAIL_ENABLED=true` を明示する。既存 `FIXED_APPROVAL_NOTIFICATIONS_ENABLED` も必要。Frontendの既存通知2画面に設定欄が現れる。新NEXT_PUBLIC変数は不要。
