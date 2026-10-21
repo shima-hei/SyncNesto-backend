@@ -720,6 +720,14 @@ commented
 
 ## Phase 3A: 文書の目標と案件共通の出典
 
+### A3b-1: 読取専用の要件追跡
+
+`GET /projects/{project_id}/requirement-trace` は `page`（1〜）、`page_size`（既定20/上限100）、任意の `document_id/q/status` を受ける。code/id順のページに文書・要件のID/名称/版/編集状態と、関連設計・作業・テスト項目のdistinct件数を返す。本文・コメント・履歴の全件取得はしない。文書フィルタは個人操作で、案件共通の出典を変更しない。
+
+`GET /projects/{project_id}/requirement-trace/{requirement_id}` は選択1件の本文/受け入れ条件を各8,000文字まで、関連を分野ごと20件まで返す。`*_truncated` と `has_more/count` を確認し、続きは既存詳細で読む。関連テストは項目数でありケース数ではなく、設計書への入口で行フォーカスを保証しない。作業はIssue/マイルストーン等も含み、完了率の分母ではない。
+
+`PROJECT_TRACEABILITY_ENABLED` は既定false。一覧は `disabled/restricted/ready`、分野は `ready/restricted`。権限外の件数はnullでID/名称を返さず、0件とは区別する。`agreement_state/execution_state=not_evaluated` は未合意/未実施の判定ではない。既存固定承認とテスト設計で根拠を確認する。既存更新API・DB構造・permission割当・依存を変更しない。
+
 要件定義書のcreate/read/list/updateに任意の `project_goal`、`project_scope`、`project_completion_criteria`（各20,000文字まで）を追加した。既存purpose/Project.descriptionから転記せず、未送信は保持、明示nullは解除、空白だけの新本文はnullにする。`PROJECT_OBJECTIVES_ENABLED=false`は新項目の書込を停止するが、旧フィールドだけの更新と保存済み本文の読取を維持する。文書作成/更新と変更履歴は同一transaction、更新時は文書をロックしてversion競合を検査する。
 
 `GET /projects/{id}/objectives`は認可された出典と本文・操作capabilityを返す。stateはdisabled/restricted/unselected/available/unavailable。requirement:readなしは参照の版/ID/名称/本文を返さない。本文がnullなら未登録であり、達成率ではない。

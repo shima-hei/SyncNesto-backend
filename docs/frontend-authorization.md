@@ -1010,6 +1010,12 @@ Cookie/CSRF/Originを維持し、全応答をprivate/no-storeとする。詳細�
 
 ## 案件目標の共通出典（Phase 3A）
 
+### A3b-1: 要件追跡の読取境界
+
+新しい2つの `GET /projects/{project_id}/requirement-trace[/{requirement_id}]` は現在の有効tenant/社内Project所属とproject:readを要求する。要件readなしの一覧はrestricted（total=null/items=[]）、個別取得は403。分野ごとにdocument:read/task:read/test_plan:readを確認し、権限外の件数・存在・名称・IDは返さない。承認への入口だけにartifact_release:readを確認し、判断や本文の追加権限を付与しない。
+
+同Projectで有効な親文書/章/関連先だけを参照する。運営管理者だけの非参加者、別tenant、guest/MCPは不可。demoは一覧無効/個別不可。新permission/role割当はない。Backendはno-store、BFFはエラーを含めprivate/no-store、Next headersはno-referrer。Query keyはtenant/本人/Project/条件/REQ版で分ける。概要の戻りURLは同Projectの許可pathname/queryだけへ再構築し、既存TaskOriginを優先する。
+
 新permission `project:manage_goal_source` はproject_admin/managerへ各1割当。組織管理者/運営管理者のProjectメタデータ権限は業務本文の認可ではない。目標APIは現在tenant・Project所属・project:readを確認し、requirement:readを持たない本人には出典の存在・ID・本文・参照版を返さない。ゲストは既存/shared経路を利用し、内部目標APIを使わない。MCP経路から新参照APIへ接続しない。
 
 共通出典の選択には専用permissionとrequirement:readを要求し、同じ案件の有効文書と版を確認する。選択と追記専用業務履歴・監査を同一transactionで保存し、専用versionの条件付きUPDATEで競合を拒否する。本文編集権限を管理者/managerに制限し直すものではない。UIはserver capabilityを使用する。新GETはno-store、Frontendはtenant/本人/Project別のquery keyを使用する。
