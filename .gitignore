@@ -245,3 +245,5 @@ docker/pgadmin/
 !/docs/frontend-specifications-api.md
 .codex
 AGENTS.md
+.verify/
+verification-results/
