@@ -100,3 +100,9 @@ Migration: `a83d6e91b402_add_notifications.py`。`uv run alembic upgrade head` �
 検証結果: バックエンド全体は385件成功、3件は既存の想定失敗。追加した同時割当・更新失敗rollback・案件別既読・CSRFと要件機能の再検証は111件成功。編集APIがない従来要件コメントの編集テスト1件は対象外としてskipする。
 
 フロントの表示・遷移テスト4件、format、typecheck、lint、buildを確認する。実ブラウザでは空状態、31件のページング、Header直近8件、個別/全件既読、タスク詳細遷移、削除済み表示、390px幅、ライト/ダークを確認する。ブラウザ確認用の通知は専用event_keyで作成し、検証後にその通知だけを削除する。
+
+# Phase 2B-3b: 本人が選択する承認メール
+
+既存通知APIの入出力は維持し、`/notification-preferences` GET/PATCHを追加した。
+入力・本人比較ヘッダー・version競合・LOCAL限定配送の契約は [approval-email.md](approval-email.md) を参照する。
+設定はアカウント共通。Frontendは既存の社内/共有通知画面へ同じ設定を置き、送信結果を業務判断として表示しない。

@@ -35,6 +35,7 @@ class PublicationCacheMiddleware:
                 and parts[5] == "next-actions"
             )
             or (len(parts) >= 2 and parts[1] == "guest-invitations")
+            or (len(parts) == 2 and parts[1] == "notification-preferences")
         )
 
         async def private_send(message: Message):

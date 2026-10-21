@@ -43,6 +43,11 @@ from app.models.mcp import (
 )
 from app.models.mfa import MfaFactor, MfaFlow, MfaRecoveryCode, MfaRecoveryRequest
 from app.models.notification import Notification
+from app.models.notification_email import (
+    NotificationEmailAttempt,
+    NotificationEmailDelivery,
+    NotificationEmailPreference,
+)
 from app.models.project import Project, ProjectMember
 from app.models.rbac import Permission, Role, RolePermission, UserRole
 from app.models.request_limit import RequestLimit
@@ -172,6 +177,9 @@ __all__ = [
     "Draft",
     "LoginAttempt",
     "Notification",
+    "NotificationEmailAttempt",
+    "NotificationEmailDelivery",
+    "NotificationEmailPreference",
     "Milestone",
     "Permission",
     "Project",

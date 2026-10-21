@@ -180,3 +180,6 @@ FIXED_APPROVAL_CANDIDATE_INVALID = (
     "指定先はこの内容を判断する権限を持つ別の本人にしてください"
 )
 SHARED_FILE_UNAVAILABLE = "添付を取得できません。時間をおいてもう一度操作してください"
+NOTIFICATION_EMAIL_UNAVAILABLE = (
+    "この環境では、この通知先へのメール配信を有効にできません"
+)

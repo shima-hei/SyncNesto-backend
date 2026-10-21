@@ -1001,3 +1001,9 @@ Phase 2B-1の限定Cookie・匿名Origin・通常MFA・既存permissionとの接
 # Phase 2B-2 外部固定承認
 
 具体契約は [frontend-guest-fixed-approvals.md](frontend-guest-fixed-approvals.md)。共有の指定本人にだけ新しい判断APIを設け、通常Project role/permissionを外部へ付与しない。現行のread-only共有とは別に、共有判断5操作にはglobal設定と独立した実MFAを要求する。公開停止/参加・許可失効後は本人の今回の判断履歴も取得不可。既存内部判断経路は外部依頼を拒否し、既存取消URLは外部依頼のみRCへ分岐する。
+
+# Phase 2B-3b: 通知メール設定の本人境界
+
+`/notification-preferences` GET/PATCHはtenant非依存の通常MFA済み本人に限る。
+PATCHは `X-Syncnesto-Expected-User` と現在の認証Userの一致を必須にし、headerで本人を選択しない。
+Cookie/CSRF/Originを維持し、全応答をprivate/no-storeとする。詳細は [approval-email.md](approval-email.md)。

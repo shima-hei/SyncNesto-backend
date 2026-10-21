@@ -296,7 +296,7 @@ class FixedApprovalNotificationRepository:
                 if guest
                 else source["scope_manifest"]["title"],
             )
-            db.execute(
+            created = db.scalar(
                 insert(self.n)
                 .values(
                     tenant_id=source["tenant_id"],
@@ -315,4 +315,11 @@ class FixedApprovalNotificationRepository:
                     ),
                 )
                 .on_conflict_do_nothing(constraint="uq_notification_event_recipient")
+                .returning(self.n.c.id)
             )
+            if created is not None:
+                from app.services.notification_email_delivery import (
+                    enqueue_notification_email,
+                )
+
+                enqueue_notification_email(db, created)
