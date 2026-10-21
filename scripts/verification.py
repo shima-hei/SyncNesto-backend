@@ -80,9 +80,8 @@ def select(profile: str, base: str | None) -> tuple[list[str], str]:
         if not path.startswith(("app/services/", "app/routers/")):
             return [], "full: common or unmapped change"
         stem = Path(path).stem.removesuffix("s")
-        domain = next(
-            (key for key in DOMAINS if stem == key or stem.startswith(key + "_")), None
-        )
+        # 名前が似た新モジュールを既知の影響範囲だと推測しない。
+        domain = stem if stem in DOMAINS else None
         if domain is None:
             return [], "full: unmapped business change"
         for name in DOMAINS[domain]:

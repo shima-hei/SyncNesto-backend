@@ -43,6 +43,7 @@ def test_summary_requires_finished_exit_zero_and_teardown():
         "tests/conftest.py",
         "uv.lock",
         "app/services/new_domain.py",
+        "app/services/task_new_policy.py",
         "alembic/versions/new.py",
     ],
 )
