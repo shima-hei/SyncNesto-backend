@@ -34,6 +34,12 @@ MCP_IDENTITY_OPERATIONS = {
     ("post", "/integrations/mcp/authorization-requests/{request_id}/deny"),
 }
 
+# メール設定の2操作は組織データでなく、現在の本人だけを扱う。
+EMAIL_IDENTITY_OPERATIONS = {
+    ("get", "/notification-preferences"),
+    ("patch", "/notification-preferences"),
+}
+
 # 明示した共有取得/添付発行だけは、選択組織ではなく現在本人を検証する。
 SHARED_IDENTITY_OPERATIONS = {
     ("get", "/shared/publications"),
@@ -396,6 +402,7 @@ def test_all_business_routes_require_tenant_context(client):
         same_origin,
     )
     from app.routers.mcp import router as mcp_router
+    from app.routers.notification_email import router as email_router
     from app.routers.shared_notifications import router as notification_router
 
     def has_current_user(dependency):
@@ -409,12 +416,27 @@ def test_all_business_routes_require_tenant_context(client):
     invitation_count = 0
     approval_count = 0
     notification_count = 0
+    email_count = 0
     for path, operations in client.app.openapi()["paths"].items():
         if path == "/" or path.startswith(
             ("/auth", "/users", "/health", "/tenants", "/demo")
         ):
             continue
         for method, operation in operations.items():
+            if (method, path) in EMAIL_IDENTITY_OPERATIONS:
+                route = next(
+                    route
+                    for route in email_router.routes
+                    if isinstance(route, APIRoute)
+                    and route.path == path
+                    and method.upper() in route.methods
+                )
+                assert has_current_user(route.dependant), (method, path)
+                assert not any(
+                    p["name"] == "X-Tenant-ID" for p in operation.get("parameters", [])
+                )
+                email_count += 1
+                continue
             if (method, path) in SHARED_NOTIFICATION_IDENTITY_OPERATIONS:
                 route = next(
                     route
@@ -502,6 +524,7 @@ def test_all_business_routes_require_tenant_context(client):
     assert invitation_count == len(INVITATION_IDENTITY_OPERATIONS)
     assert approval_count == len(GUEST_APPROVAL_IDENTITY_OPERATIONS)
     assert notification_count == len(SHARED_NOTIFICATION_IDENTITY_OPERATIONS)
+    assert email_count == len(EMAIL_IDENTITY_OPERATIONS)
 
 
 @pytest.mark.parametrize(
@@ -830,6 +853,7 @@ def test_every_business_operation_rejects_unowned_tenant(client, create_test_use
                 | INVITATION_IDENTITY_OPERATIONS
                 | GUEST_APPROVAL_IDENTITY_OPERATIONS
                 | SHARED_NOTIFICATION_IDENTITY_OPERATIONS
+                | EMAIL_IDENTITY_OPERATIONS
             ):
                 continue
             url = path

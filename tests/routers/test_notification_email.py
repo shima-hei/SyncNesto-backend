@@ -85,6 +85,7 @@ def test_default_opt_in_version_and_no_recipient_injection(
 ):
     """初期OFF、GET無書込み、本人選択と初回競合を確認する。"""
     ctx = approval_context
+    client.headers["X-Tenant-ID"] = "999999"
     response = client.get("/notification-preferences")
     assert response.status_code == 200
     assert response.headers["cache-control"] == "private, no-store"
