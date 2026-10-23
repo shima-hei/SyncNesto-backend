@@ -641,7 +641,8 @@ class RequirementVerificationService:
                         reason = "invalid_execution_source"
                 items.append(
                     s.VerificationCandidate(
-                        selected=any(
+                        selected=pair["active"]
+                        and any(
                             t.item_id == pair["item_id"]
                             and (
                                 t.pattern_scope == "all_enabled"

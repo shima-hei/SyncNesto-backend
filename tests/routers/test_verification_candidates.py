@@ -89,6 +89,16 @@ def test_compare_execution_after_save_and_renumber(client, prepared, db, mode):
             next(r for r in read()["items"] if r["case_id"] == case["id"])["state"]
             == status
         )
+    data["version"] = 4
+    data["patterns"][0]["enabled"] = False
+    assert client.put(url, json=data).status_code == 200
+    inactive = next(
+        r for r in read()["items"] if r["pattern_id"] == data["patterns"][0]["id"]
+    )
+    assert inactive["state"] == "inactive" and inactive["selected"] is False
+    data["version"] = 5
+    data["patterns"][0]["enabled"] = True
+    assert client.put(url, json=data).status_code == 200
     if mode == "legacy":
         for index in range(2, 50):
             pattern = str(uuid4())
@@ -96,7 +106,7 @@ def test_compare_execution_after_save_and_renumber(client, prepared, db, mode):
             data["links"].append(
                 {"id": str(uuid4()), "item_id": item_id, "pattern_id": pattern}
             )
-        data["version"] = 4
+        data["version"] = 6
         assert client.put(url, json=data).status_code == 200
         measurements = []
         for count in (10, 50):
