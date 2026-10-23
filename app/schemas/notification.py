@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -26,6 +27,11 @@ class NotificationContext(BaseModel):
     design_id: int | None = None
     subject_type: str | None = None
     subject_id: str | None = None
+    approval_id: UUID | None = None
+    event_id: UUID | None = None
+    action: str | None = None
+    current_status: str | None = None
+    target_kind: str | None = None
 
 
 class NotificationRead(BaseModel):

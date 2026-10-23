@@ -11,7 +11,7 @@ from email.utils import getaddresses
 import httpx
 
 from app.core.config import settings
-from app.core.exceptions import EmailUnavailableError
+from app.core.exceptions import EmailUnavailableError, LocalEmailCaptureError
 
 RESEND_EMAILS_URL = "https://api.resend.com/emails"
 
@@ -75,11 +75,74 @@ class EmailService:
         Raises:
             EmailUnavailableError: 配信が受け付けられなかった場合。
         """
-        self.ensure_available()
         self._validate_message(message)
+        if self.is_local_capture(message.to):
+            return self._send_capture(message)
+        self.ensure_available()
         if settings.email_provider == "resend":
             return self._send_resend(message)
         return self._send_smtp(message)
+
+    @staticmethod
+    def is_local_capture(recipient: str) -> bool:
+        """明示したLOCALダミーだけを捕捉し、公開環境では拒否する。"""
+        recipients = {
+            item.strip()
+            for item in settings.local_email_capture_recipients.split(",")
+            if item.strip()
+        }
+        if not recipients:
+            return False
+        if (
+            settings.is_public_environment
+            or settings.local_email_capture_host not in {"127.0.0.1", "::1"}
+            or settings.local_email_capture_port != 1025
+            or any(
+                not email.startswith("ux-") or not email.endswith("@example.com")
+                for email in recipients
+            )
+        ):
+            raise EmailUnavailableError()
+        return recipient in recipients
+
+    @staticmethod
+    def _send_capture(message: OutgoingEmail) -> str:
+        """通常SMTPの値を読まず、失敗時も他の配信先へ切り替えない。"""
+        started = False
+        try:
+            sender = Address(
+                addr_spec=getaddresses([settings.local_email_capture_from])[0][1]
+            )
+            if not sender.username or not sender.domain:
+                raise ValueError
+            email = EmailMessage()
+            email["From"] = settings.local_email_capture_from
+            email["To"] = message.to
+            email["Subject"] = message.subject
+            digest = hashlib.sha256(message.idempotency_key.encode()).hexdigest()
+            identity = f"<{digest}@example.com>"
+            email["Message-ID"] = identity
+            email.set_content(message.text)
+            email.add_alternative(message.html, subtype="html")
+            with smtplib.SMTP(
+                settings.local_email_capture_host,
+                settings.local_email_capture_port,
+                timeout=10,
+            ) as client:
+                started = True
+                if client.send_message(
+                    email, from_addr=str(sender), to_addrs=[message.to]
+                ):
+                    raise LocalEmailCaptureError(uncertain=False)
+            return identity
+        except (
+            smtplib.SMTPRecipientsRefused,
+            smtplib.SMTPSenderRefused,
+            smtplib.SMTPDataError,
+        ):
+            raise LocalEmailCaptureError(uncertain=False) from None
+        except (smtplib.SMTPException, OSError, ValueError, IndexError):
+            raise LocalEmailCaptureError(uncertain=started) from None
 
     @staticmethod
     def _sender_address() -> str:

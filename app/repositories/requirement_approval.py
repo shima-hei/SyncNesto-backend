@@ -2,8 +2,10 @@
 
 from datetime import UTC, datetime
 
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import FixedApprovalMigratedError
 from app.models.requirement import (
     RequirementApproval,
 )
@@ -34,7 +36,7 @@ class RequirementApprovalRepository:
             comment=approval_in.comment,
         )
         db.add(approval)
-        db.commit()
+        self._commit(db)
         db.refresh(approval)
         return approval
 
@@ -93,7 +95,7 @@ class RequirementApprovalRepository:
         approval.rejected_at = None
         if comment is not None:
             approval.comment = comment
-        db.commit()
+        self._commit(db)
         db.refresh(approval)
         return approval
 
@@ -110,6 +112,21 @@ class RequirementApprovalRepository:
         approval.approved_at = None
         if comment is not None:
             approval.comment = comment
-        db.commit()
+        self._commit(db)
         db.refresh(approval)
         return approval
+
+    @staticmethod
+    def _commit(db: Session) -> None:
+        """切替済み旧依頼の判断を、DBガードから業務競合へ変換する。"""
+        try:
+            db.commit()
+        except DBAPIError as exc:
+            if (
+                getattr(exc.orig, "pgcode", None) == "P0001"
+                and getattr(getattr(exc.orig, "diag", None), "message_primary", None)
+                == "APPROVAL_MIGRATED"
+            ):
+                db.rollback()
+                raise FixedApprovalMigratedError() from None
+            raise

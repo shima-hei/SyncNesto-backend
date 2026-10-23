@@ -28,6 +28,10 @@ from app.models.test_design import (
     TestItem,
     TestPattern,
 )
+from app.repositories.fixed_approval_notification import (
+    ACTION_TYPES,
+    FixedApprovalNotificationRepository,
+)
 
 
 class NotificationRepository:
@@ -46,6 +50,17 @@ class NotificationRepository:
         """宛先本人の通知だけに制限する。"""
         query = db.query(Notification).filter(
             Notification.recipient_user_id == recipient_id
+        )
+        fixed = FixedApprovalNotificationRepository()
+        eligible = fixed.internal(recipient_id, db.info.get("tenant_id", -1))
+        is_fixed = or_(
+            Notification.target_type == "fixed_approval",
+            Notification.type.in_(set(ACTION_TYPES.values())),
+        )
+        query = query.filter(
+            or_(
+                ~is_fixed, Notification.id.in_(eligible.with_only_columns(fixed.n.c.id))
+            )
         )
         if project_id is not None:
             query = query.filter(Notification.project_id == project_id)
@@ -102,6 +117,9 @@ class NotificationRepository:
                 Notification.id == notification_id,
                 Notification.recipient_user_id == recipient_id,
                 Notification.read_at.is_(None),
+                Notification.id.in_(
+                    self.query(db, recipient_id).with_entities(Notification.id)
+                ),
             )
             .values(read_at=datetime.now(UTC))
         )

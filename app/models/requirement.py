@@ -4,6 +4,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -26,6 +27,17 @@ class RequirementDocument(Base):
 
     __tablename__ = "requirement_documents"
     __table_args__ = (
+        UniqueConstraint("project_id", "id", name="uq_requirement_document_identity"),
+        CheckConstraint(
+            "char_length(project_goal) <= 20000", name="ck_document_goal_length"
+        ),
+        CheckConstraint(
+            "char_length(project_scope) <= 20000", name="ck_document_scope_length"
+        ),
+        CheckConstraint(
+            "char_length(project_completion_criteria) <= 20000",
+            name="ck_document_completion_length",
+        ),
         UniqueConstraint(
             "project_id",
             "document_code",
@@ -72,6 +84,15 @@ class RequirementDocument(Base):
         Text,
         nullable=True,
         comment=db_comment("目的", "要件定義書の目的"),
+    )
+    project_goal: Mapped[str | None] = mapped_column(
+        Text, comment=db_comment("案件ゴール", "案件で実現することの正本")
+    )
+    project_scope: Mapped[str | None] = mapped_column(
+        Text, comment=db_comment("案件スコープ", "案件の対象範囲・対象外")
+    )
+    project_completion_criteria: Mapped[str | None] = mapped_column(
+        Text, comment=db_comment("案件完了条件", "案件の完了を判断する条件")
     )
     target_system_name: Mapped[str | None] = mapped_column(
         String(255),

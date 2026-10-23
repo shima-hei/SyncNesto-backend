@@ -21,7 +21,10 @@ from app.models.mcp import McpConnection
 from app.models.user import User
 from app.repositories.mcp import McpRepository
 from app.schemas import mcp_tools as s
-from app.schemas.requirement import RequirementTargetCommentCreate
+from app.schemas.requirement import (
+    RequirementDocumentCreate,
+    RequirementTargetCommentCreate,
+)
 from app.schemas.task import TaskUpdate
 from app.schemas.test_design import TestDesignUpdate
 from app.services.audit_log import AuditLogService
@@ -410,7 +413,9 @@ class McpOperationsService:
                     RequirementDocumentService().create_document(
                         db,
                         project_id=project_id,
-                        document_in=data.data,
+                        document_in=RequirementDocumentCreate.model_validate(
+                            data.data.model_dump(exclude_unset=True)
+                        ),
                         actor_id=actor_id,
                     )
                 )

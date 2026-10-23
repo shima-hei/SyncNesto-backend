@@ -97,11 +97,15 @@ def get_authenticated_user(
 
     db.info["password_setup_only"] = payload.get("password_setup_only") is True
     db.info["auth_session"] = user_session
+    # DLだけが待機後にも検証できるよう、検証済みJWTの期限のみ渡す。
+    db.info["auth_token_exp"] = payload.get("exp")
     request.state.auth_session_id = user_session.id
 
     review = ReviewAccountService().validate(db, user)
-    if review is not None and request.url.path.startswith("/auth/") and not (
-        request.url.path == "/auth/me" and request.method == "GET"
+    if (
+        review is not None
+        and request.url.path.startswith("/auth/")
+        and not (request.url.path == "/auth/me" and request.method == "GET")
     ):
         raise ForbiddenError()
 

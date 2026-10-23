@@ -1,6 +1,17 @@
 """SQLAlchemy models."""
 
 from app.models.account_action import AccountAction
+from app.models.artifact_preservation import (
+    ArtifactPreservation,
+    ArtifactPreservationObject,
+)
+from app.models.artifact_publication import ArtifactPublication, ArtifactPublicationNode
+from app.models.artifact_publication_access import (
+    ArtifactPublicationEvent,
+    ArtifactPublicationGrant,
+    ProjectGuestParticipation,
+)
+from app.models.artifact_release import ArtifactRelease, ArtifactReleaseNode
 from app.models.audit_log import AuditLog
 from app.models.comment_mention import CommentMention
 from app.models.demo import DemoOwnedUser, DemoSession, DemoStartBudget, DemoUpload
@@ -11,6 +22,18 @@ from app.models.document import (
     ProjectDocument,
 )
 from app.models.draft import Draft
+from app.models.fixed_approval import (
+    FixedApprovalEvent,
+    FixedApprovalRequest,
+    FixedApprovalRequirementBasis,
+    LegacyApprovalImport,
+)
+from app.models.guest_fixed_approval import FixedApprovalGuestBinding
+from app.models.guest_invitation import (
+    ProjectGuestInvitation,
+    ProjectGuestInvitationCheck,
+    ProjectGuestInvitationEvent,
+)
 from app.models.login_attempt import LoginAttempt
 from app.models.mcp import (
     McpAuthorizationRequest,
@@ -20,7 +43,13 @@ from app.models.mcp import (
 )
 from app.models.mfa import MfaFactor, MfaFlow, MfaRecoveryCode, MfaRecoveryRequest
 from app.models.notification import Notification
+from app.models.notification_email import (
+    NotificationEmailAttempt,
+    NotificationEmailDelivery,
+    NotificationEmailPreference,
+)
 from app.models.project import Project, ProjectMember
+from app.models.project_goal_source_event import ProjectGoalSourceEvent
 from app.models.rbac import Permission, Role, RolePermission, UserRole
 from app.models.request_limit import RequestLimit
 from app.models.requirement import (
@@ -81,6 +110,23 @@ from app.models.test_design import (
 from app.models.user import User
 
 __all__ = [
+    "FixedApprovalGuestBinding",
+    "ProjectGuestInvitation",
+    "ProjectGuestInvitationCheck",
+    "ProjectGuestInvitationEvent",
+    "ArtifactPublicationEvent",
+    "ArtifactPublicationGrant",
+    "ProjectGuestParticipation",
+    "ArtifactPublication",
+    "ArtifactPublicationNode",
+    "FixedApprovalEvent",
+    "FixedApprovalRequest",
+    "FixedApprovalRequirementBasis",
+    "LegacyApprovalImport",
+    "ArtifactPreservation",
+    "ArtifactPreservationObject",
+    "ArtifactRelease",
+    "ArtifactReleaseNode",
     "Specification",
     "SpecificationComment",
     "SpecificationLink",
@@ -132,10 +178,14 @@ __all__ = [
     "Draft",
     "LoginAttempt",
     "Notification",
+    "NotificationEmailAttempt",
+    "NotificationEmailDelivery",
+    "NotificationEmailPreference",
     "Milestone",
     "Permission",
     "Project",
     "ProjectMember",
+    "ProjectGoalSourceEvent",
     "Requirement",
     "RequirementApproval",
     "RequirementChangeLog",

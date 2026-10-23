@@ -34,6 +34,55 @@ MCP_IDENTITY_OPERATIONS = {
     ("post", "/integrations/mcp/authorization-requests/{request_id}/deny"),
 }
 
+# メール設定の2操作は組織データでなく、現在の本人だけを扱う。
+EMAIL_IDENTITY_OPERATIONS = {
+    ("get", "/notification-preferences"),
+    ("patch", "/notification-preferences"),
+}
+
+# 明示した共有取得/添付発行だけは、選択組織ではなく現在本人を検証する。
+SHARED_IDENTITY_OPERATIONS = {
+    ("get", "/shared/publications"),
+    ("get", "/shared/publications/{publication_id}"),
+    ("get", "/shared/publications/{publication_id}/nodes"),
+    ("get", "/shared/publications/{publication_id}/files"),
+    ("post", "/shared/publications/{publication_id}/files/{file_id}/download"),
+}
+
+# メール確認Cookieと本人の認証で検査する新しい5操作だけを分離する。
+INVITATION_IDENTITY_OPERATIONS = {
+    ("post", "/guest-invitations/{invitation_id}/inspect"),
+    ("get", "/guest-invitations/{invitation_id}"),
+    ("post", "/guest-invitations/{invitation_id}/register"),
+    ("post", "/guest-invitations/{invitation_id}/accept"),
+    ("post", "/guest-invitations/{invitation_id}/decline"),
+}
+
+# 固定した公開許可に結び付く指定本人の5操作だけを検証する。
+GUEST_APPROVAL_IDENTITY_OPERATIONS = {
+    ("get", "/shared/publications/approval-requests"),
+    ("get", "/shared/publications/{publication_id}/approval-requests/{approval_id}"),
+    (
+        "get",
+        "/shared/publications/{publication_id}/approval-requests/{approval_id}/bases",
+    ),
+    (
+        "post",
+        "/shared/publications/{publication_id}/approval-requests/{approval_id}/decision-preview",
+    ),
+    (
+        "post",
+        "/shared/publications/{publication_id}/approval-requests/{approval_id}/decisions",
+    ),
+}
+
+SHARED_NOTIFICATION_IDENTITY_OPERATIONS = {
+    ("get", "/shared/notifications"),
+    ("get", "/shared/notifications/unread-count"),
+    ("post", "/shared/notifications/read-all"),
+    ("post", "/shared/notifications/{event_id}/read"),
+}
+
 
 @pytest.mark.parametrize("action", ["add", "change", "remove"])
 def test_project_membership_changes_preserve_other_tenant_sessions(
@@ -345,7 +394,16 @@ def test_all_business_routes_require_tenant_context(client):
     from fastapi.routing import APIRoute
 
     from app.core.auth import get_current_user
+    from app.routers.artifact_publication_access import shared_router
+    from app.routers.guest_fixed_approvals import shared_router as approval_router
+    from app.routers.guest_invitations import (
+        optional_user,
+        recipient_router,
+        same_origin,
+    )
     from app.routers.mcp import router as mcp_router
+    from app.routers.notification_email import router as email_router
+    from app.routers.shared_notifications import router as notification_router
 
     def has_current_user(dependency):
         return dependency.call is get_current_user or any(
@@ -354,12 +412,96 @@ def test_all_business_routes_require_tenant_context(client):
 
     count = 0
     identity_count = 0
+    shared_count = 0
+    invitation_count = 0
+    approval_count = 0
+    notification_count = 0
+    email_count = 0
     for path, operations in client.app.openapi()["paths"].items():
         if path == "/" or path.startswith(
             ("/auth", "/users", "/health", "/tenants", "/demo")
         ):
             continue
         for method, operation in operations.items():
+            if (method, path) in EMAIL_IDENTITY_OPERATIONS:
+                route = next(
+                    route
+                    for route in email_router.routes
+                    if isinstance(route, APIRoute)
+                    and route.path == path
+                    and method.upper() in route.methods
+                )
+                assert has_current_user(route.dependant), (method, path)
+                assert not any(
+                    p["name"] == "X-Tenant-ID" for p in operation.get("parameters", [])
+                )
+                email_count += 1
+                continue
+            if (method, path) in SHARED_NOTIFICATION_IDENTITY_OPERATIONS:
+                route = next(
+                    route
+                    for route in notification_router.routes
+                    if isinstance(route, APIRoute)
+                    and route.path == path
+                    and method.upper() in route.methods
+                )
+                assert has_current_user(route.dependant), (method, path)
+                assert not any(
+                    p["name"] == "X-Tenant-ID" for p in operation.get("parameters", [])
+                )
+                notification_count += 1
+                continue
+            if (method, path) in GUEST_APPROVAL_IDENTITY_OPERATIONS:
+                route = next(
+                    route
+                    for route in approval_router.routes
+                    if isinstance(route, APIRoute)
+                    and route.path == path
+                    and method.upper() in route.methods
+                )
+                assert has_current_user(route.dependant), (method, path)
+                assert not any(
+                    p["name"] == "X-Tenant-ID" for p in operation.get("parameters", [])
+                )
+                approval_count += 1
+                continue
+            if (method, path) in INVITATION_IDENTITY_OPERATIONS:
+                route = next(
+                    route
+                    for route in recipient_router.routes
+                    if isinstance(route, APIRoute)
+                    and route.path == path
+                    and method.upper() in route.methods
+                )
+                dependencies = {
+                    dependency.call for dependency in route.dependant.dependencies
+                }
+                assert (
+                    get_current_user in dependencies
+                    if path.endswith("/accept")
+                    else optional_user in dependencies
+                )
+                if method == "post":
+                    assert same_origin in dependencies
+                assert not any(
+                    p["name"] == "X-Tenant-ID" for p in operation.get("parameters", [])
+                )
+                invitation_count += 1
+                continue
+            if (method, path) in SHARED_IDENTITY_OPERATIONS:
+                route = next(
+                    route
+                    for route in shared_router.routes
+                    if isinstance(route, APIRoute)
+                    and route.path == path
+                    and method.upper() in route.methods
+                )
+                assert has_current_user(route.dependant), (method, path)
+                assert not any(
+                    p["name"] == "X-Tenant-ID" for p in operation.get("parameters", [])
+                )
+                shared_count += 1
+                continue
             if (method, path) in MCP_IDENTITY_OPERATIONS:
                 route = next(
                     route
@@ -378,6 +520,11 @@ def test_all_business_routes_require_tenant_context(client):
             count += 1
     assert count >= 130
     assert identity_count == len(MCP_IDENTITY_OPERATIONS)
+    assert shared_count == len(SHARED_IDENTITY_OPERATIONS)
+    assert invitation_count == len(INVITATION_IDENTITY_OPERATIONS)
+    assert approval_count == len(GUEST_APPROVAL_IDENTITY_OPERATIONS)
+    assert notification_count == len(SHARED_NOTIFICATION_IDENTITY_OPERATIONS)
+    assert email_count == len(EMAIL_IDENTITY_OPERATIONS)
 
 
 @pytest.mark.parametrize(
@@ -699,7 +846,15 @@ def test_every_business_operation_rejects_unowned_tenant(client, create_test_use
         ):
             continue
         for method, operation in operations.items():
-            if (method, path) in MCP_IDENTITY_OPERATIONS:
+            if (
+                (method, path)
+                in MCP_IDENTITY_OPERATIONS
+                | SHARED_IDENTITY_OPERATIONS
+                | INVITATION_IDENTITY_OPERATIONS
+                | GUEST_APPROVAL_IDENTITY_OPERATIONS
+                | SHARED_NOTIFICATION_IDENTITY_OPERATIONS
+                | EMAIL_IDENTITY_OPERATIONS
+            ):
                 continue
             url = path
             for parameter in operation.get("parameters", []):

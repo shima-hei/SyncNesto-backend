@@ -14,6 +14,11 @@ logger = logging.getLogger(__name__)
 
 
 PERMISSIONS = [
+    ("artifact_publication:manage", "成果物の公開準備版を生成する"),
+    ("artifact_publication:read", "成果物の公開準備版を内部で確認する"),
+    ("artifact_publication:publish", "固定内容の本人別公開許可・停止を管理する"),
+    ("artifact_release:create", "成果物の固定版を作成する"),
+    ("artifact_release:read", "成果物の固定版を閲覧する"),
     ("mcp:connect", "本人の権限でMCPを利用する"),
     ("tenant:manage", "運営者として組織を作成・管理する"),
     ("user:read", "ユーザーを閲覧する"),
@@ -24,6 +29,7 @@ PERMISSIONS = [
     ("project:read", "プロジェクトを閲覧する"),
     ("project:create", "プロジェクトを作成する"),
     ("project:update", "プロジェクトを更新する"),
+    ("project:manage_goal_source", "案件共通の目標参照文書を指定する"),
     ("project:delete", "プロジェクトを削除する"),
     ("project:invite_member", "プロジェクトメンバーを招待する"),
     ("project:remove_member", "プロジェクトメンバーを削除する"),
@@ -79,6 +85,12 @@ SYSTEM_ADMIN_PERMISSIONS = (
 ROLE_PERMISSIONS = {
     "system_admin": list(SYSTEM_ADMIN_PERMISSIONS),
     "project_admin": [
+        "project:manage_goal_source",
+        "artifact_publication:manage",
+        "artifact_publication:read",
+        "artifact_publication:publish",
+        "artifact_release:create",
+        "artifact_release:read",
         "mcp:connect",
         "project:read",
         "project:update",
@@ -114,6 +126,12 @@ ROLE_PERMISSIONS = {
         "requirement:link",
     ],
     "manager": [
+        "project:manage_goal_source",
+        "artifact_publication:manage",
+        "artifact_publication:read",
+        "artifact_publication:publish",
+        "artifact_release:create",
+        "artifact_release:read",
         "mcp:connect",
         "project:read",
         "task:read",

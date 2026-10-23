@@ -36,7 +36,8 @@ class DocumentAttachmentService:
         self.documents = DocumentService()
         self.repository = self.documents.repository
 
-    def validate_metadata(self, filename: str, content_type: str, size: int) -> str:
+    @staticmethod
+    def validate_metadata(filename: str, content_type: str, size: int) -> str:
         """形式、拡張子、容量と安全な表示名を確認する。"""
         name = PurePath(filename.replace("\\", "/")).name.strip()
         spec = FILE_TYPES.get(content_type)

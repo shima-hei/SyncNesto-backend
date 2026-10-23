@@ -70,6 +70,9 @@ REQUIREMENT_CHANGE_LOG_FORMATTER = ChangeLogFormatter(
             "document_code",
             "status",
             "purpose",
+            "project_goal",
+            "project_scope",
+            "project_completion_criteria",
             "author_id",
             "reviewer_id",
             "approver_id",
@@ -170,6 +173,7 @@ class RequirementChangeLogService:
         new_value: dict | None = None,
         reason: str | None = None,
         changed_by: int | None = None,
+        commit: bool = True,
     ) -> RequirementChangeLog:
         """要件定義変更履歴を記録する。
 
@@ -199,6 +203,7 @@ class RequirementChangeLogService:
             new_value=new_value,
             reason=reason,
             changed_by=changed_by,
+            commit=commit,
         )
 
     def list_change_logs_paginated(
@@ -311,14 +316,8 @@ class RequirementChangeLogService:
         user_ids: list[int | None] = [log.changed_by for log in change_logs]
         user_ids.extend(
             REQUIREMENT_CHANGE_LOG_FORMATTER.collect_user_ids(
-                [
-                    (log.field_name, log.old_value)
-                    for log in change_logs
-                ]
-                + [
-                    (log.field_name, log.new_value)
-                    for log in change_logs
-                ]
+                [(log.field_name, log.old_value) for log in change_logs]
+                + [(log.field_name, log.new_value) for log in change_logs]
             )
         )
         return user_ids

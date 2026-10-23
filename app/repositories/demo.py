@@ -125,6 +125,7 @@ class DemoRepository:
                 "mfa_flows",
                 "mfa_recovery_codes",
                 "review_account_grants",
+                "notification_email_preferences",
             }:
                 condition = table.c.user_id.in_(users)
             elif name == "mfa_recovery_requests":

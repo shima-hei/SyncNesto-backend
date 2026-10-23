@@ -232,6 +232,7 @@ docker/pgadmin/
 !/docs/frontend-home-api.md
 !/docs/frontend-file-upload.md
 !/docs/frontend-authorization.md
+!/docs/frontend-guest-invitations.md
 !/docs/deployment.md
 !/docs/multi-tenancy.md
 !/docs/email-approval.md
@@ -244,3 +245,5 @@ docker/pgadmin/
 !/docs/frontend-specifications-api.md
 .codex
 AGENTS.md
+.verify/
+verification-results/

@@ -25,6 +25,7 @@ class RequirementChangeLogRepository:
         new_value: dict | None = None,
         reason: str | None = None,
         changed_by: int | None = None,
+        commit: bool = True,
     ) -> RequirementChangeLog:
         """要件定義変更履歴を作成する。"""
         change_log = RequirementChangeLog(
@@ -39,7 +40,7 @@ class RequirementChangeLogRepository:
             changed_by=changed_by,
         )
         db.add(change_log)
-        db.commit()
+        db.commit() if commit else db.flush()
         db.refresh(change_log)
         return change_log
 
