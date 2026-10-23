@@ -560,7 +560,7 @@ def test_demo_exemption_does_not_allow_normal_mfa_management(
 
 
 def test_logout_revokes_pending_flow_and_shared_limit_survives_new_flows(
-    client, create_test_user
+    client, create_test_user, request_limit_clock
 ):
     """ログアウト時の取消とCookieを作り直す総当たりへの制限を確認する。"""
     user = create_test_user()

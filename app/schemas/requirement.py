@@ -12,10 +12,11 @@ from app.schemas.change_log import (
     RequirementChangeLogTargetTypeCode,
 )
 from app.schemas.comment_mention import CommentMentionOccurrence
+from app.schemas.project_objective import ObjectiveFields
 from app.schemas.user import UserSummary
 
 
-class RequirementDocumentBase(BaseModel):
+class RequirementDocumentBase(ObjectiveFields):
     """要件定義書schemaの共通フィールドを定義する基底schema。"""
 
     title: str
@@ -35,7 +36,7 @@ class RequirementDocumentCreate(RequirementDocumentBase):
     """要件定義書作成リクエストで受け取るschema。"""
 
 
-class RequirementDocumentUpdate(BaseModel):
+class RequirementDocumentUpdate(ObjectiveFields):
     """要件定義書更新リクエストで受け取るschema。"""
 
     version: int

@@ -24,6 +24,7 @@ class RequirementDocumentRepository:
         project_id: int,
         document_in: RequirementDocumentCreate,
         actor_id: int | None = None,
+        commit: bool = True,
     ) -> RequirementDocument:
         """要件定義書を作成する。"""
         document = RequirementDocument(
@@ -32,6 +33,9 @@ class RequirementDocumentRepository:
             document_code=document_in.document_code,
             status=document_in.status,
             purpose=document_in.purpose,
+            project_goal=document_in.project_goal,
+            project_scope=document_in.project_scope,
+            project_completion_criteria=document_in.project_completion_criteria,
             target_system_name=document_in.target_system_name,
             client_name=document_in.client_name,
             vendor_name=document_in.vendor_name,
@@ -43,7 +47,7 @@ class RequirementDocumentRepository:
             updated_by=actor_id,
         )
         db.add(document)
-        db.commit()
+        db.commit() if commit else db.flush()
         db.refresh(document)
         return document
 
@@ -51,16 +55,17 @@ class RequirementDocumentRepository:
         self,
         db: Session,
         document_id: int,
+        *,
+        lock: bool = False,
     ) -> RequirementDocument | None:
         """idに一致する要件定義書を取得する。"""
-        return (
-            db.query(RequirementDocument)
-            .filter(
-                RequirementDocument.id == document_id,
-                RequirementDocument.deleted_at.is_(None),
-            )
-            .first()
+        query = db.query(RequirementDocument).filter(
+            RequirementDocument.id == document_id,
+            RequirementDocument.deleted_at.is_(None),
         )
+        if lock:
+            query = query.populate_existing().with_for_update()
+        return query.first()
 
     def list_by_ids(
         self,
@@ -155,6 +160,7 @@ class RequirementDocumentRepository:
         document: RequirementDocument,
         document_in: RequirementDocumentUpdate,
         actor_id: int | None = None,
+        commit: bool = True,
     ) -> RequirementDocument:
         """要件定義書を更新する。"""
         for field in (
@@ -162,6 +168,9 @@ class RequirementDocumentRepository:
             "document_code",
             "status",
             "purpose",
+            "project_goal",
+            "project_scope",
+            "project_completion_criteria",
             "target_system_name",
             "client_name",
             "vendor_name",
@@ -176,7 +185,7 @@ class RequirementDocumentRepository:
             document.updated_by = actor_id
         document.version += 1
 
-        db.commit()
+        db.commit() if commit else db.flush()
         db.refresh(document)
         return document
 
@@ -186,11 +195,12 @@ class RequirementDocumentRepository:
         *,
         document: RequirementDocument,
         actor_id: int | None = None,
+        commit: bool = True,
     ) -> RequirementDocument:
         """要件定義書を論理削除する。"""
         document.deleted_at = datetime.now(UTC)
         if actor_id is not None:
             document.updated_by = actor_id
-        db.commit()
+        db.commit() if commit else db.flush()
         db.refresh(document)
         return document

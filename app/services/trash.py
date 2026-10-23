@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from time import monotonic
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core import error_messages
@@ -205,6 +206,31 @@ class TrashService:
         ):
             db.rollback()
             return False
+        # Storageへ触る前に公開停止を検証し、境界をcommitまで保持する。
+        db.execute(
+            text("SELECT publication_lock(:project)"), {"project": target["project_id"]}
+        )
+        db.execute(
+            text(
+                "SELECT set_config('syncnesto.publication_reason','source_purged',true)"
+            )
+        )
+        db.execute(
+            text("""
+            UPDATE artifact_publications
+            SET publication_state='withdrawn',publication_version=publication_version+1
+            WHERE project_id=:project AND publication_state IN ('prepared','published')
+              AND publication_references_source(id,:kind,:source)
+        """),
+            {
+                "project": target["project_id"],
+                "kind": {
+                    "requirement_section": "section",
+                    "document_attachment": "attachment",
+                }.get(target["kind"], target["kind"]),
+                "source": str(row.id),
+            },
+        )
         targets = self.repository.purge_plan(db, row.__tablename__, row.id)
         resource_id = row.id if isinstance(row.id, int) else None
         detachments = self.repository.detachments(db, targets)

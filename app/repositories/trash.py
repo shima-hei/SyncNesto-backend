@@ -250,7 +250,19 @@ class TrashRepository:
         """所有する子と関連行を確定する。業務資源の関連先は削除しない。"""
         tables = Base.metadata.tables
         targets: dict[str, set] = {table_name: {identity}}
-        edges = dict(OWNERS)
+        # 固定した公開証跡は元資源の回収と分離し、削除対象へ加えない。
+        edges = {
+            name: parents
+            for name, parents in OWNERS.items()
+            if name
+            not in {
+                "artifact_publications",
+                "artifact_publication_nodes",
+                "project_guest_participations",
+                "artifact_publication_grants",
+                "artifact_publication_events",
+            }
+        }
         edges["document_links"] = edges["document_links"] + [
             ("requirement_id", "requirements", "id"),
             ("task_id", "tasks", "id"),

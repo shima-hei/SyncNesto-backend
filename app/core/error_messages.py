@@ -27,6 +27,13 @@ ACCOUNT_ACTION_RATE_LIMITED = "申請が多すぎます。1分ほど待って再
 
 INVALID_SYSTEM_ROLE_KEY = "Invalid system role key: {role_key}"
 GUEST_SYSTEM_ADMIN_NOT_ALLOWED = "Guest users cannot have system_admin role"
+GUEST_INVITATION_FUTURE_EXPIRY = "参加期限を未来にしてください"
+GUEST_INVITATION_PENDING = "この宛先への招待は返答待ちです"
+GUEST_INVITATION_RECREATE = "期限・招待者を確認し、新しい招待を作成してください"
+GUEST_INVITATION_LOGIN = "登録済みアカウントでログインしてください"
+GUEST_INVITATION_REVOKE_PARTICIPATION = (
+    "既存の参加を管理者が停止してから、新しく招待してください"
+)
 
 UNSUPPORTED_IMAGE_CONTENT_TYPE = "Unsupported image content type"
 IMAGE_FILE_REQUIRED = "Image file is required"
@@ -146,3 +153,35 @@ SPECIFICATION_REVIEW_FIELDS_REQUIRED = (
     "目的とパスを記入してからレビューを依頼してください。"
 )
 SPECIFICATION_LINK_LIMIT = "関連先の上限は200件です。"
+ARTIFACT_CURSOR_INVALID = "固定版の読み取り位置が無効です。最初から取得してください"
+PUBLICATION_SOURCE_INVALID = (
+    "固定版の構成を公開用に検証できません。元の固定版を確認してください。"
+)
+ARTIFACT_SOURCE_OVERLAP = "固定対象に同じ内容が重複しています"
+ARTIFACT_TOO_LARGE = "固定対象が保存または分割取得の上限を超えています"
+ARTIFACT_TEST_GRAPH_INVALID = (
+    "テスト設計の参照関係を確認できません。元の設計を確認してください"
+)
+ARTIFACT_RETRY_CONFLICT = "同時操作が発生しました。同じ操作IDで再試行してください"
+PRESERVATION_BUSY = "添付の保全処理が実行中です。しばらくして再試行してください"
+PRESERVATION_CANCELLED = "この添付保全は取り消されています"
+PRESERVATION_NOT_READY = "添付の保全が完了していません"
+PRESERVATION_IMMUTABLE = "保全完了後の添付構成は変更・取消できません"
+PRESERVATION_PLAN_CHANGED = (
+    "選択した資料または添付が変更されています。構成を確認し直してください"
+)
+FIXED_APPROVAL_INVALID = "固定した承認対象または確認内容が一致しません"
+FIXED_APPROVAL_MIGRATED = (
+    "この申請は新方式へ移行済みです。承認履歴から移行先を確認してください"
+)
+FIXED_APPROVAL_TOO_LARGE = "承認・移行のデータが容量上限を超えています"
+FIXED_APPROVAL_REASON_REQUIRED = "差し戻し・取消・例外には理由を入力してください"
+FIXED_APPROVAL_CANDIDATE_INVALID = (
+    "指定先はこの内容を判断する権限を持つ別の本人にしてください"
+)
+SHARED_FILE_UNAVAILABLE = "添付を取得できません。時間をおいてもう一度操作してください"
+NOTIFICATION_EMAIL_UNAVAILABLE = (
+    "この環境では、この通知先へのメール配信を有効にできません"
+)
+OBJECTIVE_REASON_REQUIRED = "参照文書の変更・解除理由を入力してください。"
+OBJECTIVE_PROJECTION_UPGRADE = "目標を含む内容はv2で再プレビューしてください。"

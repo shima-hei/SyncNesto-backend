@@ -10,6 +10,32 @@ from app.db.base import Base
 
 # 所有関係は一箇所で定義する。認証Identityへの参照は所有関係に含めない。
 OWNERS = {
+    "project_goal_source_events": [("project_id", "projects", "id")],
+    "notification_email_deliveries": [("notification_id", "notifications", "id")],
+    "notification_email_attempts": [
+        ("delivery_id", "notification_email_deliveries", "id")
+    ],
+    "fixed_approval_guest_bindings": [("project_id", "projects", "id")],
+    "project_guest_invitations": [("project_id", "projects", "id")],
+    "project_guest_invitation_checks": [("project_id", "projects", "id")],
+    "project_guest_invitation_events": [("project_id", "projects", "id")],
+    "project_guest_participations": [("project_id", "projects", "id")],
+    "artifact_publication_grants": [("project_id", "projects", "id")],
+    "artifact_publication_events": [("project_id", "projects", "id")],
+    "artifact_publications": [("project_id", "projects", "id")],
+    "artifact_publication_nodes": [("publication_id", "artifact_publications", "id")],
+    "fixed_approval_requests": [("project_id", "projects", "id")],
+    "fixed_approval_events": [("approval_id", "fixed_approval_requests", "id")],
+    "fixed_approval_requirement_bases": [
+        ("approval_id", "fixed_approval_requests", "id")
+    ],
+    "legacy_approval_imports": [("project_id", "projects", "id")],
+    "artifact_preservations": [("release_id", "artifact_releases", "id")],
+    "artifact_preservation_objects": [
+        ("preservation_id", "artifact_preservations", "id")
+    ],
+    "artifact_releases": [("project_id", "projects", "id")],
+    "artifact_release_nodes": [("release_id", "artifact_releases", "id")],
     "mcp_connections": [],
     "mcp_authorization_requests": [("connection_id", "mcp_connections", "id")],
     "mcp_credentials": [("connection_id", "mcp_connections", "id")],
@@ -194,6 +220,7 @@ def validate_tenant_writes(db: Session, flush_context, instances) -> None:
     references: dict[tuple[str, str], set] = {}
     existing: dict[str, set[tuple]] = {}
     identity_references: set[int] = set()
+    guest_identities: set[int] = set()
     for row in db.new | db.dirty | db.deleted:
         if not isinstance(row, models):
             continue
@@ -221,7 +248,13 @@ def validate_tenant_writes(db: Session, flush_context, instances) -> None:
                     or inspect(row).attrs[column.name].history.has_changes()
                 ):
                     # 共通Identityへの新しい業務参照も、現在組織内に限定する。
-                    identity_references.add(value)
+                    if (
+                        name == "project_guest_participations"
+                        and column.name == "user_id"
+                    ):
+                        guest_identities.add(value)
+                    else:
+                        identity_references.add(value)
                 if parent not in OWNERS and parent not in {
                     "projects",
                     "comment_mentions",
@@ -267,6 +300,28 @@ def validate_tenant_writes(db: Session, flush_context, instances) -> None:
             .scalars()
         )
         if allowed != values:
+            raise ForbiddenError()
+    if guest_identities:
+        users = Base.metadata.tables["users"]
+        memberships = Base.metadata.tables["tenant_members"]
+        allowed_guests = set(
+            db.connection()
+            .execute(
+                select(users.c.id).where(
+                    users.c.id.in_(guest_identities),
+                    users.c.is_active.is_(True),
+                    users.c.deleted_at.is_(None),
+                    ~users.c.id.in_(
+                        select(memberships.c.user_id).where(
+                            memberships.c.tenant_id == tenant_id,
+                            memberships.c.status == "active",
+                        )
+                    ),
+                )
+            )
+            .scalars()
+        )
+        if allowed_guests != guest_identities:
             raise ForbiddenError()
     if identity_references:
         users = Base.metadata.tables["users"]

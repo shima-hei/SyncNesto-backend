@@ -6,13 +6,13 @@ import sys
 import time
 from collections.abc import Callable, Generator
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 import pytest
 from dotenv import load_dotenv
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import Table, insert, select, text
 from sqlalchemy.orm import Session
 
 if TYPE_CHECKING:
@@ -90,7 +90,8 @@ def run_migrations() -> None:
 
 def pytest_sessionstart() -> None:
     """アプリのimport前にテスト環境変数を読み込む。"""
-    load_dotenv(PROJECT_ROOT / ".env.test", override=True)
+    if os.environ.get("SYNCNESTO_VERIFY") != "1":
+        load_dotenv(PROJECT_ROOT / ".env.test", override=True)
     # 既存の業務テストは認可を検証する。MFA強制はtest_mfaで明示して検証する。
     os.environ["MFA_REQUIRED"] = "false"
 
@@ -98,6 +99,14 @@ def pytest_sessionstart() -> None:
 @pytest.fixture(scope="session")
 def test_database() -> Generator[None, None, None]:
     """DBを使うテストがある場合だけ起動し、終了時に破棄する。"""
+    from app.db.session import engine
+
+    if (
+        engine.url.host not in {"localhost", "127.0.0.1"}
+        or engine.url.database != "syncnesto_test"
+        or engine.url.port in {None, 0, 5432}
+    ):
+        raise pytest.UsageError("通常DB・クラウドDBではテストを実行できません")
     try:
         start_test_database()
         wait_for_test_database()
@@ -158,10 +167,17 @@ def clean_database(request: pytest.FixtureRequest) -> None:
     from app.db.session import engine
 
     with engine.begin() as connection:
-        for table in reversed(Base.metadata.sorted_tables):
-            connection.execute(
-                text(f'TRUNCATE TABLE "{table.name}" RESTART IDENTITY CASCADE')
-            )
+        tables = ", ".join(
+            connection.dialect.identifier_preparer.quote(table.name)
+            for table in reversed(Base.metadata.sorted_tables)
+        )
+        connection.execute(text(f"TRUNCATE TABLE {tables} RESTART IDENTITY CASCADE"))
+
+
+@pytest.fixture(scope="session")
+def rbac_seed_cache() -> dict:
+    """本物のseedで作成した不変な初期行だけをプロセス内に保管する。"""
+    return {}
 
 
 @pytest.fixture(autouse=True)
@@ -173,16 +189,61 @@ def seed_rbac_data(clean_database: None, request: pytest.FixtureRequest) -> None
     """
     if request.node.get_closest_marker("no_db"):
         return
+    from app.db.session import engine, session_local
+    from app.models.rbac import Permission, Role, RolePermission
+    from app.models.tenant import Tenant
     from app.repositories.rbac import RbacRepository
     from scripts.seed_rbac import seed_roles_and_permissions
 
-    seed_roles_and_permissions(RbacRepository())
-    from app.db.session import session_local
-    from app.models.tenant import Tenant
+    cache = request.getfixturevalue("rbac_seed_cache")
+    tables = [
+        cast(Table, model.__table__) for model in [Role, Permission, RolePermission]
+    ]
+    if not cache:
+        seed_roles_and_permissions(RbacRepository())
+        with engine.connect() as connection:
+            for table in tables:
+                cache[table.name] = [
+                    dict(row) for row in connection.execute(select(table)).mappings()
+                ]
+    else:
+        with engine.begin() as connection:
+            for table in tables:
+                connection.execute(insert(table), cache[table.name])
+                if "id" in table.c and table.c.id.autoincrement is not False:
+                    connection.execute(
+                        text(
+                            "SELECT setval(pg_get_serial_sequence(:name, 'id'), "
+                            f'(SELECT max(id) FROM "{table.name}"), true)'
+                        ),
+                        {"name": table.name},
+                    )
 
     with session_local() as session:
         session.add(Tenant(name="Default Tenant", slug="default"))
         session.commit()
+
+
+@pytest.fixture
+def request_limit_clock(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
+    """共有カウンターのSQL時刻だけ固定し、実upsertと別Sessionを保持する。"""
+    from app.repositories import request_limit
+
+    functions = request_limit.func
+    clock = {"seconds": 1_800_000_010}
+
+    class ClockFunctions:
+        """時刻以外のSQL関数は元のSQLAlchemy実装へ委譲する。"""
+
+        def __getattr__(self, name: str):
+            return getattr(functions, name)
+
+        def clock_timestamp(self):
+            """DBが評価するtimestamp式を返す。"""
+            return functions.to_timestamp(clock["seconds"])
+
+    monkeypatch.setattr(request_limit, "func", ClockFunctions())
+    return clock
 
 
 @pytest.fixture

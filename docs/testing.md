@@ -1,49 +1,42 @@
-# テストの実行方針
+# テストの実行と診断
 
-開発中は変更したAPIと関連する認証・組織境界を選んで実行し、仕上げとCIでは全体を実行する。
-ログはファイルに保存し、成功時は件数・時間、失敗時は該当箇所を確認する。
+依存は既存pytest/uvとDockerのみ。アプリ・通常DB・Storageの設定を変更しない。
 
-```sh
-uv run pytest -m no_db -q
-uv run pytest tests/routers/test_audit_logs.py tests/routers/test_tenants.py -q
-uv run pytest -q --durations=10
+```bash
+uv run python scripts/verify.py --profile changed --base <実際のPR基点> --plan
+uv run python scripts/verify.py --profile changed --base <実際のPR基点>
+uv run python scripts/verify.py --profile fast
+uv run python scripts/verify.py --profile full
+uv run python scripts/verify.py --profile full tests/routers/test_notifications.py
 ```
 
-`no_db` はDBを使わないと確認できたケースだけに付ける。DB起動・migration・各ケースのDB初期化とRBAC投入を省略する。
-`db` fixtureと併用するとエラーになる。実DBのレート制限を使う公開APIテストはDBありのまま維持する。
-DBありのテストが初めて必要になった時にPostgreSQLを起動し、全体終了時に破棄する。
-環境変数はテスト収集前に読み込む。DBありの初期化とケース間の分離は維持する。
+既存のpytest引数やデバッガが必要なら、使い捨てDBの設定を確認して直接pytestを使える。通常DB/クラウド/標準5432番はfixtureが拒否する。通常はランナーがdotenv・実SMTP/クラウド資格を継承せず、専用Compose名・ランダムloopbackポート・tmpfs DBを作成/破棄する。DB不要モードではDBを起動しない。
 
-2026-10-08の簡易棚卸しで完全一致するテスト本文の重複はなかった。意味上の重複を網羅的に調査した結果ではない。
-認証、CSRF、組織分離、権限、競合、セッション失効、削除復元のケースは削減していない。
+結果は `.verify/<run>/result.json`、全ケース/phase/失敗は `report.json`、JUnitは `junit.xml`、起動・収集エラーを含む完全ログは `full.log`。成功時は約1行、失敗時は先頭3件の短いスタックと完全ログの場所を返す。全失敗情報は切り捨てず保存する。timeoutは既定1800秒、終了コード非0・中断・結果欠落・DB回収失敗も失敗とする。プロセスを強制終了してもCIのartifact不足/ジョブ失敗は品質ゲートで成功にならない。
 
-## デモ設定の回帰確認（2026-10-08）
+`changed` はmerge-baseからcommit/未commit/未追跡/削除/renameを調べる。明示対応ドメインのみ関連テストと全no_dbを選ぶ。shared、model、schema、認証/認可、migration、fixture、依存、未知の変更、基点不明、空選択は全体へ戻す。静的依存グラフではないため、横断的な契約変更は明示的にfullを使う。PR CIは選択を使わず常に全体を実行する。
 
-`APP_ENV=production` + `DEMO_MODE`への修正では、まず設定・公開境界・Cron生成をDBなしで確認する。
-OpenAPI非公開のケースは共有カウンターをstubにしてルーティングを確認し、実カウンターの拒否・障害は既存の専用ケースで検証する。
-デモの組織分離、失効、DB・ファイルの破棄、通常回収との接続先分離・併用は引き続きPostgreSQLを使用する。
+`--reuse` は明示指定のローカルだけで1時間以内の成功を再利用する。ファイル内容・未commit/削除・lock・runtime・インストール済みPython依存・scope・固定テスト環境の指紋が一致することが必要。失敗・壊れた記録・CIは再利用しない。Docker engine/外部要因を疑う場合は再利用しない。
 
-```sh
-uv run pytest tests/core/test_ingress.py tests/test_demo_deployment.py tests/routers/test_demo.py tests/routers/test_deleted_data_cleanup.py -m no_db -q
-uv run pytest -q --durations=10
+DBは毎ケース全表を一括TRUNCATE+RESTART IDENTITYする。最初に実際のseed関数で作ったRBAC初期行をプロセス内に保管し、次のケースでは全行をbulk投入、採番も復元する。commit/複数Session/並行処理の既存テストを保持し、transaction rollbackや同一DBでの並列化へは変更しない。seed自体の既存テストも保持する。
+
+CIは静的検査/依存監査→独立VM・独立DBの4分割→`checks`で全成功とケース集合の完全一致を照合する。ファイル単位の決定的分割なのでクラス/ケース順序を分断しない。分割失敗・欠落・重複・異なる収集集合を拒否する。全ログ/JUnit/JSONは成功・失敗とも7日保存し、PRだけ旧実行を中断する。mainのdeploy条件と必須`checks`名は維持する。
+
+依存監査は独立した必須jobとし、監査失敗でも静的検査に通ったテストの診断を収集できる。最終`checks`は監査を含む全jobの成功を要求し、監査を迂回してmerge/deployできる構成にはしない。
+
+## 維持する検証観点
+
+`no_db` はDBを使わないと確認できたケースだけに付ける。`db` fixtureとの併用はエラーにする。実DBのレート制限を使う公開APIテストはDBありのまま維持する。認証、CSRF、組織分離、権限、競合、セッション失効、削除復元のケースは削減しない。2026-10-08の完全一致本文の棚卸しでは重複がなかったが、意味上の全重複がないことを証明した結果ではない。
+
+デモ設定の回帰では、`APP_ENV=production` + `DEMO_MODE`の設定・公開境界・Cron生成をDBなしで確認する。OpenAPI非公開ケースは共有カウンターをstubにしてルーティングを確認し、実カウンターの拒否・障害は専用ケースで確認する。組織分離、失効、DB/ファイルの破棄、通常回収との接続先分離/併用は実PostgreSQLを使う。結果と公開反映は[デモ決定記録](decisions/2026-10-08-demo-mode.md)に分けて残す。
+
+MFAの既存業務/RBACケースは `pytest_sessionstart` の `MFA_REQUIRED=false` を維持し、製品の既定値trueは変えない。`tests/routers/test_mfa.py` は明示的に必須化し、専用暗号鍵と固定RP/originを使う。追加認証前のAPI/MCP拒否、所有者/Permission、OTP再利用、実WebAuthn署名/origin/RP/UV、同時復旧コード消費、期限/失効/運営復旧、通知/監査失敗のrollbackを実DBで検証する。署名テストと実機の生体認証/登録操作は区別する。
+
+```bash
+uv run python scripts/verify.py --profile fast tests/core/test_ingress.py tests/test_demo_deployment.py tests/routers/test_demo.py tests/routers/test_deleted_data_cleanup.py
+uv run python scripts/verify.py --profile full tests/routers/test_mfa.py tests/routers/test_demo.py tests/routers/test_demo_coexistence.py tests/routers/test_documents.py
 ```
 
-結果と公開反映の状態は[決定記録](decisions/2026-10-08-demo-mode.md)へ追記する。
+MFAテーブル追加時はデモの所有者定義へ追記し、未定義テーブルで回収を止める安全策を維持する。実装・LOCAL適用・公開適用の区別は[MFA運用手順](mfa.md)を参照する。
 
-## MFAの回帰確認（2026-10-11）
-
-既存の業務・RBACケースは`pytest_sessionstart`で`MFA_REQUIRED=false`にし、従来のテスト目的を維持する。
-製品の既定値は`true`のまま。`tests/routers/test_mfa.py`は各ケースで明示的に必須化し、専用暗号鍵と固定RP/originを設定する。
-追加認証前の通常API/MCP拒否、所有者・Permission、OTP再利用、実WebAuthn署名とorigin/RP/UV、
-同時復旧コード消費、期限・失効・運営復旧、通知/監査失敗のrollbackを実PostgreSQLで確認する。
-Passkeyの署名テストに実機の生体認証・登録操作は含まれない。
-
-```sh
-uv run pytest -q tests/routers/test_mfa.py tests/routers/test_demo.py tests/routers/test_demo_coexistence.py tests/routers/test_documents.py
-uv run pytest -q > /tmp/syncnesto-tests.log 2>&1
-```
-
-MFAテーブル追加時はデモの所有者定義にも追記する。未定義テーブルを無視せず回収を止める既存の安全策を維持する。
-今回の対象実行は63件成功。FrontendはMFAのCSRF・Server Guard・BFF中継4件を含む79件成功。
-最終のBackend全体実行は`926 passed, 5 skipped, 3 xfailed`（563.55秒）。ruff・pyrightも通過。
-実装状態・ローカル適用・公開未適用の区別は [MFA運用手順](mfa.md) に記録する。
+共有レート制限の「同じ時間枠」と「次の時間枠」の検証は、`request_limit_clock`でRepositoryが使うSQL時刻だけを固定/進行する。実DBのupsert・並行要求・別Session・上限拒否を保持し、製品の時計/認可や他のMFA時計は変更しない。実時刻の分境界によるskipや期待値の緩和を行わない。

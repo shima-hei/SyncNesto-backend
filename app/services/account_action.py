@@ -173,6 +173,9 @@ class AccountActionService:
         assert action.new_email is not None
         self._check_new_email(db, user, action.new_email)
         old_email = user.email
+        from app.services.notification_email_preferences import pause_email_selection
+
+        pause_email_selection(db, user.id)
         user.email = action.new_email
         user.version += 1
         user.updated_by = user.id

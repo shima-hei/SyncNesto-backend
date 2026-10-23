@@ -4,7 +4,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core import error_messages
-from app.core.exceptions import DuplicateResourceError, NotFoundError
+from app.core.config import settings
+from app.core.exceptions import DuplicateResourceError, ForbiddenError, NotFoundError
 from app.models.requirement import RequirementDocument
 from app.repositories.project import ProjectRepository
 from app.repositories.requirement_document import RequirementDocumentRepository
@@ -32,6 +33,9 @@ REQUIREMENT_DOCUMENT_UPDATABLE_FIELDS = {
     "document_code",
     "status",
     "purpose",
+    "project_goal",
+    "project_scope",
+    "project_completion_criteria",
     "target_system_name",
     "client_name",
     "vendor_name",
@@ -45,6 +49,9 @@ REQUIREMENT_DOCUMENT_CONFLICT_CURRENT_FIELDS = (
     "document_code",
     "status",
     "purpose",
+    "project_goal",
+    "project_scope",
+    "project_completion_criteria",
     "target_system_name",
     "client_name",
     "vendor_name",
@@ -105,6 +112,7 @@ class RequirementDocumentService:
             NotFoundError: プロジェクトが存在しない場合。
             DuplicateResourceError: document_codeが重複している場合。
         """
+        self._check_objective_write(document_in)
         self._ensure_project_exists(db, project_id)
         if (
             self.repository.get_by_project_document_code(
@@ -124,6 +132,7 @@ class RequirementDocumentService:
                 project_id=project_id,
                 document_in=document_in,
                 actor_id=actor_id,
+                commit=False,
             )
             self._record_change_log(
                 db,
@@ -131,7 +140,10 @@ class RequirementDocumentService:
                 action=RequirementChangeLogAction.CREATED,
                 new_value=self._build_document_snapshot(document),
                 changed_by=actor_id,
+                commit=False,
             )
+            db.commit()
+            db.refresh(document)
             return document
         except IntegrityError as exc:
             raise_duplicate_after_rollback(
@@ -139,6 +151,9 @@ class RequirementDocumentService:
                 error_messages.REQUIREMENT_DOCUMENT_CODE_ALREADY_EXISTS,
                 exc,
             )
+        except Exception:
+            db.rollback()
+            raise
 
     def list_documents_paginated(
         self,
@@ -182,6 +197,7 @@ class RequirementDocumentService:
         *,
         project_id: int,
         document_id: int,
+        lock: bool = False,
     ) -> RequirementDocument:
         """要件定義書を取得する。
 
@@ -196,7 +212,7 @@ class RequirementDocumentService:
         Raises:
             NotFoundError: 要件定義書が存在しない、またはプロジェクトに属さない場合。
         """
-        document = self.repository.get_by_id(db, document_id)
+        document = self.repository.get_by_id(db, document_id, lock=lock)
         if document is None or document.project_id != project_id:
             raise NotFoundError(error_messages.REQUIREMENT_DOCUMENT_NOT_FOUND)
         return document
@@ -227,7 +243,10 @@ class RequirementDocumentService:
             VersionConflictError: versionが一致しない場合。
             DuplicateResourceError: document_codeが重複している場合。
         """
-        document = self.get_document(db, project_id=project_id, document_id=document_id)
+        self._check_objective_write(document_in)
+        document = self.get_document(
+            db, project_id=project_id, document_id=document_id, lock=True
+        )
         raise_if_version_conflict(
             current_version=document.version,
             requested_version=document_in.version,
@@ -259,19 +278,19 @@ class RequirementDocumentService:
                 document=document,
                 document_in=document_in,
                 actor_id=actor_id,
+                commit=False,
             )
             self._record_update_change_log(
                 db,
                 document=updated_document,
                 old_snapshot=before_value,
                 new_snapshot=self._build_document_snapshot(updated_document),
-                updated_fields=(
-                    document_in.model_fields_set
-                    - {"version", "reason"}
-                )
+                updated_fields=(document_in.model_fields_set - {"version", "reason"})
                 & REQUIREMENT_DOCUMENT_UPDATABLE_FIELDS,
                 changed_by=actor_id,
             )
+            db.commit()
+            db.refresh(updated_document)
             return updated_document
         except IntegrityError as exc:
             raise_duplicate_after_rollback(
@@ -279,6 +298,9 @@ class RequirementDocumentService:
                 error_messages.REQUIREMENT_DOCUMENT_CODE_ALREADY_EXISTS,
                 exc,
             )
+        except Exception:
+            db.rollback()
+            raise
 
     def delete_document(
         self,
@@ -333,6 +355,7 @@ class RequirementDocumentService:
         new_value: dict[str, object] | None = None,
         reason: str | None = None,
         changed_by: int | None = None,
+        commit: bool = True,
     ) -> None:
         """要件定義書の変更履歴を記録する。"""
         self.change_log_service.record(
@@ -345,6 +368,7 @@ class RequirementDocumentService:
             new_value=new_value,
             reason=reason,
             changed_by=changed_by,
+            commit=commit,
         )
 
     def _record_update_change_log(
@@ -379,6 +403,7 @@ class RequirementDocumentService:
             old_value=change_log_entry.old_value,
             new_value=change_log_entry.new_value,
             changed_by=changed_by,
+            commit=False,
         )
 
     def _build_document_snapshot(
@@ -393,8 +418,22 @@ class RequirementDocumentService:
             "document_code": document.document_code,
             "status": document.status,
             "purpose": document.purpose,
+            "project_goal": document.project_goal,
+            "project_scope": document.project_scope,
+            "project_completion_criteria": document.project_completion_criteria,
             "author_id": document.author_id,
             "reviewer_id": document.reviewer_id,
             "approver_id": document.approver_id,
             "version": document.version,
         }
+
+    @staticmethod
+    def _check_objective_write(data) -> None:
+        """停止中は旧フィールドだけの更新を維持する。"""
+        if (
+            not settings.project_objectives_enabled
+            and data.model_fields_set.intersection(
+                {"project_goal", "project_scope", "project_completion_criteria"}
+            )
+        ):
+            raise ForbiddenError()

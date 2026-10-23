@@ -26,6 +26,27 @@ class BadRequestError(AppError):
     code = "BAD_REQUEST"
 
 
+class SharedFileUnavailableError(AppError):
+    """共有添付の実体・配信先・期限の整合を確認できない。"""
+
+    message = error_messages.SHARED_FILE_UNAVAILABLE
+    code = "SHARED_FILE_UNAVAILABLE"
+
+
+class ArtifactReleaseTooLargeError(AppError):
+    """本文を切り捨てず、容量超過を明示する。"""
+
+    message = error_messages.ARTIFACT_TOO_LARGE
+    code = "ARTIFACT_RELEASE_TOO_LARGE"
+
+
+class FixedApprovalTooLargeError(ArtifactReleaseTooLargeError):
+    """承認・証拠を切り捨てず上限超過を返す。"""
+
+    message = error_messages.FIXED_APPROVAL_TOO_LARGE
+    code = "FIXED_APPROVAL_TOO_LARGE"
+
+
 class DemoLimitError(AppError):
     """一時環境の共有容量・発行上限を超えた。"""
 
@@ -138,6 +159,20 @@ class DuplicateResourceError(ConflictError):
     code = "DUPLICATE_RESOURCE"
 
 
+class FixedApprovalScopeConflictError(ConflictError):
+    """確認した内容・版・根拠が変更された。"""
+
+    message = error_messages.FIXED_APPROVAL_INVALID
+    code = "APPROVAL_SCOPE_CONFLICT"
+
+
+class FixedApprovalMigratedError(ConflictError):
+    """旧方式での二重判断を拒否する。"""
+
+    message = error_messages.FIXED_APPROVAL_MIGRATED
+    code = "APPROVAL_MIGRATED"
+
+
 class SpecificationUnresolvedCommentsError(ConflictError):
     """設計書の未解決指摘が承認を妨げている。"""
 
@@ -150,6 +185,13 @@ class SpecificationReviewFieldsError(BadRequestError):
 
     message = error_messages.SPECIFICATION_REVIEW_FIELDS_REQUIRED
     code = "SPECIFICATION_REVIEW_FIELDS_REQUIRED"
+
+
+class ObjectiveProjectionUpgradeError(ConflictError):
+    """目標を落とさず固定するため新形式での再確認を求める。"""
+
+    message = error_messages.OBJECTIVE_PROJECTION_UPGRADE
+    code = "OBJECTIVE_PROJECTION_UPGRADE_REQUIRED"
 
 
 class VersionConflictError(ConflictError):
@@ -195,6 +237,15 @@ class EmailUnavailableError(AppError):
 
     message = error_messages.EMAIL_UNAVAILABLE
     code = "EMAIL_UNAVAILABLE"
+
+
+class LocalEmailCaptureError(EmailUnavailableError):
+    """既知の配送失敗と、受付が確定できない失敗を分ける。"""
+
+    def __init__(self, *, uncertain: bool):
+        """秘密やSMTP応答本文を例外へ保持しない。"""
+        super().__init__()
+        self.uncertain = uncertain
 
 
 class AccountActionInvalidError(BadRequestError):

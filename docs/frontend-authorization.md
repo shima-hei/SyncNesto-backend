@@ -1,5 +1,28 @@
 # Syncnesto Frontend Authorization Guide
 
+## Phase 2B-3a 固定承認の通知
+
+新しい共有通知4操作は、tenant選択ではなく指定本人のsession・実MFAと現在の公開世代を検証する。
+社内の次操作1操作は既存固定本文のreadとactionごとの権限を要求する。既存permission/roleは増やさない。
+一覧/件数/既読を同じ集合で制限し、失効済みを外部へ返さない。詳細は[専用契約](frontend-fixed-approval-notifications.md)。
+
+## Phase 2A-3c 共有添付の発行
+
+共有の新POSTだけに、3bの本人資格/許可/公開状態の前後検証とsession行共有ロックを加える。
+初回認証で検証したJWTのexpだけをrequest内contextへ渡し、最終発行時の期限に含める。
+既存APIの認可結果・permission/role・Cookie/CSRF仕様は変更しない。
+feature無効403、失効/対象不明404、revision不一致409、実体/配信先障害503。
+配信先へのGETは短期bearer URLであり、発行後の最大60秒と開始済み転送の扱いは別。
+詳細は`frontend-publication-access.md`の3c節を参照。
+
+## Phase 2A-3a 公開準備版（内部専用）
+
+契約は[公開準備API](frontend-artifact-publications-api.md)を参照。
+新 `artifact_publication:manage/read` をproject_admin/managerへ各付与（計4）。
+全操作で現在のartifact_release:readと全sourceのread、作成ではさらにartifact_release:createを要求する。
+guest/demo/MCPを内部固定版の権限へ変換しない。新たなゲスト公開・顧客判断・DL経路は追加しない。
+公開用metadata/contentと内部originを別schemaにし、全応答をprivate/no-storeとする。
+
 ## 2026-10-12 審査専用Identity
 
 通常ユーザーのMFA必須と匿名デモの別DB・使い捨て動作は維持する。
@@ -941,4 +964,62 @@ CSRF token不正:
 フロントエンドでは、`401 INVALID_CREDENTIALS` はログイン画面の入力エラー、`401 AUTHENTICATION_REQUIRED` は未ログイン、`401 TOKEN_EXPIRED` はセッション期限切れ、`401 INVALID_TOKEN` はCookie破棄後の再ログイン誘導として扱ってください。`TOKEN_EXPIRED` / `INVALID_TOKEN` ではバックエンドの `Set-Cookie` をBFFからブラウザへ中継してください。`403 FORBIDDEN` は権限なし表示、`403 CSRF_TOKEN_INVALID` はCSRF tokenの再取得または再ログイン誘導として扱ってください。`409 VERSION_CONFLICT` は最新データの再表示、`409 DUPLICATE_RESOURCE` は入力値の重複エラーとして扱ってください。
 # マルチテナント対応
 
+## Phase 2A-3b 本人限定の共有閲覧
+
+[公開許可・共有API](frontend-publication-access.md)を参照。
+内部の公開操作は既存Cookie/session/MFA/CSRF、選択組織とProject所属を維持し、
+`artifact_publication:publish`を追加要求する。初期付与はproject_admin/managerのみ。
+共有4 GETは本人Identityで認証し、選択組織やProjectMemberを要求しない。
+代わりに所有Tenant/Project、期限付き参加世代、本人別grant、公開状態を専用JOINで毎回検証する。
+同じ所有組織のactive社内メンバーは共有対象から除外する。
+通常業務APIのTenant境界・system管理権限による迂回禁止は変えない。
+shared呼出しだけ`X-Tenant-ID`を除去し、通常呼出しの組織選択は保持する。
+成功・失敗応答もprivate/no-store、no-referrer。共有本文・cursorを永続保存しない。
+新公開操作はREAD COMMITTEDで境界待機後に現在の認証・permissionを再検証し、
+既存の固定保存・内部承認のREPEATABLE READは維持する。
+停止済み履歴は社内に残す。DBをdowngradeして証跡を消す運用は拒否する。
+
+## Phase 2A-2 固定内容への内部承認
+
+[固定内容への承認API](frontend-fixed-approvals-api.md)を参照。既存permissionで申請（artifact_release:create＋requirement:review）と指定本人判断（requirement:approve）を分離する。全同梱source read、添付のdocument:read、有効internal所属・session・MFA・CSRFを実行時に確認。新role/permission割当はない。自己・代理・guest・demo・MCPからの利用は拒否。移行済み旧pendingのUPDATEはDBでも拒否し、旧APIは409 APPROVAL_MIGRATED。業務履歴を保持して停止するため旧buildへ単純rollbackしない。
+
 現行の組織境界・3階層Role・変更されたsystem_adminの扱いは [multi-tenancy.md](multi-tenancy.md) を参照してください。業務APIには検証対象の `X-Tenant-ID` を送ります。運営者のsystem権限はProjectの業務権限を迂回しません。`/projects/{id}/me` の互換フィールド `is_system_admin` は常にfalseで、Project Roleを表示制御に使います。
+
+# Phase 2A-1a 成果物固定版（隔離開発）
+
+Projectに`artifact_release:create`と`artifact_release:read`を追加。
+初期付与は`project_admin`と`manager`のみ。他の既存付与は保持する。
+作成には含む全種類の既存read/update、取得には全種類の既存readも必要。
+有効tenant・Project所属・Cookie/MFA/CSRFの既存条件を継承し、内部ユーザーだけを対象とする。
+guest・demo・MCPからの新API利用は拒否。顧客公開・承認の権限ではない。
+詳細は[固定版API](frontend-artifact-releases-api.md)。既存環境への適用は別判断。
+
+# ゲスト招待
+
+Phase 2B-1の限定Cookie・匿名Origin・通常MFA・既存permissionとの接続は [frontend-guest-invitations.md](frontend-guest-invitations.md) を参照。
+
+# Phase 2B-2 外部固定承認
+
+具体契約は [frontend-guest-fixed-approvals.md](frontend-guest-fixed-approvals.md)。共有の指定本人にだけ新しい判断APIを設け、通常Project role/permissionを外部へ付与しない。現行のread-only共有とは別に、共有判断5操作にはglobal設定と独立した実MFAを要求する。公開停止/参加・許可失効後は本人の今回の判断履歴も取得不可。既存内部判断経路は外部依頼を拒否し、既存取消URLは外部依頼のみRCへ分岐する。
+
+# Phase 2B-3b: 通知メール設定の本人境界
+
+`/notification-preferences` GET/PATCHはtenant非依存の通常MFA済み本人に限る。
+PATCHは `X-Syncnesto-Expected-User` と現在の認証Userの一致を必須にし、headerで本人を選択しない。
+Cookie/CSRF/Originを維持し、全応答をprivate/no-storeとする。詳細は [approval-email.md](approval-email.md)。
+
+## 案件目標の共通出典（Phase 3A）
+
+### A3b-1: 要件追跡の読取境界
+
+新しい2つの `GET /projects/{project_id}/requirement-trace[/{requirement_id}]` は現在の有効tenant/社内Project所属とproject:readを要求する。要件readなしの一覧はrestricted（total=null/items=[]）、個別取得は403。分野ごとにdocument:read/task:read/test_plan:readを確認し、権限外の件数・存在・名称・IDは返さない。承認への入口だけにartifact_release:readを確認し、判断や本文の追加権限を付与しない。
+
+同Projectで有効な親文書/章/関連先だけを参照する。運営管理者だけの非参加者、別tenant、guest/MCPは不可。demoは一覧無効/個別不可。新permission/role割当はない。Backendはno-store、BFFはエラーを含めprivate/no-store、Next headersはno-referrer。Query keyはtenant/本人/Project/条件/REQ版で分ける。概要の戻りURLは同Projectの許可pathname/queryだけへ再構築し、既存TaskOriginを優先する。
+
+新permission `project:manage_goal_source` はproject_admin/managerへ各1割当。組織管理者/運営管理者のProjectメタデータ権限は業務本文の認可ではない。目標APIは現在tenant・Project所属・project:readを確認し、requirement:readを持たない本人には出典の存在・ID・本文・参照版を返さない。ゲストは既存/shared経路を利用し、内部目標APIを使わない。MCP経路から新参照APIへ接続しない。
+
+共通出典の選択には専用permissionとrequirement:readを要求し、同じ案件の有効文書と版を確認する。選択と追記専用業務履歴・監査を同一transactionで保存し、専用versionの条件付きUPDATEで競合を拒否する。本文編集権限を管理者/managerに制限し直すものではない。UIはserver capabilityを使用する。新GETはno-store、Frontendはtenant/本人/Project別のquery keyを使用する。
+
+形式追加は新しい公開許可を付与しない。v1/v2の保存済み形式をmetadata/node/cursorへ伝搬し、既存の参加/本人許可/失効/MFA/DL期限を維持する。旧版の形式だけをv2へ更新したり、旧承認へ新本文を引き継ぐ処理はない。
+
+A3b-2aの内部GET `/projects/{project_id}/requirement-agreements` は既存の社内所属・project:read/requirement:readを確認する。集約にはartifact_release:read/document:read/test_plan:readをすべて要求し、不足時は存在やIDを含めずrestrictedを返す。guest/MCPからは不可、demoではdisabled。既存外部判断の証跡と現在の公開資格は別に扱う。新permission/role追加なし。[入出力と制限](frontend-requirement-agreements-api.md)。

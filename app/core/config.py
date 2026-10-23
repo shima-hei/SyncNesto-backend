@@ -158,6 +158,7 @@ class Settings:
     demo_data_isolated: bool = get_bool_env("DEMO_DATA_ISOLATED")
     bff_shared_secret: str = os.getenv("BFF_SHARED_SECRET", "")
     mcp_enabled: bool = get_bool_env("MCP_ENABLED")
+    mcp_development_tools_enabled: bool = get_bool_env("MCP_DEVELOPMENT_TOOLS_ENABLED")
     mcp_issuer_url: str = os.getenv("MCP_ISSUER_URL", "http://127.0.0.1:8000")
     mcp_resource_url: str = os.getenv(
         "MCP_RESOURCE_URL",
@@ -230,6 +231,25 @@ class Settings:
     initial_admin_password: str | None = os.getenv("INITIAL_ADMIN_PASSWORD")
     initial_admin_name: str = os.getenv("INITIAL_ADMIN_NAME", "Initial Admin")
     email_provider: str = os.getenv("EMAIL_PROVIDER", "disabled")
+    fixed_approval_email_enabled: bool = get_bool_env("FIXED_APPROVAL_EMAIL_ENABLED")
+    project_objectives_enabled: bool = get_bool_env("PROJECT_OBJECTIVES_ENABLED")
+    project_traceability_enabled: bool = get_bool_env("PROJECT_TRACEABILITY_ENABLED")
+    project_requirement_agreements_enabled: bool = get_bool_env(
+        "PROJECT_REQUIREMENT_AGREEMENTS_ENABLED"
+    )
+    guest_invitations_enabled: bool = get_bool_env("GUEST_INVITATIONS_ENABLED")
+    guest_fixed_approvals_enabled: bool = get_bool_env("GUEST_FIXED_APPROVALS_ENABLED")
+    fixed_approval_notifications_enabled: bool = get_bool_env(
+        "FIXED_APPROVAL_NOTIFICATIONS_ENABLED"
+    )
+    local_email_capture_recipients: str = os.getenv(
+        "LOCAL_EMAIL_CAPTURE_RECIPIENTS", ""
+    )
+    local_email_capture_host: str = os.getenv("LOCAL_EMAIL_CAPTURE_HOST", "127.0.0.1")
+    local_email_capture_port: int = get_int_env("LOCAL_EMAIL_CAPTURE_PORT", 1025)
+    local_email_capture_from: str = os.getenv(
+        "LOCAL_EMAIL_CAPTURE_FROM", "Syncnesto LOCAL <syncnesto@example.com>"
+    )
     email_from: str = os.getenv("EMAIL_FROM", "")
     frontend_public_url: str = os.getenv("FRONTEND_PUBLIC_URL", "http://localhost:3000")
     resend_api_key: str = field(default=os.getenv("RESEND_API_KEY", ""), repr=False)
@@ -263,6 +283,21 @@ class Settings:
         3600,
     )
     default_avatar_key: str = os.getenv("DEFAULT_AVATAR_KEY", "default-avatar.png")
+    shared_publication_download_enabled: bool = get_bool_env(
+        "SHARED_PUBLICATION_DOWNLOAD_ENABLED"
+    )
+    shared_file_delivery_endpoint_url: str = os.getenv(
+        "SHARED_FILE_DELIVERY_ENDPOINT_URL", ""
+    )
+    shared_file_delivery_bucket_name: str = os.getenv(
+        "SHARED_FILE_DELIVERY_BUCKET_NAME", ""
+    )
+    shared_file_delivery_access_key_id: str = field(
+        default=os.getenv("SHARED_FILE_DELIVERY_ACCESS_KEY_ID", ""), repr=False
+    )
+    shared_file_delivery_secret_access_key: str = field(
+        default=os.getenv("SHARED_FILE_DELIVERY_SECRET_ACCESS_KEY", ""), repr=False
+    )
     cors_origins: list[str] = field(
         default_factory=lambda: [
             "http://localhost:3000",
@@ -388,6 +423,10 @@ class Settings:
 
     def validate_production(self) -> None:
         """公開環境の設定漏れを起動時に拒否する。"""
+        if self.is_public_environment and self.local_email_capture_recipients:
+            raise RuntimeError(
+                "LOCAL email capture is forbidden in public environments"
+            )
         if not 0 <= self.deleted_data_retention_days <= 3650:
             raise RuntimeError("DELETED_DATA_RETENTION_DAYS must be between 0 and 3650")
         if self.app_env not in {"development", "test", "production"}:
