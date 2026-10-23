@@ -1021,3 +1021,5 @@ Cookie/CSRF/Originを維持し、全応答をprivate/no-storeとする。詳細�
 共通出典の選択には専用permissionとrequirement:readを要求し、同じ案件の有効文書と版を確認する。選択と追記専用業務履歴・監査を同一transactionで保存し、専用versionの条件付きUPDATEで競合を拒否する。本文編集権限を管理者/managerに制限し直すものではない。UIはserver capabilityを使用する。新GETはno-store、Frontendはtenant/本人/Project別のquery keyを使用する。
 
 形式追加は新しい公開許可を付与しない。v1/v2の保存済み形式をmetadata/node/cursorへ伝搬し、既存の参加/本人許可/失効/MFA/DL期限を維持する。旧版の形式だけをv2へ更新したり、旧承認へ新本文を引き継ぐ処理はない。
+
+A3b-2aの内部GET `/projects/{project_id}/requirement-agreements` は既存の社内所属・project:read/requirement:readを確認する。集約にはartifact_release:read/document:read/test_plan:readをすべて要求し、不足時は存在やIDを含めずrestrictedを返す。guest/MCPからは不可、demoではdisabled。既存外部判断の証跡と現在の公開資格は別に扱う。新permission/role追加なし。[入出力と制限](frontend-requirement-agreements-api.md)。

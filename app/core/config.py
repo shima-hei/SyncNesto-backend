@@ -233,6 +233,9 @@ class Settings:
     fixed_approval_email_enabled: bool = get_bool_env("FIXED_APPROVAL_EMAIL_ENABLED")
     project_objectives_enabled: bool = get_bool_env("PROJECT_OBJECTIVES_ENABLED")
     project_traceability_enabled: bool = get_bool_env("PROJECT_TRACEABILITY_ENABLED")
+    project_requirement_agreements_enabled: bool = get_bool_env(
+        "PROJECT_REQUIREMENT_AGREEMENTS_ENABLED"
+    )
     guest_invitations_enabled: bool = get_bool_env("GUEST_INVITATIONS_ENABLED")
     guest_fixed_approvals_enabled: bool = get_bool_env("GUEST_FIXED_APPROVALS_ENABLED")
     fixed_approval_notifications_enabled: bool = get_bool_env(
