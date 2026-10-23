@@ -30,6 +30,7 @@ from app.schemas.test_design import TestDesignUpdate
 from app.services.audit_log import AuditLogService
 from app.services.mcp_auth import McpAuthService
 from app.services.mcp_catalog import TOOLS
+from app.services.mcp_development_catalog import DEVELOPMENT_TOOLS, development_tools
 from app.services.requirement_document import RequirementDocumentService
 from app.services.requirement_item import RequirementService
 from app.services.requirement_section import RequirementSectionService
@@ -120,7 +121,7 @@ class McpOperationsService:
                     "openWorldHint": False,
                 },
             }
-            for name, tool in TOOLS.items()
+            for name, tool in {**TOOLS, **development_tools(connection)}.items()
             if not tool.permissions
             or any(
                 self.allowed(db, connection, user, project_id, tool.permissions)
@@ -136,7 +137,7 @@ class McpOperationsService:
         operation: s.McpOperation,
     ) -> dict:
         """認可後にロックし、業務変更・監査・receiptを同時に確定する。"""
-        tool = TOOLS.get(operation.tool)
+        tool = {**TOOLS, **development_tools(connection)}.get(operation.tool)
         if tool is None:
             raise NotFoundError()
         if operation.tool == "list_projects":
@@ -165,6 +166,10 @@ class McpOperationsService:
         ):
             raise ForbiddenError()
         if not tool.write:
+            if operation.tool in DEVELOPMENT_TOOLS:
+                from app.services.mcp_development import McpDevelopmentService
+
+                return McpDevelopmentService().read(db, user, operation.tool, data)
             return self.read(db, operation.tool, data)
         key = data.idempotency_key
         self.repository.lock_operation(db, connection.id, key)
@@ -397,6 +402,10 @@ class McpOperationsService:
     ) -> dict:
         """操作ごとの業務検証は既存Serviceに委譲する。"""
         project_id, actor_id = data.project_id, user.id
+        if name in DEVELOPMENT_TOOLS:
+            from app.services.mcp_development import McpDevelopmentService
+
+            return McpDevelopmentService().write(db, user, name, data)
         if name in {
             "create_requirement_document",
             "create_requirement_section",

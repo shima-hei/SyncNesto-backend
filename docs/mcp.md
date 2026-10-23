@@ -1,5 +1,35 @@
 # CodexからSyncnestoを操作する
 
+## 開発用の文書操作（初期OFF）
+
+`MCP_DEVELOPMENT_TOOLS_ENABLED=true` の環境では、既存の開発用OAuth client
+`syncnesto-codex-local` に次の6操作を追加できる。審査用 `syncnesto-openai-plugin`
+にはflag ONでも追加しない。既存28件の入力schema・説明・注釈は維持する。
+新URL・DB構造・permission・role割当・依存追加はない。
+
+| 操作 | 既存permission | 入出力 |
+| --- | --- | --- |
+| list_project_documents | document:read | page/page_size/q。本文なしの一覧 |
+| get_project_document | document:read | document_id。本文・version・閲覧可能な関連先だけ |
+| create_project_document | document:read/create | data.title/body。初版を保存し要約を返す |
+| update_project_document | document:read/update | document_idとdata.version/title/body。旧版を保持 |
+| link_project_document | document:read/update＋参照先read | document_idとdata.target_type/target_id。既存参照を保持 |
+| set_requirement_document_objectives | requirement:read/update | document_id/versionとdataの任意目標3項目 |
+
+全書込は既存のidempotency_key・同意Project∩現在の権限・原子的な監査/receiptを適用。
+一般文書の入力制限は既存DocumentCreate/Updateと同じ（title200文字、body100,000文字）。
+MCP全体の1回256KiB上限も維持する。更新競合時は409で変更せず、最新本文を再取得して再検討する。
+不可視/削除された関連先はID・件数も返さない。署名URL・添付ダウンロード・削除操作は追加しない。
+
+専用目標はさらに `PROJECT_OBJECTIVES_ENABLED=true` が必要。省略値は維持、nullは解除、
+空の変更やpurpose/status等の指定は拒否する。文書作成後に取得した実ID/versionで設定し、
+既存get_requirement_targetで読み返す。案件共通の出典指定は既存UIで明示選択する。
+一般文書はテスト設計とは別データ。本文の登録は承認・顧客公開・通知・デモ公開を意味しない。
+
+既存REST/OpenAPIとFrontend生成型への変更はない。OFFへ戻してAPIを再起動すれば追加操作だけを停止でき、
+保存した文書・版・関連・要件定義書の目標は既存UI/APIで保持する。
+この実装だけで公開サーバーへ反映されたとは扱わない。公開/審査環境への有効化は別途確認する。
+
 ## 構成と権限
 
 Codex → 公開Backendの `/mcp` → 既存の認証・業務Service → 通常DB。
