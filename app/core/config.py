@@ -237,6 +237,12 @@ class Settings:
     requirement_verification_preparation_enabled: bool = get_bool_env(
         "REQUIREMENT_VERIFICATION_PREPARATION_ENABLED"
     )
+    requirement_verification_evidence_enabled: bool = get_bool_env(
+        "REQUIREMENT_VERIFICATION_EVIDENCE_ENABLED"
+    )
+    verification_evidence_bucket_name: str = os.getenv(
+        "VERIFICATION_EVIDENCE_BUCKET_NAME", ""
+    )
     project_requirement_agreements_enabled: bool = get_bool_env(
         "PROJECT_REQUIREMENT_AGREEMENTS_ENABLED"
     )

@@ -40,6 +40,7 @@ from app.routers import (
     test_issues,
     trash,
     users,
+    verification_evidence,
 )
 
 
@@ -80,6 +81,7 @@ def register_routers(app: FastAPI) -> None:
         requirement_trace.router,
         requirement_agreements.router,
         requirement_verifications.router,
+        verification_evidence.router,
         documents.router,
         specifications.router,
         requirements.router,
