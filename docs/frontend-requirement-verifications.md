@@ -53,3 +53,48 @@ not_evaluatedとして示し、実行0件やOKへ変換しない。
 隔離の代表契約はtests/routers/test_requirement_verifications.pyとtest_verification_candidates.py。
 性能測定は10→50ケースで業務SQL7/全SQL28が一定（約0.21秒、1環境の測定）。
 保持を優先し、戻す際はflag OFF。履歴を消すdowngradeや既存承認の変換は行わない。
+
+## V1b: 証拠の提出と保全
+
+`REQUIREMENT_VERIFICATION_EVIDENCE_ENABLED` は既定false。V1aの有効化も必要。
+保存済みの確認表版へ証拠を結び付け、最終合否は決めない。`ready` は保全完了だけを示す。
+
+基点は `/{plan_id}/evidence-sets`（上記Project/確認表prefixの配下）。
+
+| 操作 | 契約 |
+| --- | --- |
+| GET 基点 | `plan_version`任意、cursor、page_size最大50。固定本文を含まない提出一覧 |
+| POST `/preview` | 保存版・行・実行/手動/対象外候補・選択ファイルを検証し、固定内容とdigestを返す |
+| POST 基点 | preview時の内容・digest・request_idを送信。新規201/同一再送200 |
+| GET `/{set_id}` | 保全状態、現在内容との比較、ファイルの保全状態。本文詳細は別取得 |
+| GET `/{set_id}/entries/{entry_id}` | 指定した1件の固定根拠と現在の比較。ほかの根拠本文は返さない |
+| POST `/{set_id}/advance` | versionを指定し、添付を1つ進める。自動pollingしない |
+| POST `/{set_id}/cancel` | 進行中の提出を取消。固定記録と試行台帳は残す |
+| POST `/{set_id}/cleanup` | 未採用コピーだけ再走査・回収。採用済みVersionIdを削除しない |
+| POST `/{set_id}/files/{file_id}/download` | 最新の本人認可・保全hashを照合して最大60秒の署名URLを返す |
+
+入力は1〜200件、添付20個/各20MiB/合計100MiB。行の確認方法と証拠種別を一致させる。
+実行は選択ケースの直近実行のみ。既存実行に要件版は記録されていないため、現在の固定要件と
+照合した本人・理由・日時を別に保存する。変更済み内容は明示した参考記録としてだけ提出できる。
+テスト添付は当該実行のTestEvidence、手動/対象外の添付は同Projectの文書添付から明示選択する。
+手動確認の実際の内容・結果・理由・確認日時、対象外候補の理由を必須にする。新規アップロードや
+代理提出はない。次の確認表版へ自動継承しない。
+
+新permission `requirement_verification:submit` はproject_admin/manager/memberへ付与。
+有効tenant/社内Project所属・project/requirement/test_plan/test_case/requirement_verificationのreadが必要。
+文書添付を含む提出は詳細の一部取得でもdocument:readが必要。readのみでは提出不可。
+自身の提出を操作でき、prepareとsubmitの両方を持つ担当者は他者の提出も操作できる。
+当初の提出者と実際の保全/回収操作者は区別して記録する。guest/demo/MCP/運営権限だけの非参加者は不可。
+
+コピーは既存SeaweedFSの専用private bucketで行い、元keyや署名URLを本文・監査へ保存しない。
+90秒leaseで試行を排他し、IO中のDB lockを避け、完了前に版・本人資格・元記録を再確認する。
+VersionIdとSHA256を保全し、元Storageへのfallbackはしない。DB lock待ちは1秒で409、
+serialization/deadlockだけ最大3回。失効・削除・取消・期限切れの後着コピーは採用しない。
+回収失敗は`safe_error=cleanup_retry_required`、未確認試行数は`comparison.cleanup_pending`。
+これは採用済みファイルの保全状態と別であり、`ready`を不合格に書き換えない。
+
+同一request_idの別内容/版・preview以降の変更は409。無効404、権限外403、入力422/400、容量413。
+全応答はprivate/no-store/no-referrer。一覧は本文を遅延読込せず、件数に伴うSQL増加を避ける。
+Storage障害で元URLを代用せず、同じ操作の再確認/再試行から続ける。
+復旧はflag OFFを基本とし、履歴のあるDBをdowngradeしない。保全の復元にはDBだけでなく、
+VersionIdを保持する停止済みSeaweedFSデータ領域の整合したバックアップが必要。

@@ -112,8 +112,14 @@ from app.models.test_design import (
     TestPatternValue,
 )
 from app.models.user import User
+from app.models.verification_evidence import (
+    VerificationEvidenceObject,
+    VerificationEvidenceSet,
+)
 
 __all__ = [
+    "VerificationEvidenceObject",
+    "VerificationEvidenceSet",
     "RequirementVerificationPlan",
     "RequirementVerificationRevision",
     "FixedApprovalGuestBinding",
