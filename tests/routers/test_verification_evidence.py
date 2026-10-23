@@ -329,6 +329,55 @@ def test_copy_reservation_failure_retry_success_and_download(
     )
 
 
+def test_cleanup_failure_is_visible_and_never_removes_selected_ready_copy(
+    client, evidence, db, monkeypatch
+):
+    from app.core.exceptions import SharedFileUnavailableError
+    from app.models.verification_evidence import VerificationEvidenceObject as Object
+
+    c = evidence
+    attach(db, c)
+    saved, _ = create(client, c)
+    url = c["evidence"] + "/" + saved["id"]
+
+    class Storage:
+        copy_failed = True
+        cleanup_failed = True
+        removed = []
+
+        def copy(self, file, key):
+            if self.copy_failed:
+                raise SharedFileUnavailableError()
+            return dict(destination_version="selected-v1", sha256="a" * 64, byte_size=5)
+
+        def cleanup(self, key):
+            self.removed.append(key)
+            return not self.cleanup_failed
+
+    storage = Storage()
+    monkeypatch.setattr(service, "storage_factory", lambda: storage)
+    failed = client.post(url + "/advance", json={"version": saved["version"]}).json()
+    assert failed["status"] == "failed"
+    storage.copy_failed = False
+    ready = client.post(url + "/advance", json={"version": failed["version"]}).json()
+    assert ready["status"] == "ready"
+    objects = list(db.scalars(select(Object).where(Object.set_id == UUID(saved["id"]))))
+    abandoned = next(o.storage_key for o in objects if not o.selected)
+    selected = next(o.storage_key for o in objects if o.selected)
+    detail_before = client.get(url).json()
+    cleanup = client.post(url + "/cleanup", json={"version": ready["version"]})
+    assert cleanup.status_code == 200, cleanup.text
+    assert cleanup.json()["safe_error"] == "cleanup_retry_required"
+    assert client.get(url).json()["comparison"]["cleanup_pending"] == 1
+    storage.cleanup_failed = False
+    again = client.post(url + "/cleanup", json={"version": ready["version"]})
+    assert again.status_code == 200 and again.json()["safe_error"] is None
+    detail = client.get(url).json()
+    assert detail["status"] == "ready" and detail["comparison"]["cleanup_pending"] == 0
+    assert detail["manifest_digest"] == detail_before["manifest_digest"]
+    assert storage.removed == [abandoned, abandoned] and selected not in storage.removed
+
+
 def test_execution_requires_current_latest_and_explicit_reconfirmation(
     client, evidence, db
 ):
@@ -503,3 +552,179 @@ def test_unfinished_owner_boundary_and_other_manager_resume(
         cancelled.status_code == 200
         and cancelled.json()["actor_name"] == c["user"].name
     )
+
+
+def test_bounded_projection_has_constant_sql_and_single_entry(client, evidence, db):
+    import json
+    from pathlib import Path
+    from time import perf_counter
+
+    from sqlalchemy import event, insert, null
+    from sqlalchemy import update as sql_update
+
+    c = evidence
+    saved, _ = create(client, c)
+    sample = db.get(EvidenceSet, UUID(saved["id"]))
+    source = {
+        column.name: getattr(sample, column.name) for column in EvidenceSet.__table__.c
+    }
+    identities = [uuid4() for _ in range(49)]
+    insertion = {k: v for k, v in source.items() if k != "manifest"}
+    with db.get_bind().engine.begin() as connection:
+        connection.execute(
+            insert(EvidenceSet).values(manifest=null()),
+            [
+                {
+                    **insertion,
+                    "id": identity,
+                    "request_id": uuid4(),
+                    "status": "preparing",
+                    "version": 1,
+                    "manifest_digest": None,
+                    "completed_at": None,
+                }
+                for identity in identities
+            ],
+        )
+        connection.execute(
+            sql_update(EvidenceSet)
+            .where(EvidenceSet.id.in_(identities))
+            .values(
+                status="ready",
+                version=2,
+                manifest=source["manifest"],
+                manifest_digest=source["manifest_digest"],
+                completed_at=source["completed_at"],
+            )
+        )
+    statements = []
+
+    def count(connection, cursor, statement, parameters, context, many):
+        if statement.lstrip().lower().startswith("select"):
+            statements.append(statement.lower())
+
+    engine = db.get_bind().engine
+    event.listen(engine, "before_cursor_execute", count)
+    measurements = {}
+    try:
+        for size in [10, 50]:
+            statements.clear()
+            start = perf_counter()
+            response = client.get(c["evidence"], params={"page_size": size})
+            assert (
+                response.status_code == 200 and len(response.json()["items"]) == size
+            ), response.text
+            business = sum(
+                any(
+                    key in statement
+                    for key in (
+                        "from requirement_verification",
+                        "from requirements",
+                        "from requirement_details",
+                        "from test_",
+                    )
+                )
+                for statement in statements
+            )
+            assert business <= 20
+            measurements[str(size)] = dict(
+                all_sql=len(statements),
+                business_sql=business,
+                response_bytes=len(response.content),
+                seconds=round(perf_counter() - start, 4),
+            )
+        assert measurements["10"]["all_sql"] == measurements["50"]["all_sql"]
+        statements.clear()
+        response = client.get(
+            c["evidence"]
+            + "/"
+            + saved["id"]
+            + "/entries/"
+            + c["selection"]["entries"][0]["id"]
+        )
+        assert response.status_code == 200
+        business = sum(
+            any(
+                key in statement
+                for key in (
+                    "from requirement_verification",
+                    "from requirements",
+                    "from requirement_details",
+                    "from test_",
+                )
+            )
+            for statement in statements
+        )
+        assert business <= 20
+        measurements["entry"] = dict(
+            all_sql=len(statements),
+            business_sql=business,
+            response_bytes=len(response.content),
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+    out = Path(".verify/v1b-sql.json")
+    out.parent.mkdir(exist_ok=True)
+    out.write_text(json.dumps(measurements, indent=2))
+
+
+def test_active_copy_lease_excludes_second_advance_without_holding_database_lock(
+    client, evidence, db, monkeypatch
+):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    c = evidence
+    attach(db, c)
+    saved, _ = create(client, c)
+    url = c["evidence"] + "/" + saved["id"]
+    started, release = Event(), Event()
+
+    class Storage:
+        def copy(self, file, key):
+            started.set()
+            assert release.wait(10)
+            return dict(
+                destination_version="isolated-concurrent",
+                sha256="b" * 64,
+                byte_size=file["byte_size"],
+            )
+
+    monkeypatch.setattr(service, "storage_factory", Storage)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        first = pool.submit(
+            lambda: client.post(url + "/advance", json={"version": saved["version"]})
+        )
+        try:
+            assert started.wait(5)
+            current = client.get(url)
+            assert current.status_code == 200
+            second = client.post(
+                url + "/advance", json={"version": current.json()["version"]}
+            )
+            assert second.status_code == 409
+        finally:
+            release.set()
+        result = first.result(timeout=10)
+    assert result.status_code == 200 and result.json()["status"] == "ready", result.text
+
+
+def test_database_lock_timeout_is_bounded_and_retry_can_succeed(client, evidence, db):
+    from time import perf_counter
+
+    c = evidence
+    preview = client.post(c["evidence"] + "/preview", json=c["selection"]).json()
+    data = dict(
+        c["selection"],
+        request_id=str(uuid4()),
+        expected_preview_digest=preview["preview_digest"],
+    )
+    with db.get_bind().engine.begin() as connection:
+        connection.execute(
+            text("SELECT id FROM projects WHERE id=:id FOR UPDATE"),
+            {"id": c["project"].id},
+        )
+        start = perf_counter()
+        response = client.post(c["evidence"], json=data)
+        assert response.status_code == 409 and perf_counter() - start < 3, response.text
+    assert client.post(c["evidence"], json=data).status_code == 201

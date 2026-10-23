@@ -2,6 +2,7 @@
 
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import String, Text, cast, func, select
+from sqlalchemy.orm import load_only
 
 from app.core.exceptions import (
     ArtifactReleaseTooLargeError,
@@ -17,6 +18,48 @@ from app.services.artifact_release_snapshot import canonical_bytes
 
 
 class EvidenceRepository:
+    @staticmethod
+    def summary_columns():
+        return tuple(
+            getattr(EvidenceSet, name)
+            for name in (
+                "id",
+                "project_id",
+                "plan_id",
+                "plan_version",
+                "status",
+                "version",
+                "actor_name",
+                "created_at",
+                "created_by",
+                "completed_at",
+                "safe_error",
+                "subject_digest",
+                "checklist_digest",
+                "preview_digest",
+                "manifest_digest",
+            )
+        )
+
+    def entry(self, db, project_id, plan_id, identity, entry_id):
+        chosen = func.jsonb_path_query_first(
+            EvidenceSet.selection,
+            "$.entries[*] ? (@.id == $entry_id)",
+            func.jsonb_build_object("entry_id", str(entry_id)),
+        )
+        result = db.execute(
+            select(EvidenceSet, chosen, EvidenceSet.selection["files"])
+            .options(load_only(*self.summary_columns(), raiseload=True))
+            .where(
+                EvidenceSet.project_id == project_id,
+                EvidenceSet.plan_id == plan_id,
+                EvidenceSet.id == identity,
+            )
+        ).one_or_none()
+        if result is None or result[1] is None:
+            raise NotFoundError()
+        return result
+
     def get(self, db, project_id, plan_id, identity, *, lock=False):
         query = select(EvidenceSet).where(
             EvidenceSet.project_id == project_id,
@@ -177,8 +220,14 @@ class EvidenceRepository:
         ]
 
     def page(self, db, project_id, plan_id, version, offset, limit, document):
-        query = select(EvidenceSet).where(
-            EvidenceSet.project_id == project_id, EvidenceSet.plan_id == plan_id
+        query = (
+            select(
+                EvidenceSet,
+                func.jsonb_array_length(EvidenceSet.selection["entries"]),
+                func.jsonb_array_length(EvidenceSet.selection["files"]),
+            )
+            .options(load_only(*self.summary_columns(), raiseload=True))
+            .where(EvidenceSet.project_id == project_id, EvidenceSet.plan_id == plan_id)
         )
         if version:
             query = query.where(EvidenceSet.plan_version == version)
@@ -189,13 +238,11 @@ class EvidenceRepository:
                     '$.files[*] ? (@.kind == "document_attachment")',
                 )
             )
-        return list(
-            db.scalars(
-                query.order_by(EvidenceSet.created_at, EvidenceSet.id)
-                .offset(offset)
-                .limit(limit + 1)
-            )
-        )
+        return db.execute(
+            query.order_by(EvidenceSet.created_at, EvidenceSet.id)
+            .offset(offset)
+            .limit(limit + 1)
+        ).all()
 
     @staticmethod
     def bounded(value, maximum=512 * 1024):

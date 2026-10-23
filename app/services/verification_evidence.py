@@ -110,7 +110,12 @@ class VerificationEvidenceService:
         )
         return submit and (row.created_by == actor.id or prepare)
 
-    def summary(self, row, can=False, verified=0) -> dict[str, Any]:
+    def summary(self, row, can=False, verified=0, counts=None) -> dict[str, Any]:
+        entries, files = (
+            counts
+            if counts is not None
+            else (len(row.selection["entries"]), len(row.selection["files"]))
+        )
         return dict(
             id=row.id,
             plan_version=row.plan_version,
@@ -119,11 +124,9 @@ class VerificationEvidenceService:
             actor_name=row.actor_name,
             created_at=row.created_at,
             completed_at=row.completed_at,
-            entry_count=len(row.selection["entries"]),
-            file_count=len(row.selection["files"]),
-            verified_files=len(row.selection["files"])
-            if row.status == "ready"
-            else verified,
+            entry_count=entries,
+            file_count=files,
+            verified_files=files if row.status == "ready" else verified,
             safe_error=row.safe_error,
             can_operate=can,
         )
@@ -190,7 +193,7 @@ class VerificationEvidenceService:
                     for identity, count in db.execute(
                         select(Object.set_id, func.count())
                         .where(
-                            Object.set_id.in_([r.id for r in rows]),
+                            Object.set_id.in_([r.id for r, _, _ in rows]),
                             Object.selected.is_(True),
                         )
                         .group_by(Object.set_id)
@@ -209,8 +212,9 @@ class VerificationEvidenceService:
                         r,
                         self.can_operate(db, actor, r, submit, prepare),
                         selected.get(r.id, 0),
+                        (entries, files),
                     )
-                    for r in rows[:page_size]
+                    for r, entries, files in rows[:page_size]
                 ],
                 next_cursor=encode_cursor(project_id, scope, offset + page_size)
                 if len(rows) > page_size
@@ -334,7 +338,7 @@ class VerificationEvidenceService:
 
         return retry_db(operation)
 
-    def comparison(self, db, row):
+    def comparison(self, db, row, snapshot=None):
         plan = self.builder.plans.plan(db, row.project_id, row.plan_id)
         subjects = RequirementAgreementRepository().subjects(
             db, row.project_id, [plan.source_requirement_id]
@@ -347,14 +351,33 @@ class VerificationEvidenceService:
             if digest(current) == row.subject_digest
             else "changed"
         )
+        partial = snapshot is not None
+        snapshot = snapshot if partial else row.selection
         try:
             latest = self.builder.build(
                 db,
                 row.project_id,
                 row.plan_id,
-                self.builder.input_from_snapshot(row.selection),
+                self.builder.input_from_snapshot(snapshot),
             )
-            execution = "same" if digest(latest) == row.preview_digest else "changed"
+            if partial:
+
+                def normalized(value):
+                    return {
+                        "entries": [
+                            {k: v for k, v in e.items() if k != "file_slots"}
+                            for e in value["entries"]
+                        ],
+                        "files": [
+                            {k: v for k, v in f.items() if k != "slot"}
+                            for f in value["files"]
+                        ],
+                    }
+
+                same = digest(normalized(latest)) == digest(normalized(snapshot))
+            else:
+                same = digest(latest) == row.preview_digest
+            execution = "same" if same else "changed"
         except (BadRequestError, ConflictError, NotFoundError):
             execution = "unavailable_or_changed"
         except AppError:
@@ -385,7 +408,16 @@ class VerificationEvidenceService:
                 subject_digest=row.subject_digest,
                 checklist_digest=row.checklist_digest,
                 manifest_digest=row.manifest_digest,
-                comparison=self.comparison(db, row),
+                comparison={
+                    **self.comparison(db, row),
+                    "cleanup_pending": sum(
+                        not o.selected
+                        and (
+                            o.cleanup_checked_at is None or o.cleanup_error is not None
+                        )
+                        for o in objects
+                    ),
+                },
                 entries=[
                     dict(
                         id=e["id"],
@@ -410,20 +442,29 @@ class VerificationEvidenceService:
     def entry(self, original, user, project_id, plan_id, identity, entry_id):
         with self.access.transaction(original, user, project_id) as (db, actor):
             self.access.require(db, actor, project_id)
-            row = self.repository.get(db, project_id, plan_id, identity)
-            self.access.require(db, actor, project_id, document=self.document(row))
-            entry = next(
-                (e for e in row.selection["entries"] if e["id"] == str(entry_id)), None
+            row, entry, files = self.repository.entry(
+                db, project_id, plan_id, identity, entry_id
             )
-            if entry is None:
-                raise NotFoundError()
+            self.access.require(
+                db,
+                actor,
+                project_id,
+                document=any(f["kind"] == "document_attachment" for f in files),
+            )
+            snapshot = dict(
+                plan_version=row.plan_version,
+                subject_digest=row.subject_digest,
+                checklist_digest=row.checklist_digest,
+                entries=[entry],
+                files=[f for f in files if f["slot"] in entry["file_slots"]],
+            )
             result = dict(
                 id=entry_id,
                 plan_version=row.plan_version,
                 actor_name=row.actor_name,
                 received_at=row.created_at,
                 entry=entry,
-                comparison=self.comparison(db, row),
+                comparison=self.comparison(db, row, snapshot),
             )
             return s.EvidenceEntryDetail(**self.repository.bounded(result, 1310720))
 
@@ -663,13 +704,14 @@ class VerificationEvidenceService:
                         )
                         obj.cleanup_error = None if success else "retry_required"
                 self.audit(db, actor, row, "cleanup_checked")
-                return s.EvidenceSummary(
-                    **self.summary(
-                        row,
-                        self.can_operate(db, actor, row),
-                        sum(o.selected for o in self.repository.objects(db, row.id)),
-                    )
+                result = self.summary(
+                    row,
+                    self.can_operate(db, actor, row),
+                    sum(o.selected for o in self.repository.objects(db, row.id)),
                 )
+                if any(not success for _, success in outcomes):
+                    result["safe_error"] = "cleanup_retry_required"
+                return s.EvidenceSummary(**result)
 
         return retry_db(finish)
 
