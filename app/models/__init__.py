@@ -67,6 +67,10 @@ from app.models.requirement import (
     RequirementSection,
     RequirementTargetComment,
 )
+from app.models.requirement_verification import (
+    RequirementVerificationPlan,
+    RequirementVerificationRevision,
+)
 from app.models.review_account import ReviewAccountGrant
 from app.models.session import UserSession
 from app.models.specification import (
@@ -110,6 +114,8 @@ from app.models.test_design import (
 from app.models.user import User
 
 __all__ = [
+    "RequirementVerificationPlan",
+    "RequirementVerificationRevision",
     "FixedApprovalGuestBinding",
     "ProjectGuestInvitation",
     "ProjectGuestInvitationCheck",

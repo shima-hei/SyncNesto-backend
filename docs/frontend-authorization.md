@@ -1,5 +1,14 @@
 # Syncnesto Frontend Authorization Guide
 
+## Phase 3A 要件の確認表（V1a）
+
+新readは選ばれた固定要件と詳細だけの投影。固定版全体や他の要件/添付を返さない。
+`requirement_verification:read` をproject_admin/manager/member/viewerへ、
+`requirement_verification:prepare` をproject_admin/managerへ追加（計6割当）。
+全操作で有効な社内本人/session/MFA・tenant/Project所属と要件/テストreadを再確認。
+system/tenant role単独・ゲスト・MCP・デモでは利用不可。既存の承認権限は追加しない。
+詳細は[確認表API](frontend-requirement-verifications.md)。最終合否/実行採用/ファイル保全は対象外。
+
 ## Phase 2B-3a 固定承認の通知
 
 新しい共有通知4操作は、tenant選択ではなく指定本人のsession・実MFAと現在の公開世代を検証する。

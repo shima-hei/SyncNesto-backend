@@ -1,6 +1,11 @@
 """アプリケーション共通のエラーメッセージを定義するモジュール。"""
 
 APPLICATION_ERROR = "Application error"
+VERIFICATION_DISABLED = "要件の確認表は現在利用できません"
+VERIFICATION_RETRY = "保存が競合しました。再取得して確認してください"
+VERIFICATION_TARGET_INVALID = "確認対象の要件・項目・パターンを確認してください"
+VERIFICATION_QUOTE_INVALID = "引用が固定した要件の本文と一致しません"
+VERIFICATION_INCOMPLETE = "確認内容と確認方法をそろえてから対応を確認してください"
 BAD_REQUEST = "Bad request"
 AUDIT_LOG_DATE_RANGE_INVALID = "開始日時は終了日時より前にしてください"
 UNAUTHORIZED = "Unauthorized"
