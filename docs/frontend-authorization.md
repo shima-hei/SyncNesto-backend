@@ -1,5 +1,9 @@
 # Syncnesto Frontend Authorization Guide
 
+## 固定要件の最終判断（V2・LOCAL限定）
+
+指定本人の`requirement_verification:decide`と既存の分野別readを要求する。自己判定可、代理不可。依頼/未完取消は既存prepareの追加操作。社内所属・現在session/MFAをRCで再検証し、Storage IO後にも確認する。新2表/ガード、12操作、flag、期限・保全・履歴の詳細は[専用契約](requirement-verdicts.md)。旧FixedApprovalの自己承認禁止・公開/MCPの境界は変更しない。
+
 ## Phase 3A 要件の確認表（V1a）
 
 新readは選ばれた固定要件と詳細だけの投影。固定版全体や他の要件/添付を返さない。
