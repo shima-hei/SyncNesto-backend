@@ -28,8 +28,8 @@ from tests.routers.test_mcp import remote_context as remote_context
     [
         (False, CLIENT_ID, True, 28),
         (True, PLUGIN_CLIENT_ID, True, 28),
-        (True, CLIENT_ID, False, 33),
-        (True, CLIENT_ID, True, 34),
+        (True, CLIENT_ID, False, 35),
+        (True, CLIENT_ID, True, 36),
     ],
 )
 def test_catalog_preserves_review_contract(

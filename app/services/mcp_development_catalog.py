@@ -7,6 +7,18 @@ from app.schemas import mcp_development as s
 from app.services.mcp_catalog import McpTool
 
 DEVELOPMENT_TOOLS = {
+    "get_project_document_content": McpTool(
+        s.ProjectDocumentContentInput,
+        ("document:read",),
+        "文書の見出し索引・版指定の範囲/文字列検索を上限付きで取得。"
+        "offsetはUnicode code point単位。全文と関連は既存getを使う。",
+    ),
+    "patch_project_document": McpTool(
+        s.ProjectDocumentPatchInput,
+        ("document:read", "document:update"),
+        "取得版の原文範囲とexpected_textを照合して部分更新。挿入は空範囲。全editは元の版のoffsetを指定。重なり/競合を拒否し旧版を保持。",
+        True,
+    ),
     "list_project_documents": McpTool(
         s.ProjectDocumentListInput,
         ("document:read",),
