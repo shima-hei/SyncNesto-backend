@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 PERMISSIONS = [
+    ("requirement_verification:decide", "指定された固定要件の最終合否を判断する"),
     ("requirement_verification:submit", "固定要件へ検証証拠を提出する"),
     ("requirement_verification:read", "固定要件の確認表を閲覧する"),
     ("requirement_verification:prepare", "固定要件の確認表を準備する"),
@@ -88,6 +89,7 @@ SYSTEM_ADMIN_PERMISSIONS = (
 ROLE_PERMISSIONS = {
     "system_admin": list(SYSTEM_ADMIN_PERMISSIONS),
     "project_admin": [
+        "requirement_verification:decide",
         "requirement_verification:submit",
         "requirement_verification:read",
         "requirement_verification:prepare",
@@ -132,6 +134,7 @@ ROLE_PERMISSIONS = {
         "requirement:link",
     ],
     "manager": [
+        "requirement_verification:decide",
         "requirement_verification:submit",
         "requirement_verification:read",
         "requirement_verification:prepare",
@@ -167,6 +170,7 @@ ROLE_PERMISSIONS = {
         "requirement:link",
     ],
     "member": [
+        "requirement_verification:decide",
         "requirement_verification:submit",
         "requirement_verification:read",
         "mcp:connect",

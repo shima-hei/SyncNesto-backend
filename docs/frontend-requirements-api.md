@@ -1,5 +1,7 @@
 # Syncnesto Frontend Requirements API Guide
 
+固定要件への最終判断・再判定の新12操作は[V2 API](requirement-verdicts.md)を参照。既存の正式承認や要件本文の正本は変更しない。
+
 現在の要件への社内/外部合意の読取集約は[A3b-2a API](frontend-requirement-agreements-api.md)を参照。既存要件/追跡/承認の更新契約は変更しない。
 
 Phase 2A-3aの[公開準備版API](frontend-artifact-publications-api.md)は、要件/定義書を含む既存固定版から未公開の表現を保存する別機能。既存要件・承認の状態/本文/URLは変更しない。

@@ -116,8 +116,11 @@ from app.models.verification_evidence import (
     VerificationEvidenceObject,
     VerificationEvidenceSet,
 )
+from app.models.verification_verdict import VerificationEvent, VerificationRequest
 
 __all__ = [
+    "VerificationEvent",
+    "VerificationRequest",
     "VerificationEvidenceObject",
     "VerificationEvidenceSet",
     "RequirementVerificationPlan",

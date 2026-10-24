@@ -1,6 +1,22 @@
 """アプリケーション共通のエラーメッセージを定義するモジュール。"""
 
 APPLICATION_ERROR = "Application error"
+VERDICT_BASIS_CHANGED = (
+    "確認表・対象・実行が変わりました。依頼を取り消して現在の内容で作成してください"
+)
+VERDICT_SOURCE_INVALID = (
+    "確認対象または根拠を照合できません。再取得して確認してください"
+)
+VERDICT_NOT_READY = (
+    "未確認・未解決の条件があります。合格・対象外の条件を確認してください"
+)
+VERDICT_REVIEW_EXPIRED = (
+    "確認作業の有効期限または版が変わりました。確認を再開してください"
+)
+VERDICT_CHAIN_REQUIRED = "見直す依頼と判断を明示してください"
+VERDICT_JUDGE_CHANGED = (
+    "指定者の参加資格が変わりました。取消して新しい依頼を作成してください"
+)
 VERIFICATION_DISABLED = "要件の確認表は現在利用できません"
 VERIFICATION_RETRY = "保存が競合しました。再取得して確認してください"
 VERIFICATION_TARGET_INVALID = "確認対象の要件・項目・パターンを確認してください"
