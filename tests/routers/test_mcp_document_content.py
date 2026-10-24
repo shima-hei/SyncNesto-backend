@@ -123,7 +123,11 @@ def test_edit_boundaries_capacity_and_transfer_size():
     ]:
         with pytest.raises(ValidationError):
             ProjectDocumentPatchInput(
-                project_id=1, document_id=1, version=1, idempotency_key="test", **args
+                project_id=1,
+                document_id=1,
+                version=1,
+                idempotency_key="parts-validation-key",
+                **args,
             )
     body = "# 方針\n" + "本文の確認。" * 10000
     excerpt = content(body, mode="text", version=1, length=2000)
