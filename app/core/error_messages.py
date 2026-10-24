@@ -185,3 +185,4 @@ NOTIFICATION_EMAIL_UNAVAILABLE = (
 )
 OBJECTIVE_REASON_REQUIRED = "参照文書の変更・解除理由を入力してください。"
 OBJECTIVE_PROJECTION_UPGRADE = "目標を含む内容はv2で再プレビューしてください。"
+PROJECT_SCHEDULE_RANGE_INVALID = "表示期間は開始日から最大12週間で指定してください。"
