@@ -3,7 +3,7 @@
 ## 開発用の文書操作（初期OFF）
 
 `MCP_DEVELOPMENT_TOOLS_ENABLED=true` の環境では、既存の開発用OAuth client
-`syncnesto-codex-local` に次の6操作を追加できる。審査用 `syncnesto-openai-plugin`
+`syncnesto-codex-local` に次の8操作を追加できる。審査用 `syncnesto-openai-plugin`
 にはflag ONでも追加しない。既存28件の入力schema・説明・注釈は維持する。
 新URL・DB構造・permission・role割当・依存追加はない。
 
@@ -11,8 +11,10 @@
 | --- | --- | --- |
 | list_project_documents | document:read | page/page_size/q。本文なしの一覧 |
 | get_project_document | document:read | document_id。本文・version・閲覧可能な関連先だけ |
+| get_project_document_content | document:read | 見出し/版指定の本文範囲/文字列検索。本文を上限付きで返す |
 | create_project_document | document:read/create | data.title/body。初版を保存し要約を返す |
 | update_project_document | document:read/update | document_idとdata.version/title/body。旧版を保持 |
+| patch_project_document | document:read/update | document_id/versionと原文照合付きedits、任意title。全文を応答しない |
 | link_project_document | document:read/update＋参照先read | document_idとdata.target_type/target_id。既存参照を保持 |
 | set_requirement_document_objectives | requirement:read/update | document_id/versionとdataの任意目標3項目 |
 
@@ -25,6 +27,34 @@ MCP全体の1回256KiB上限も維持する。更新競合時は409で変更せ�
 空の変更やpurpose/status等の指定は拒否する。文書作成後に取得した実ID/versionで設定し、
 既存get_requirement_targetで読み返す。案件共通の出典指定は既存UIで明示選択する。
 一般文書はテスト設計とは別データ。本文の登録は承認・顧客公開・通知・デモ公開を意味しない。
+
+### 長文を全文転送せず操作する
+
+`get_project_document_content` は既定の `mode=outline` で本文なしの版・文字数・
+SHA256・ATX見出し索引を返す。fence内の見出しは除外する。Setext等の索引は扱わず、
+その場合もtext/searchを利用できる。見出しは50件/タイトル200文字まで。
+節のstart/endは子見出しを含む範囲。次ページはnext_offsetと同じversionを指定する。
+
+`mode=text` はversion/offset/length（既定2000、上限8000）で必要範囲だけ取得する。
+`mode=search` はversion/query（最大200文字）/offsetで大文字小文字を区別した
+文字列一致を20件まで返す。前後80文字の抜粋と一致範囲・next_offsetが得られる。
+重なる一致は繰り返さない。版違いは本文なしの409、末尾offsetは空、範囲外は400。
+outline初回以外はversion必須。すべてのoffset/endはUnicode code point単位で、
+endは範囲に含めない。CRLFや文字を正規化しない。UTF-16の文字数を送らない。
+
+部分更新は取得版のversionと、最大20件の
+`edits=[{start,end,expected_text,replacement}]` を送る。全範囲は変更前の同じ版に対する
+位置で、原文一致を確認してから末尾側より反映する。重なり・同位置への複数挿入は400、
+原文不一致は409。挿入はstart=end/expected_text=""、末尾追記はstart=end=body_length。
+原文+置換の合計は16000文字、各文字列8000文字、完成本文は既存の100000文字以内。
+titleは省略すれば維持、指定時は空白でない文字列。titleだけの更新もできる。
+既存版保存・監査・receiptを使い、競合を自動で再適用しない。同じ結果へのno-opは
+本文版を増やさない。応答は版・長さ・hash・changedで、本文は含めない。
+
+例：索引で版と節startを取得し、text/searchで対象とUnicode範囲を確かめてpatchする。
+結果は返却版と必要な範囲/hashだけ再確認する。全文取得・全文更新は互換のため維持する。
+MCPホストがtool一覧をキャッシュしている場合は接続を再読込して新2操作を取得する。
+既存の接続解除・同意の作り直しは不要。
 
 既存REST/OpenAPIとFrontend生成型への変更はない。OFFへ戻してAPIを再起動すれば追加操作だけを停止でき、
 保存した文書・版・関連・要件定義書の目標は既存UI/APIで保持する。

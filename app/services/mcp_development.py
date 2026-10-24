@@ -2,10 +2,12 @@
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, VersionConflictError
 from app.models.user import User
+from app.schemas.document import DocumentUpdate
 from app.schemas.requirement import RequirementDocumentUpdate
 from app.services.document import DocumentService
+from app.services.mcp_document_content import body_metadata, edited_body, read_content
 from app.services.mcp_operations import summary
 from app.services.requirement_document import RequirementDocumentService
 
@@ -27,6 +29,11 @@ class McpDevelopmentService:
                 "body": row.body,
                 "links": self.links(service, db, data.project_id, row.id, user),
             }
+        if name == "get_project_document_content":
+            row = service.get(db, data.project_id, data.document_id)
+            if data.version is not None and row.version != data.version:
+                raise VersionConflictError(summary(row))
+            return {**summary(row), **read_content(row.body, data)}
         raise NotFoundError()
 
     def write(self, db: Session, user: User, name: str, data) -> dict:
@@ -40,6 +47,27 @@ class McpDevelopmentService:
                     db, data.project_id, data.document_id, data.data, user.id
                 )
             )
+        if name == "patch_project_document":
+            row = service.get(db, data.project_id, data.document_id, lock=True)
+            if row.version != data.version:
+                raise VersionConflictError(summary(row))
+            version = row.version
+            updated = service.update(
+                db,
+                data.project_id,
+                row.id,
+                DocumentUpdate(
+                    version=version,
+                    title=data.title if data.title is not None else row.title,
+                    body=edited_body(row.body, data.edits),
+                ),
+                user.id,
+            )
+            return {
+                **summary(updated),
+                **body_metadata(updated.body),
+                "changed": updated.version != version,
+            }
         if name == "link_project_document":
             service.add_link(db, data.project_id, data.document_id, data.data, user)
             return {
