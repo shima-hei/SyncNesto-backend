@@ -72,10 +72,14 @@ class VerificationVerdictService:
         current = self.access.qualified(
             db, row.project_id, user_id=actor.id, document=self.document(row.basis)
         )[0]
-        if {k: v for k, v in current.items() if k != "name"} != {
-            k: v for k, v in row.basis["judge_qualification"].items() if k != "name"
-        }:
+        if not self.same_qualification(current, row.basis["judge_qualification"]):
             raise ConflictError(messages.VERDICT_JUDGE_CHANGED)
+
+    @staticmethod
+    def same_qualification(current, expected):
+        return current is not None and {
+            k: v for k, v in current.items() if k != "name"
+        } == {k: v for k, v in expected.items() if k != "name"}
 
     @staticmethod
     def summary(row):
@@ -278,6 +282,11 @@ class VerificationVerdictService:
             return "cancelled"
         if row.status == "withdrawn":
             return "withdrawn"
+        if (
+            row.status == "requested"
+            and comparison.get("judge_qualification") == "changed"
+        ):
+            return "judge_unavailable"
         if any(
             comparison.get(k) in {"not_evaluated", "unavailable"}
             for k in ("requirement", "checklist", "sources", "adverse", "files_source")
@@ -304,6 +313,20 @@ class VerificationVerdictService:
                 self.judge(db, actor, row)
                 can_judge = True
             except (ForbiddenError, ConflictError):
+                qualification = "changed"
+        elif row.status == "requested":
+            try:
+                current = self.access.qualified(
+                    db,
+                    row.project_id,
+                    user_id=row.judge_id,
+                    document=self.document(row.basis),
+                )[0]
+                if not self.same_qualification(
+                    current, row.basis["judge_qualification"]
+                ):
+                    qualification = "changed"
+            except ForbiddenError:
                 qualification = "changed"
         comparison["judge_qualification"] = qualification
         review = row.review or {}
@@ -368,6 +391,8 @@ class VerificationVerdictService:
             offset = decode_cursor(cursor, project_id, scope) if cursor else 0
             rows = self.repo.pages(db, project_id, requirement_id, offset, page_size)
             document = self.access.can(db, actor, project_id, "document:read")
+            if not document and any(self.document(r.basis) for r in rows[:page_size]):
+                return s.VerdictPage(enabled=True, state="restricted")
             return s.VerdictPage(
                 enabled=True,
                 state="ready",
@@ -809,6 +834,26 @@ class VerificationVerdictService:
             document = self.access.can(db, actor, project_id, "document:read")
             allowed = [r for r in rows if document or not self.document(r.basis)]
             comparisons = self.builder.compare_many(db, project_id, allowed)
+            pending_judges = {r.judge_id for r in allowed if r.status == "requested"}
+            judges = (
+                {
+                    j["id"]: j
+                    for j in self.access.qualified(
+                        db, project_id, user_ids=list(pending_judges)
+                    )
+                }
+                if pending_judges
+                else {}
+            )
+            for row in allowed:
+                if row.status == "requested":
+                    comparisons[str(row.id)]["judge_qualification"] = (
+                        "current"
+                        if self.same_qualification(
+                            judges.get(row.judge_id), row.basis["judge_qualification"]
+                        )
+                        else "changed"
+                    )
             items = []
             for identity in ids:
                 matches = [r for r in rows if r.source_requirement_id == identity]

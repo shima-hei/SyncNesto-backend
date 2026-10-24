@@ -42,7 +42,7 @@ class VerdictAccess(EvidenceAccess):
         ):
             self.context.permission(db, actor, project_id, code)
 
-    def qualified(self, db, project_id, *, user_id=None, document=False):
+    def qualified(self, db, project_id, *, user_id=None, user_ids=None, document=False):
         """有効な同組織の社内所属と全read/decideを一度に確認する。"""
         codes = (
             list(READS)
@@ -70,6 +70,8 @@ class VerdictAccess(EvidenceAccess):
             r.scope='project'
             AND (:user_id IS NULL OR u.id=:user_id) AND NOT EXISTS(SELECT FROM
             review_account_grants rg WHERE rg.user_id=u.id)
+            AND (CAST(:user_ids AS int[]) IS NULL
+              OR u.id=ANY(CAST(:user_ids AS int[])))
           GROUP BY u.id,u.name,m.id,m.version,m.role_id,tm.id,tm.version
           HAVING CAST(:codes AS jsonb) <@ to_jsonb(array_agg(DISTINCT p.code))
           ORDER BY u.id LIMIT 1001
@@ -78,6 +80,7 @@ class VerdictAccess(EvidenceAccess):
                     "project": project_id,
                     "tenant": db.info["tenant_id"],
                     "user_id": user_id,
+                    "user_ids": user_ids,
                     "codes": json.dumps(codes),
                 },
             )

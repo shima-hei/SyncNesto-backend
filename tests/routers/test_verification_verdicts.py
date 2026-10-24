@@ -269,6 +269,12 @@ def test_session_bound_review_and_qualification_epoch(client, verdict, db):
     db.commit()
     detail = client.get(url).json()
     assert not detail["can_review"] and detail["can_cancel"]
+    assert detail["validity"] == "judge_unavailable"
+    summary = client.get(
+        f"/projects/{c['project'].id}/requirement-verdicts",
+        params={"requirement_ids": c["req"].id},
+    )
+    assert summary.json()["items"][0]["state"] == "judge_unavailable", summary.text
     assert (
         client.post(
             url + "/review",
@@ -665,6 +671,29 @@ def test_file_proof_required_head_failure_and_source_removal(
     current = client.get(url).json()
     assert current["result"] == "passed" and current["validity"] == "not_evaluated"
     assert len(current["files"]) == 1
+    from sqlalchemy import delete
+
+    from app.models.rbac import Permission, Role, RolePermission
+
+    db.execute(
+        delete(RolePermission).where(
+            RolePermission.role_id.in_(
+                select(Role.id).where(
+                    Role.key == "project_admin", Role.scope == "project"
+                )
+            ),
+            RolePermission.permission_id.in_(
+                select(Permission.id).where(Permission.code == "document:read")
+            ),
+        )
+    )
+    db.commit()
+    restricted = client.get(c["verdicts"])
+    assert (
+        restricted.status_code == 200 and restricted.json()["state"] == "restricted"
+    ), restricted.text
+    assert restricted.json()["items"] == [] and not restricted.json()["can_prepare"]
+    assert client.get(url).status_code == 403
 
 
 def test_current_mfa_and_expired_review_are_enforced(client, verdict, db, monkeypatch):
