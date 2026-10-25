@@ -114,6 +114,11 @@ class McpOperationsService:
                 "name": name,
                 "description": tool.description,
                 "inputSchema": tool.schema.model_json_schema(),
+                **(
+                    {"outputSchema": tool.output.model_json_schema()}
+                    if tool.output
+                    else {}
+                ),
                 "annotations": {
                     "readOnlyHint": not tool.write,
                     "destructiveHint": tool.write and not tool.preview,

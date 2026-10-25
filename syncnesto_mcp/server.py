@@ -13,6 +13,8 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, TextContent, Tool
 from pydantic import AnyHttpUrl
 
+from syncnesto_mcp.contracts import READ_CONTEXT_TOOLS
+
 
 class BackendVerifier(TokenVerifier):
     """MCP宛資格情報を、短命の専用API宛資格情報へ交換する。"""
@@ -74,7 +76,7 @@ class SyncnestoMCP(MCPServer):
         """API宛の派生資格情報だけを専用endpointへ送る。"""
         token = get_access_token()
         if token is None:
-            raise ValueError("Syncnestoへの接続が必要です")
+            raise McpOperationError(401, "Syncnestoへの接続が必要です")
         async with httpx.AsyncClient(
             timeout=60, follow_redirects=False, trust_env=False
         ) as client:
@@ -101,6 +103,8 @@ class SyncnestoMCP(MCPServer):
         """モデルの引数はAPIでschema・RBAC・所属・版を再検証する。"""
         try:
             if len(json.dumps(arguments, ensure_ascii=False).encode()) > 262144:
+                if name in READ_CONTEXT_TOOLS:
+                    raise operation_error(400)
                 raise ValueError("一回の入力は256KiBまでです。操作を分割してください")
             result = await self.request(
                 "/integrations/mcp/operations",
@@ -115,6 +119,29 @@ class SyncnestoMCP(MCPServer):
                 structured_content=result,
             )
         except (httpx.HTTPError, ValueError) as exc:
+            if name in READ_CONTEXT_TOOLS:
+                status = exc.status_code if isinstance(exc, McpOperationError) else None
+                code, action = {
+                    400: ("INVALID_ARGUMENT", "check_tool_input_schema"),
+                    401: ("AUTHENTICATION_REQUIRED", "reconnect"),
+                    403: ("ACCESS_DENIED", "check_consent_and_current_permissions"),
+                    404: ("NOT_FOUND_OR_UNAVAILABLE", "check_scope_and_identifier"),
+                    409: ("VERSION_CONFLICT", "read_current_version"),
+                    429: ("RATE_LIMITED", "wait_before_retrying_read"),
+                }.get(
+                    status or 0,
+                    ("TRANSPORT_ERROR", "check_connection")
+                    if status is None
+                    else ("INTERNAL_ERROR", "report_failure"),
+                )
+                error = {
+                    "error": {"code": code, "status": status, "next_action": action}
+                }
+                return CallToolResult(
+                    content=[TextContent(type="text", text=json.dumps(error))],
+                    structured_content=error,
+                    is_error=True,
+                )
             return CallToolResult(
                 content=[
                     TextContent(
@@ -131,13 +158,28 @@ class SyncnestoMCP(MCPServer):
             )
 
 
-def operation_error(status_code: int) -> ValueError:
+class McpOperationError(ValueError):
+    """既存の表示文を保ち、新読取だけへ安全な状態コードを渡す。"""
+
+    def __init__(self, status_code: int, message: str):
+        """本文や内部例外は保持しない。"""
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def operation_error(status_code: int) -> McpOperationError:
     """接続方式によらず、本文や内部例外を含まない操作エラーを返す。"""
     if status_code == 409:
-        return ValueError("対象が変更されました。再取得して確認してください (409)")
+        return McpOperationError(
+            status_code, "対象が変更されました。再取得して確認してください (409)"
+        )
     if status_code in {401, 403}:
-        return ValueError("接続または現在の操作権限を確認してください")
-    return ValueError(f"Syncnestoの操作に失敗しました ({status_code})")
+        return McpOperationError(
+            status_code, "接続または現在の操作権限を確認してください"
+        )
+    return McpOperationError(
+        status_code, f"Syncnestoの操作に失敗しました ({status_code})"
+    )
 
 
 def create_server(api_url: str, resource_url: str):

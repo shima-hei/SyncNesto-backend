@@ -17,6 +17,12 @@ class McpDevelopmentService:
 
     def read(self, db: Session, user: User, name: str, data) -> dict:
         """本文は個別取得だけに含め、関連先の権限を既存Serviceで確認する。"""
+        from syncnesto_mcp.contracts import READ_CONTEXT_TOOLS
+
+        if name in READ_CONTEXT_TOOLS:
+            from app.services.mcp_read import McpReadService
+
+            return McpReadService().read(db, user, name, data)
         service = DocumentService()
         if name == "list_project_documents":
             return service.list(
