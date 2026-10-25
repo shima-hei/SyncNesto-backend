@@ -23,6 +23,10 @@ class McpDevelopmentService:
             from app.services.mcp_read import McpReadService
 
             return McpReadService().read(db, user, name, data)
+        if name == "list_task_comments":
+            from app.services.mcp_task_comments import McpTaskCommentService
+
+            return McpTaskCommentService().read(db, user, data)
         service = DocumentService()
         if name == "list_project_documents":
             return service.list(
@@ -44,6 +48,10 @@ class McpDevelopmentService:
 
     def write(self, db: Session, user: User, name: str, data) -> dict:
         """通常APIと同じ更新・版保存を使い、結果に長い本文を含めない。"""
+        if name == "create_task_comment":
+            from app.services.mcp_task_comments import McpTaskCommentService
+
+            return McpTaskCommentService().write(db, user, data)
         service = DocumentService()
         if name == "create_project_document":
             return summary(service.create(db, data.project_id, data.data, user.id))

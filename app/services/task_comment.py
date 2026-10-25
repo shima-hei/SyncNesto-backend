@@ -69,16 +69,8 @@ class TaskCommentService:
         actor_id: int | None,
     ) -> TaskComment:
         """タスクコメントを作成する。"""
-        task = self._get_task(db, task_id)
-        self._validate_parent_comment(db, task_id, comment_in.parent_comment_id)
+        task, prepared = self.validate_create(db, task_id, comment_in)
         mention_service = CommentMentionService()
-        prepared = mention_service.prepare(
-            db,
-            project_id=task.project_id,
-            permission="task:read",
-            body=comment_in.body,
-            mentions=comment_in.mentions,
-        )
         comment = self.comment_repository.create(
             db,
             task_id=task_id,
@@ -107,6 +99,21 @@ class TaskCommentService:
             changed_by=actor_id,
         )
         return comment
+
+    def validate_create(
+        self, db: Session, task_id: int, comment_in: TaskCommentCreate
+    ) -> tuple[Task, dict[int, list[dict]]]:
+        """再送時も同じ親コメント・メンションの現在の有効性を確認する。"""
+        task = self._get_task(db, task_id)
+        self._validate_parent_comment(db, task_id, comment_in.parent_comment_id)
+        prepared = CommentMentionService().prepare(
+            db,
+            project_id=task.project_id,
+            permission="task:read",
+            body=comment_in.body,
+            mentions=comment_in.mentions,
+        )
+        return task, prepared
 
     def list_comments(self, db: Session, task_id: int) -> list[TaskComment]:
         """タスクコメント一覧を取得する。"""

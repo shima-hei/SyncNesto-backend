@@ -1,5 +1,6 @@
 """開発用接続だけで利用する文書の操作。既存28入力とは分離する。"""
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -7,6 +8,68 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.schemas.document import DocumentCreate, DocumentLinkCreate, DocumentUpdate
 from app.schemas.mcp_tools import PageInput, ToolInput, WriteInput
 from app.schemas.project_objective import ObjectiveFields
+from app.schemas.task import TaskCommentCreate, TaskCommentRead
+
+
+class TaskCommentListInput(PageInput):
+    """同じ作業のコメントを新しい順で上限付き取得する。"""
+
+    task_id: int = Field(gt=0)
+    page_size: int = Field(default=20, ge=1, le=50)
+
+
+class DevelopmentTaskCommentCreate(TaskCommentCreate):
+    """既存コメント入力に、開発用MCPだけの上限を設ける。"""
+
+    model_config = ConfigDict(extra="forbid")
+    body: str = Field(min_length=1, max_length=8000)
+    parent_comment_id: int | None = Field(default=None, gt=0)
+
+    @field_validator("body")
+    @classmethod
+    def validate_body(cls, value: str) -> str:
+        """メンション位置を変えず、空白だけの本文とDB非対応文字を拒否する。"""
+        if not value.strip() or "\x00" in value:
+            raise ValueError("コメント本文を入力してください")
+        return value
+
+
+class TaskCommentCreateInput(WriteInput):
+    """作業本文を変更せず、一つのコメントを再送防止付きで追記する。"""
+
+    task_id: int = Field(gt=0)
+    data: DevelopmentTaskCommentCreate
+
+
+class DevelopmentTaskCommentRead(TaskCommentRead):
+    """旧APIの長い本文は切詰めの有無と原文長を明示する。"""
+
+    body_length: int = Field(description="切詰め前の本文のUnicode code point数")
+    body_truncated: bool = Field(description="本文が8000 code pointで切り詰められたか")
+    mentions_truncated: bool = Field(
+        description="返却本文に完全に含まれないUTF-16位置のメンションを除外したか"
+    )
+
+
+class TaskCommentPageRead(BaseModel):
+    """本文未取得とページ件数0を混同しない。"""
+
+    items: list[DevelopmentTaskCommentRead]
+    total: int
+    page: int
+    page_size: int
+
+
+class TaskCommentCreatedRead(BaseModel):
+    """追記結果は本文を重複させず、安定IDと版を返す。"""
+
+    id: int
+    task_id: int
+    parent_comment_id: int | None
+    version: int
+    is_resolved: bool
+    created_by: int | None
+    created_at: datetime
 
 
 class ProjectDocumentListInput(PageInput):
