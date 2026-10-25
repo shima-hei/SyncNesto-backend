@@ -16,6 +16,7 @@ class McpTool:
     description: str
     write: bool = False
     preview: bool = False
+    output: type[BaseModel] | None = None
 
 
 TOOLS = {

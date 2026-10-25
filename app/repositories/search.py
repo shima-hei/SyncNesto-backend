@@ -1,6 +1,7 @@
 """組織・所属・種類ごとの権限をSQLで適用する横断検索。"""
 
 from sqlalchemy import (
+    DateTime,
     Integer,
     Select,
     String,
@@ -65,7 +66,14 @@ class SearchRepository:
         return query
 
     def sources(
-        self, tenant_id: int, user_id: int, q: str, project_id: int | None
+        self,
+        tenant_id: int,
+        user_id: int,
+        q: str,
+        project_id: int | None,
+        *,
+        include_objectives: bool = False,
+        include_metadata: bool = False,
     ) -> Subquery:
         """各リソースを同じ列構成へ揃え、UNION前に境界を確定する。"""
         pattern = escaped_pattern(q)
@@ -108,6 +116,22 @@ class SearchRepository:
                 code.label("code"),
                 func.substr(body, start, 240).label("excerpt"),
                 rank.label("rank"),
+                *(
+                    [
+                        cast(getattr(model, "status", literal(None)), String).label(
+                            "status"
+                        ),
+                        cast(getattr(model, "version", literal(None)), Integer).label(
+                            "version"
+                        ),
+                        cast(
+                            getattr(model, "updated_at", literal(None)),
+                            DateTime(timezone=True),
+                        ).label("updated_at"),
+                    ]
+                    if include_metadata
+                    else []
+                ),
             ).select_from(model)
             if parent is not None:
                 query = query.join(
@@ -137,7 +161,16 @@ class SearchRepository:
                 RequirementDocument,
                 RequirementDocument.title,
                 RequirementDocument.document_code,
-                (RequirementDocument.purpose, RequirementDocument.target_system_name),
+                (RequirementDocument.purpose, RequirementDocument.target_system_name)
+                + (
+                    (
+                        RequirementDocument.project_goal,
+                        RequirementDocument.project_scope,
+                        RequirementDocument.project_completion_criteria,
+                    )
+                    if include_objectives
+                    else ()
+                ),
                 "requirement:read",
                 conditions=(RequirementDocument.deleted_at.is_(None),),
             ),

@@ -32,11 +32,13 @@ class RequirementTraceRepository:
             Requirement.deleted_at.is_(None),
             or_(
                 Requirement.section_id.is_(None),
-                exists().where(
+                exists()
+                .where(
                     RequirementSection.id == Requirement.section_id,
                     RequirementSection.document_id == Requirement.document_id,
                     RequirementSection.deleted_at.is_(None),
-                ),
+                )
+                .correlate(Requirement),
             ),
         )
 

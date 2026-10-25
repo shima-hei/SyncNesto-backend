@@ -159,6 +159,7 @@ class Settings:
     bff_shared_secret: str = os.getenv("BFF_SHARED_SECRET", "")
     mcp_enabled: bool = get_bool_env("MCP_ENABLED")
     mcp_development_tools_enabled: bool = get_bool_env("MCP_DEVELOPMENT_TOOLS_ENABLED")
+    mcp_read_context_enabled: bool = get_bool_env("MCP_READ_CONTEXT_ENABLED")
     mcp_issuer_url: str = os.getenv("MCP_ISSUER_URL", "http://127.0.0.1:8000")
     mcp_resource_url: str = os.getenv(
         "MCP_RESOURCE_URL",
