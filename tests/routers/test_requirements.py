@@ -1,9 +1,12 @@
 """要件定義APIのテスト。"""
 
 import base64
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from html import unescape
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -257,7 +260,9 @@ def test_list_requirement_documents_allows_viewer(
     assert response.json()["items"][0]["document_code"] == "RD-A"
 
 
-def test_export_requirement_document_returns_markdown_and_records_change_log(
+@pytest.mark.parametrize("export_format", ["markdown", "html", "pdf"])
+def test_export_requirement_document_returns_formats_and_records_change_log(
+    export_format: str,
     client: TestClient,
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
@@ -292,10 +297,19 @@ def test_export_requirement_document_returns_markdown_and_records_change_log(
             Requirement(
                 document_id=document.id,
                 section_id=first_section.id,
-                requirement_code="REQ-001",
+                requirement_code="REQ-020",
                 requirement_type="business",
                 title="業務フローを管理できる",
                 description="業務フローを登録・参照できる。",
+                rationale="登録内容の判断理由を残す。",
+                acceptance_criteria="登録した内容を確認できる。",
+            ),
+            Requirement(
+                document_id=document.id,
+                section_id=first_section.id,
+                requirement_code="REQ-010",
+                requirement_type="business",
+                title="先に確認する要件",
             ),
             Requirement(
                 document_id=document.id,
@@ -332,20 +346,32 @@ def test_export_requirement_document_returns_markdown_and_records_change_log(
 
     response = client.post(
         f"/projects/{project.id}/requirement-documents/{document.id}/exports",
-        json={"format": "markdown", "include_comments": True},
+        json={"format": export_format, "include_comments": True},
     )
 
     assert response.status_code == 200
-    assert response.json()["format"] == "markdown"
+    assert response.json()["format"] == export_format
     content = response.json()["content"]
-    assert "# Syncnesto 要件定義書" in content
-    assert "#### REQ-001 業務フローを管理できる" in content
-    assert "#### REQ-002 ログインできる" in content
-    assert "## 未分類要件" in content
-    assert "#### REQ-999 未分類要件" in content
-    assert "### ISSUE-001 SSO範囲が未確定" in content
+    if export_format == "html":
+        content = unescape(re.sub(r"<[^>]+>", "", content))
+    elif export_format == "pdf":
+        content = "\n".join(
+            bytes.fromhex(value).decode("utf-16-be").lstrip("\ufeff")
+            for value in re.findall(
+                r"<([0-9A-F]+)> Tj", base64.b64decode(content).decode("latin-1")
+            )
+        )
+    assert "Syncnesto 要件定義書" in content
+    assert "REQ-020 業務フローを管理できる" in content
+    assert content.index("REQ-010") < content.index("REQ-020")
+    assert "登録内容の判断理由を残す。" in content
+    assert "登録した内容を確認できる。" in content
+    assert "REQ-002 ログインできる" in content
+    assert "未分類要件" in content
+    assert "REQ-999 未分類要件" in content
+    assert "ISSUE-001 SSO範囲が未確定" in content
     assert "レビューコメント" in content
-    assert content.index("### 業務要件") < content.index("### 機能要件")
+    assert content.index("業務要件") < content.index("機能要件")
 
     change_log = db.query(RequirementChangeLog).one()
     assert change_log.document_id == document.id
@@ -354,7 +380,7 @@ def test_export_requirement_document_returns_markdown_and_records_change_log(
     assert change_log.action == "exported"
     assert change_log.changed_by == user.id
     assert change_log.new_value == {
-        "format": "markdown",
+        "format": export_format,
         "include_comments": True,
         "include_change_logs": False,
     }

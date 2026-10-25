@@ -5,7 +5,6 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime
 from html import escape
-from textwrap import wrap
 
 from sqlalchemy.orm import Session
 
@@ -32,6 +31,16 @@ from app.services.requirement_change_log import (
     RequirementChangeLogAction,
     RequirementChangeLogService,
     RequirementChangeLogTargetType,
+)
+from app.services.requirement_export_pdf import (
+    FONT_SIZE,
+    LINE_HEIGHT,
+    MARGIN,
+    PAGE_HEIGHT,
+    PAGE_WIDTH,
+    TEXT_TOP,
+    paginate,
+    text_lines,
 )
 
 
@@ -160,10 +169,7 @@ class RequirementExportService:
 
     def _build_pdf_bytes(self, markdown_content: str) -> bytes:
         """Markdown本文を簡易PDFバイト列へ変換する。"""
-        lines = self._build_pdf_text_lines(markdown_content)
-        pages = [lines[index : index + 48] for index in range(0, len(lines), 48)]
-        if not pages:
-            pages = [[]]
+        pages = paginate(markdown_content)
 
         objects: list[bytes] = []
         page_object_numbers: list[int] = []
@@ -203,8 +209,11 @@ class RequirementExportService:
             page_number = 5 + index * 2
             content_number = page_number + 1
             objects[page_number - 1] = (
-                b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
-                b"/Resources << /Font << /F1 3 0 R >> >> /Contents "
+                (
+                    f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {PAGE_WIDTH} "
+                    f"{PAGE_HEIGHT}] "
+                ).encode("ascii")
+                + b"/Resources << /Font << /F1 3 0 R >> >> /Contents "
                 + f"{content_number} 0 R".encode("ascii")
                 + b" >>"
             )
@@ -221,21 +230,16 @@ class RequirementExportService:
 
     def _build_pdf_text_lines(self, markdown_content: str) -> list[str]:
         """PDF表示用のテキスト行を作成する。"""
-        lines: list[str] = []
-        for raw_line in markdown_content.splitlines():
-            line = raw_line.strip()
-            if not line:
-                lines.append("")
-                continue
-            line = line.lstrip("#").strip()
-            if line.startswith("- "):
-                line = f"・{line[2:]}"
-            lines.extend(wrap(line, width=72) or [""])
-        return lines
+        return text_lines(markdown_content)
 
     def _build_pdf_content_stream(self, lines: list[str]) -> bytes:
         """PDFページの本文streamを作成する。"""
-        stream_lines = ["BT", "/F1 10 Tf", "50 790 Td", "14 TL"]
+        stream_lines = [
+            "BT",
+            f"/F1 {FONT_SIZE} Tf",
+            f"{MARGIN} {TEXT_TOP} Td",
+            f"{LINE_HEIGHT} TL",
+        ]
         for line in lines:
             encoded = "FEFF" + line.encode("utf-16-be").hex().upper()
             stream_lines.append(f"<{encoded}> Tj")
@@ -281,11 +285,22 @@ class RequirementExportService:
             "<head>",
             '<meta charset="utf-8">',
             "<title>Requirement Document</title>",
+            "<style>",
+            "body{font-family:sans-serif;line-height:1.6;max-width:60rem;"
+            "margin:2rem auto;padding:0 1rem;overflow-wrap:anywhere}",
+            "h1,h2,h3,h4,h5,h6{break-after:avoid-page}",
+            ".export-requirement{break-inside:avoid-page}",
+            "p,li{orphans:3;widows:3}",
+            "@page{size:A4;margin:15mm}",
+            "@media print{body{max-width:none;margin:0;padding:0;"
+            "font-size:10pt;color:black;background:white}}",
+            "</style>",
             "</head>",
             "<body>",
         ]
         in_list = False
         in_paragraph = False
+        in_requirement = False
 
         for raw_line in markdown_content.splitlines():
             line = raw_line.strip()
@@ -306,6 +321,12 @@ class RequirementExportService:
                     lines.append("</ul>")
                     in_list = False
                 level = min(len(line) - len(line.lstrip("#")), 6)
+                if level <= 4 and in_requirement:
+                    lines.append("</section>")
+                    in_requirement = False
+                if level == 4:
+                    lines.append('<section class="export-requirement">')
+                    in_requirement = True
                 text = line[level:].strip()
                 lines.append(f"<h{level}>{escape(text)}</h{level}>")
                 continue
@@ -332,6 +353,8 @@ class RequirementExportService:
             lines.append("</p>")
         if in_list:
             lines.append("</ul>")
+        if in_requirement:
+            lines.append("</section>")
         lines.extend(["</body>", "</html>"])
         return "\n".join(lines) + "\n"
 
@@ -520,7 +543,9 @@ class RequirementExportService:
     ) -> dict[int | None, list[Requirement]]:
         """要件をセクションIDごとにまとめる。"""
         grouped: dict[int | None, list[Requirement]] = defaultdict(list)
-        for requirement in requirements:
+        for requirement in sorted(
+            requirements, key=lambda item: (item.requirement_code, item.id)
+        ):
             grouped[requirement.section_id].append(requirement)
         return grouped
 
@@ -566,6 +591,8 @@ class RequirementExportService:
                     "",
                 ]
             )
+            if requirement.rationale and requirement.rationale.strip():
+                lines.extend(["理由:", requirement.rationale, ""])
             if requirement.acceptance_criteria:
                 lines.extend(
                     [
