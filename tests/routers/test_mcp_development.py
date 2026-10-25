@@ -72,6 +72,7 @@ def development(client, context, monkeypatch):
     """既存のOAuth・MFA・所属判定を通して開発用接続を作る。"""
     monkeypatch.setattr(settings, "mcp_development_tools_enabled", True)
     monkeypatch.setattr(settings, "project_objectives_enabled", True)
+    monkeypatch.setattr(settings, "mcp_task_comments_enabled", True)
     direct, tokens, _ = connect(client, context[1].id)
     return direct, api_headers(direct, tokens["access_token"]), context[1]
 
