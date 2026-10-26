@@ -9,6 +9,7 @@ from html import escape
 from sqlalchemy.orm import Session
 
 from app.core import error_messages
+from app.core.config import settings
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.models.requirement import (
     Requirement,
@@ -50,6 +51,20 @@ class RequirementDocumentExportResult:
 
     format: str
     content: str
+
+
+@dataclass(frozen=True)
+class RequirementExportData:
+    """選択・掲載順を確定した出力データ。本文の見出しを構造境界に使わない。"""
+
+    document: RequirementDocument
+    sections: list[RequirementSection]
+    requirements_by_section: dict[int | None, list[Requirement]]
+    open_issues: list[RequirementOpenIssue]
+    comments: list[RequirementTargetComment]
+    change_logs: list[RequirementChangeLog]
+    include_comments: bool
+    include_change_logs: bool
 
 
 class RequirementExportService:
@@ -125,14 +140,27 @@ class RequirementExportService:
             project_id=project_id,
             document_id=document_id,
         )
-        markdown_content = self._build_markdown(
-            db,
-            document=document,
-            include_comments=export_in.include_comments,
-            include_change_logs=export_in.include_change_logs,
-            section_ids=export_in.section_ids,
-        )
-        content = self._build_export_content(markdown_content, export_in.format)
+        if export_in.format == "html" and settings.requirement_rich_html_enabled:
+            # 新しい依存の読込もHTMLの有効化時に限定する。
+            from app.services.requirement_export_html import render_document
+
+            data = self._get_export_data(
+                db,
+                document=document,
+                include_comments=export_in.include_comments,
+                include_change_logs=export_in.include_change_logs,
+                section_ids=export_in.section_ids,
+            )
+            content = render_document(data, self._format_value)
+        else:
+            markdown_content = self._build_markdown(
+                db,
+                document=document,
+                include_comments=export_in.include_comments,
+                include_change_logs=export_in.include_change_logs,
+                section_ids=export_in.section_ids,
+            )
+            content = self._build_export_content(markdown_content, export_in.format)
         change_log_new_value = {
             "format": export_in.format,
             "include_comments": export_in.include_comments,
@@ -381,6 +409,25 @@ class RequirementExportService:
         section_ids: list[int] | None,
     ) -> str:
         """要件定義書のMarkdown本文を生成する。"""
+        data = self._get_export_data(
+            db,
+            document=document,
+            include_comments=include_comments,
+            include_change_logs=include_change_logs,
+            section_ids=section_ids,
+        )
+        return self._markdown_from_data(data)
+
+    def _get_export_data(
+        self,
+        db: Session,
+        *,
+        document: RequirementDocument,
+        include_comments: bool,
+        include_change_logs: bool,
+        section_ids: list[int] | None,
+    ) -> RequirementExportData:
+        """既存の取得・選択条件を全rendererで共有する。"""
         sections = self.section_repository.list_by_document(db, document.id)
         requirements = self.requirement_repository.list_by_document(db, document.id)
         open_issues = self.open_issue_repository.list_by_document(db, document.id)
@@ -407,7 +454,22 @@ class RequirementExportService:
                 )
             )
 
-        requirements_by_section = self._group_requirements_by_section(requirements)
+        return RequirementExportData(
+            document=document,
+            sections=sections,
+            requirements_by_section=self._group_requirements_by_section(requirements),
+            open_issues=open_issues,
+            comments=comments,
+            change_logs=change_logs,
+            include_comments=include_comments,
+            include_change_logs=include_change_logs,
+        )
+
+    def _markdown_from_data(self, data: RequirementExportData) -> str:
+        """従来のMarkdown文字列を変更せず組み立てる。"""
+        document = data.document
+        sections = data.sections
+        requirements_by_section = data.requirements_by_section
         lines: list[str] = [
             f"# {document.title}",
             "",
@@ -444,12 +506,12 @@ class RequirementExportService:
             lines.extend(["## 未分類要件", ""])
             lines.extend(self._build_requirement_lines(unassigned_requirements))
 
-        lines.extend(self._build_open_issue_lines(open_issues))
+        lines.extend(self._build_open_issue_lines(data.open_issues))
 
-        if include_comments:
-            lines.extend(self._build_comment_lines(comments))
-        if include_change_logs:
-            lines.extend(self._build_change_log_lines(change_logs))
+        if data.include_comments:
+            lines.extend(self._build_comment_lines(data.comments))
+        if data.include_change_logs:
+            lines.extend(self._build_change_log_lines(data.change_logs))
 
         return "\n".join(lines).rstrip() + "\n"
 

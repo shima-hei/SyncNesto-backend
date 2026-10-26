@@ -260,9 +260,14 @@ def test_list_requirement_documents_allows_viewer(
     assert response.json()["items"][0]["document_code"] == "RD-A"
 
 
-@pytest.mark.parametrize("export_format", ["markdown", "html", "pdf"])
+@pytest.mark.parametrize(
+    "export_format,rich_html",
+    [("markdown", False), ("html", False), ("pdf", False), ("html", True)],
+)
 def test_export_requirement_document_returns_formats_and_records_change_log(
     export_format: str,
+    rich_html: bool,
+    monkeypatch: pytest.MonkeyPatch,
     client: TestClient,
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
@@ -273,6 +278,9 @@ def test_export_requirement_document_returns_formats_and_records_change_log(
     db: Session,
 ) -> None:
     """要件定義書をMarkdown出力でき、変更履歴が記録されることを確認する。"""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "requirement_rich_html_enabled", rich_html)
     user = create_test_user(email="viewer@example.com")
     project = create_test_project(name="Project")
     document = create_test_requirement_document(

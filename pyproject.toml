@@ -24,6 +24,7 @@ dependencies = [
     "webauthn>=3.0.1",
     "cryptography>=50.0.2",
     "qrcode[pil]>=8.2",
+    "markdown-it-py==4.2.0",
 ]
 
 [project.optional-dependencies]
