@@ -140,7 +140,20 @@ class RequirementExportService:
             project_id=project_id,
             document_id=document_id,
         )
-        if export_in.format == "html" and settings.requirement_rich_html_enabled:
+        if export_in.format == "pdf" and settings.requirement_rich_pdf_enabled:
+            from app.services.requirement_export_rich_pdf import render_document
+
+            data = self._get_export_data(
+                db,
+                document=document,
+                include_comments=export_in.include_comments,
+                include_change_logs=export_in.include_change_logs,
+                section_ids=export_in.section_ids,
+            )
+            content = base64.b64encode(
+                render_document(data, self._format_value)
+            ).decode("ascii")
+        elif export_in.format == "html" and settings.requirement_rich_html_enabled:
             # 新しい依存の読込もHTMLの有効化時に限定する。
             from app.services.requirement_export_html import render_document
 

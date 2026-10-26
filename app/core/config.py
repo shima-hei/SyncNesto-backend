@@ -235,6 +235,7 @@ class Settings:
     fixed_approval_email_enabled: bool = get_bool_env("FIXED_APPROVAL_EMAIL_ENABLED")
     project_objectives_enabled: bool = get_bool_env("PROJECT_OBJECTIVES_ENABLED")
     requirement_rich_html_enabled: bool = get_bool_env("REQUIREMENT_RICH_HTML_ENABLED")
+    requirement_rich_pdf_enabled: bool = get_bool_env("REQUIREMENT_RICH_PDF_ENABLED")
     project_traceability_enabled: bool = get_bool_env("PROJECT_TRACEABILITY_ENABLED")
     project_requirement_agreements_enabled: bool = get_bool_env(
         "PROJECT_REQUIREMENT_AGREEMENTS_ENABLED"

@@ -6,12 +6,12 @@ from collections.abc import Callable, Sequence
 from html import escape
 from typing import TYPE_CHECKING
 
-from markdown_it import MarkdownIt
 from markdown_it.renderer import RendererHTML
 from markdown_it.token import Token
 from markdown_it.utils import EnvType, OptionsDict
 
 from app.models.requirement import Requirement
+from app.services.requirement_export_markdown import export_markdown_parser
 
 if TYPE_CHECKING:
     from app.services.requirement_export import RequirementExportData
@@ -56,11 +56,7 @@ def render_document(
     data: RequirementExportData, display: Callable[[object | None], str]
 ) -> str:
     """保存済み出力対象を描画する。取得・認可・履歴の更新は行わない。"""
-    md = MarkdownIt(
-        "commonmark", {"html": False, "breaks": True}, renderer_cls=_ExportRenderer
-    ).enable("table")
-    # 未対応の脚注を参照定義として消費し、本文から消さない。
-    md.disable("reference")
+    md = export_markdown_parser(_ExportRenderer)
 
     def heading(level: int, text: str) -> str:
         """タイトルはMarkdownとして解釈せず、構造を固定する。"""

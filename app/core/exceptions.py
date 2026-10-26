@@ -33,6 +33,20 @@ class SharedFileUnavailableError(AppError):
     code = "SHARED_FILE_UNAVAILABLE"
 
 
+class RequirementPdfExportError(BadRequestError):
+    """内容を黙って変更せず、新PDFの生成を停止する。"""
+
+    code = "REQUIREMENT_PDF_UNSUPPORTED_CONTENT"
+
+    def __init__(self, location: str, detail: str) -> None:
+        """原文を含めず、対象の識別子と失敗理由を返す。"""
+        super().__init__(
+            error_messages.REQUIREMENT_PDF_UNSUPPORTED_CONTENT.format(
+                location=location, detail=detail
+            )
+        )
+
+
 class ArtifactReleaseTooLargeError(AppError):
     """本文を切り捨てず、容量超過を明示する。"""
 

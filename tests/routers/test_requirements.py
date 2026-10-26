@@ -450,7 +450,10 @@ def test_export_requirement_document_returns_html(
     assert "<li>文書コード: RD-HTML</li>" in response.json()["content"]
 
 
+@pytest.mark.parametrize("rich_pdf", [False, True])
 def test_export_requirement_document_returns_pdf_base64(
+    rich_pdf: bool,
+    monkeypatch: pytest.MonkeyPatch,
     client: TestClient,
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
@@ -458,6 +461,9 @@ def test_export_requirement_document_returns_pdf_base64(
     create_test_requirement_document: Callable[..., RequirementDocument],
 ) -> None:
     """要件定義書をPDF出力できることを確認する。"""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "requirement_rich_pdf_enabled", rich_pdf)
     user = create_test_user(email="viewer@example.com")
     project = create_test_project(name="Project")
     document = create_test_requirement_document(project=project, title="PDF Export")
@@ -474,6 +480,38 @@ def test_export_requirement_document_returns_pdf_base64(
     pdf_bytes = base64.b64decode(response.json()["content"])
     assert pdf_bytes.startswith(b"%PDF-1.4")
     assert b"%%EOF" in pdf_bytes
+
+
+def test_rich_pdf_missing_character_returns_safe_error_without_export_history(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """既存400形式で対象を示し、欠字を含むPDFを成功記録しない。"""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "requirement_rich_pdf_enabled", True)
+    user = create_test_user(email="pdf-viewer@example.com")
+    project = create_test_project(name="PDF Project")
+    document = create_test_requirement_document(project=project, title="秘密😀")
+    assign_project_role(user=user, project=project, role_key="viewer")
+    authorize_as(client, user)
+    before = db.query(RequirementChangeLog).count()
+    response = client.post(
+        f"/projects/{project.id}/requirement-documents/{document.id}/exports",
+        json={"format": "pdf"},
+    )
+    assert response.status_code == 400
+    assert set(response.json()) == {"message", "code"}
+    assert response.json()["code"] == "REQUIREMENT_PDF_UNSUPPORTED_CONTENT"
+    assert f"document:{document.id}" in response.json()["message"]
+    assert "U+1F600" in response.json()["message"]
+    assert "秘密" not in response.json()["message"]
+    assert db.query(RequirementChangeLog).count() == before
 
 
 def test_export_requirement_document_filters_sections(
