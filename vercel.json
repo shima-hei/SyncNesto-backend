@@ -3,7 +3,7 @@
   "functions": {
     "app/main.py": {
       "maxDuration": 60,
-      "excludeFiles": "{.env*,.codex/**,.vscode/**,.git/**,.venv/**,.pytest_cache/**,.ruff_cache/**,docker/**,tests/**,docs/**,**/__pycache__/**,**/*.log}"
+      "excludeFiles": "{.env*,.codex/**,.vscode/**,.git/**,.venv/**,.pytest_cache/**,.ruff_cache/**,docker/**,tests/**,docs/**,**/__pycache__/**,**/*.log,.verify/**,output/**,.coverage,.coverage.*,coverage.xml,htmlcov/**,verification-results/**,AGENTS.md,.github/**}"
     }
   }
 }
