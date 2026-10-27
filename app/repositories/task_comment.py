@@ -68,6 +68,22 @@ class TaskCommentRepository:
             .all()
         )
 
+    def list_page_by_task(
+        self, db: Session, task_id: int, page: int, page_size: int
+    ) -> tuple[list[TaskComment], int]:
+        """MCPの新しい順ページ取得を、既存UI一覧とは別に提供する。"""
+        query = db.query(TaskComment).filter(
+            TaskComment.task_id == task_id, TaskComment.deleted_at.is_(None)
+        )
+        total = query.count()
+        rows = (
+            query.order_by(TaskComment.created_at.desc(), TaskComment.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        return rows, total
+
     def update_body(
         self,
         db: Session,

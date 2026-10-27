@@ -21,6 +21,7 @@ from app.models.mcp import McpConnection
 from app.models.user import User
 from app.repositories.mcp import McpRepository
 from app.schemas import mcp_tools as s
+from app.schemas.mcp_development import TaskCommentCreateInput
 from app.schemas.requirement import (
     RequirementDocumentCreate,
     RequirementTargetCommentCreate,
@@ -181,6 +182,12 @@ class McpOperationsService:
         connection, user = self.auth.valid_connection(db, connection.id)
         if not self.allowed(db, connection, user, project_id, tool.permissions):
             raise ForbiddenError()
+        if operation.tool == "create_task_comment":
+            from app.services.mcp_task_comments import McpTaskCommentService
+
+            McpTaskCommentService().validate_create(
+                db, user, cast(TaskCommentCreateInput, data)
+            )
         hashed = request_digest(
             {
                 "tool": operation.tool,
@@ -191,6 +198,12 @@ class McpOperationsService:
         if receipt is not None:
             if receipt.request_hash != hashed:
                 raise ConflictError(messages.MCP_KEY_REUSED)
+            if operation.tool == "create_task_comment":
+                from app.services.mcp_task_comments import McpTaskCommentService
+
+                McpTaskCommentService().validate_replay(
+                    db, cast(TaskCommentCreateInput, data), receipt.result
+                )
             return receipt.result
         result = self.write(db, connection, user, operation.tool, data)
         self.repository.save_receipt(db, connection.id, key, hashed, result)
