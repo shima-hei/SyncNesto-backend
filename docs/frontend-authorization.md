@@ -1,5 +1,18 @@
 # Syncnesto Frontend Authorization Guide
 
+## 固定要件の最終判断（V2・LOCAL限定）
+
+指定本人の`requirement_verification:decide`と既存の分野別readを要求する。自己判定可、代理不可。依頼/未完取消は既存prepareの追加操作。社内所属・現在session/MFAをRCで再検証し、Storage IO後にも確認する。新2表/ガード、12操作、flag、期限・保全・履歴の詳細は[専用契約](requirement-verdicts.md)。旧FixedApprovalの自己承認禁止・公開/MCPの境界は変更しない。
+
+## Phase 3A 要件の確認表（V1a）
+
+新readは選ばれた固定要件と詳細だけの投影。固定版全体や他の要件/添付を返さない。
+`requirement_verification:read` をproject_admin/manager/member/viewerへ、
+`requirement_verification:prepare` をproject_admin/managerへ追加（計6割当）。
+全操作で有効な社内本人/session/MFA・tenant/Project所属と要件/テストreadを再確認。
+system/tenant role単独・ゲスト・MCP・デモでは利用不可。既存の承認権限は追加しない。
+詳細は[確認表API](frontend-requirement-verifications.md)。最終合否/実行採用/ファイル保全は対象外。
+
 ## Phase 2B-3a 固定承認の通知
 
 新しい共有通知4操作は、tenant選択ではなく指定本人のsession・実MFAと現在の公開世代を検証する。
@@ -1024,3 +1037,13 @@ Cookie/CSRF/Originを維持し、全応答をprivate/no-storeとする。詳細�
 形式追加は新しい公開許可を付与しない。v1/v2の保存済み形式をmetadata/node/cursorへ伝搬し、既存の参加/本人許可/失効/MFA/DL期限を維持する。旧版の形式だけをv2へ更新したり、旧承認へ新本文を引き継ぐ処理はない。
 
 A3b-2aの内部GET `/projects/{project_id}/requirement-agreements` は既存の社内所属・project:read/requirement:readを確認する。集約にはartifact_release:read/document:read/test_plan:readをすべて要求し、不足時は存在やIDを含めずrestrictedを返す。guest/MCPからは不可、demoではdisabled。既存外部判断の証跡と現在の公開資格は別に扱う。新permission/role追加なし。[入出力と制限](frontend-requirement-agreements-api.md)。
+
+### V1b: 要件検証の証拠
+
+`requirement_verification:submit` をproject_admin/manager/memberへ各1割当追加する。
+確認表のprepare権限と分け、通常memberは構成を変更せず、自身の実行/手動根拠を提出できる。
+有効tenant/社内Project所属と分野別readを必須にする。管理権限の存在だけで本文や提出資格を与えない。
+read/submit/prepareの詳細、既存Cookie/CSRFを使う9操作と排他・失効の境界は
+[固定要件の確認表・証拠](frontend-requirement-verifications.md#v1b-証拠の提出と保全)を参照。
+コピー完了とDL発行時に本人資格を再確認し、元ファイルへの迂回経路は追加しない。
+初期はLOCAL限定で、公開環境・MCPやゲストの対象に含めない。

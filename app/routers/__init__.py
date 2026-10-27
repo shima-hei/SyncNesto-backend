@@ -27,7 +27,9 @@ from app.routers import (
     project_objectives,
     projects,
     requirement_agreements,
+    requirement_schedule,
     requirement_trace,
+    requirement_verifications,
     requirements,
     search,
     shared_notifications,
@@ -40,6 +42,8 @@ from app.routers import (
     test_issues,
     trash,
     users,
+    verification_evidence,
+    verification_verdicts,
 )
 
 
@@ -78,7 +82,11 @@ def register_routers(app: FastAPI) -> None:
         projects.router,
         project_objectives.router,
         requirement_trace.router,
+        requirement_schedule.router,
         requirement_agreements.router,
+        requirement_verifications.router,
+        verification_evidence.router,
+        verification_verdicts.router,
         documents.router,
         specifications.router,
         requirements.router,
