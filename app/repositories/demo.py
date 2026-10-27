@@ -143,6 +143,9 @@ class DemoRepository:
         db.flush()
         db.execute(delete(DemoOwnedUser).where(DemoOwnedUser.demo_id == demo.id))
         for table in reversed(Base.metadata.sorted_tables):
+            # 台帳は親Project/ActorのCASCADEで回収し、DELETE権限を追加しない。
+            if table.name == "requirement_document_creation_receipts":
+                continue
             identities = targets.get(table.name, [])
             if not identities:
                 continue

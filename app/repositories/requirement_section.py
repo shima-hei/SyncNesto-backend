@@ -23,6 +23,7 @@ class RequirementSectionRepository:
         document_id: int,
         section_in: RequirementSectionCreate,
         actor_id: int | None = None,
+        commit: bool = True,
     ) -> RequirementSection:
         """要件定義セクションを作成する。"""
         section = RequirementSection(
@@ -36,7 +37,7 @@ class RequirementSectionRepository:
             updated_by=actor_id,
         )
         db.add(section)
-        db.commit()
+        db.commit() if commit else db.flush()
         db.refresh(section)
         return section
 

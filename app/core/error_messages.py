@@ -210,3 +210,9 @@ NOTIFICATION_EMAIL_UNAVAILABLE = (
 OBJECTIVE_REASON_REQUIRED = "参照文書の変更・解除理由を入力してください。"
 OBJECTIVE_PROJECTION_UPGRADE = "目標を含む内容はv2で再プレビューしてください。"
 PROJECT_SCHEDULE_RANGE_INVALID = "表示期間は開始日から最大12週間で指定してください。"
+REQUIREMENT_DOCUMENT_CREATION_KEY_CONFLICT = (
+    "同じ送信の内容が異なります。元の内容で作成結果を確認してください。"
+)
+REQUIREMENT_DOCUMENT_CREATION_TARGET_DELETED = (
+    "作成済みの文書は削除されています。この送信では再作成しません。"
+)

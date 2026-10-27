@@ -42,6 +42,110 @@ def start(client: TestClient) -> dict:
     return response.json()
 
 
+def test_standard_creation_receipts_follow_only_owned_project_cleanup(
+    demo_client, db, create_test_user, create_test_project
+):
+    """台帳のDELETEを許可せず、親のCASCADEだけでデモ分を回収する。"""
+    from uuid import uuid4
+
+    from sqlalchemy import event
+
+    from app.models.requirement_document_creation import (
+        RequirementDocumentCreationReceipt,
+    )
+
+    normal = create_test_user(email="normal-receipt@example.com")
+    normal_project = create_test_project()
+    receipt = RequirementDocumentCreationReceipt(
+        project_id=normal_project.id,
+        actor_id=normal.id,
+        request_key=uuid4(),
+        request_hash="a" * 64,
+    )
+    db.add(receipt)
+    db.commit()
+    normal_receipt_id = receipt.id
+    status = start(demo_client)
+    project = db.scalar(select(Project).where(Project.tenant_id == status["tenant_id"]))
+    response = demo_client.post(
+        f"/projects/{project.id}/requirement-documents/standard",
+        json={
+            "title": "一括作成",
+            "document_code": "DEMO-STANDARD",
+            "request_key": str(uuid4()),
+        },
+    )
+    assert response.status_code == 201, response.text
+    demo_receipt_id = db.scalar(
+        select(RequirementDocumentCreationReceipt.id).where(
+            RequirementDocumentCreationReceipt.project_id == project.id
+        )
+    )
+    assert demo_receipt_id is not None
+    db.commit()
+
+    def reject_receipt_delete(connection, cursor, statement, parameters, context, many):
+        if (
+            statement.lower()
+            .replace('"', "")
+            .lstrip()
+            .startswith("delete from requirement_document_creation_receipts")
+        ):
+            raise AssertionError("Receipt DELETE is not a runtime privilege")
+
+    event.listen(db.bind, "before_cursor_execute", reject_receipt_delete)
+    try:
+        assert demo_client.post("/auth/logout").status_code == 204
+    finally:
+        event.remove(db.bind, "before_cursor_execute", reject_receipt_delete)
+    db.expire_all()
+    assert db.get(RequirementDocumentCreationReceipt, demo_receipt_id) is None
+    assert db.get(RequirementDocumentCreationReceipt, normal_receipt_id) is not None
+    assert db.get(Project, normal_project.id) is not None
+    assert db.get(Tenant, status["tenant_id"]) is None
+
+
+def test_standard_creation_at_demo_limit_rolls_back_everything(demo_client, db):
+    from uuid import uuid4
+
+    from sqlalchemy import insert
+
+    from app.models.requirement_document_creation import (
+        RequirementDocumentCreationReceipt,
+    )
+    from app.repositories.demo import DemoRepository
+
+    status = start(demo_client)
+    project = db.scalar(select(Project).where(Project.tenant_id == status["tenant_id"]))
+    count = DemoRepository().business_count(db, status["tenant_id"])
+    db.execute(
+        insert(Task),
+        [
+            {
+                "project_id": project.id,
+                "task_code": f"CAP-{i}",
+                "title": f"capacity-{i}",
+            }
+            for i in range(495 - count)
+        ],
+    )
+    db.commit()
+    response = demo_client.post(
+        f"/projects/{project.id}/requirement-documents/standard",
+        json={
+            "title": "上限境界",
+            "document_code": "LIMIT-STANDARD",
+            "request_key": str(uuid4()),
+        },
+    )
+    assert response.status_code == 429, response.text
+    assert DemoRepository().business_count(db, status["tenant_id"]) == 495
+    assert (
+        db.scalar(select(func.count()).select_from(RequirementDocumentCreationReceipt))
+        == 0
+    )
+
+
 def test_demo_is_disabled_in_normal_environment(client, db):
     """通常環境では匿名発行も回収操作も公開しない。"""
     assert client.get("/demo/csrf").status_code == 404

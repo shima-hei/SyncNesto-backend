@@ -1,6 +1,8 @@
 """要件定義schemaを定義するモジュール。"""
 
 from datetime import date, datetime
+from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -36,6 +38,14 @@ class RequirementDocumentCreate(RequirementDocumentBase):
     """要件定義書作成リクエストで受け取るschema。"""
 
 
+class StandardRequirementDocumentCreate(RequirementDocumentCreate):
+    """版を固定した標準7章と文書を一度に作成する。"""
+
+    request_key: UUID
+    template_version: Literal["standard_v1"] = "standard_v1"
+    model_config = {"extra": "forbid"}
+
+
 class RequirementDocumentUpdate(ObjectiveFields):
     """要件定義書更新リクエストで受け取るschema。"""
 
@@ -68,6 +78,13 @@ class RequirementDocumentRead(RequirementDocumentBase):
     approver: UserSummary | None = None
 
     model_config = {"from_attributes": True}
+
+
+class StandardRequirementDocumentResult(BaseModel):
+    """新規作成と同じ送信の再開を区別する。"""
+
+    document: RequirementDocumentRead
+    replayed: bool
 
 
 class RequirementDocumentListResponse(BaseModel):
