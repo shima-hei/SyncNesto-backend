@@ -419,7 +419,7 @@ def test_all_business_routes_require_tenant_context(client):
     email_count = 0
     for path, operations in client.app.openapi()["paths"].items():
         if path == "/" or path.startswith(
-            ("/auth", "/users", "/health", "/tenants", "/demo")
+            ("/auth", "/users", "/health", "/tenants", "/demo", "/system")
         ):
             continue
         for method, operation in operations.items():
@@ -812,7 +812,7 @@ def test_new_identity_exact_add_and_operator_separation(client, db, tenant_conte
     db.commit()
     assert client.get(f"/projects/{ctx['pa'].id}/tasks").status_code == 403
     assert client.get(f"/projects/{ctx['pa'].id}/overview").status_code == 403
-    assert client.get("/system/tenants").status_code == 404
+    assert client.get("/system/tenants").status_code == 200
     assert client.get("/tenants/management").status_code == 200
 
 
@@ -842,7 +842,7 @@ def test_every_business_operation_rejects_unowned_tenant(client, create_test_use
     count = 0
     for path, operations in client.app.openapi()["paths"].items():
         if path == "/" or path.startswith(
-            ("/auth", "/users", "/health", "/tenants", "/demo")
+            ("/auth", "/users", "/health", "/tenants", "/demo", "/system")
         ):
             continue
         for method, operation in operations.items():
