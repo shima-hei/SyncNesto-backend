@@ -238,6 +238,9 @@ class Settings:
     requirement_rich_html_enabled: bool = get_bool_env("REQUIREMENT_RICH_HTML_ENABLED")
     requirement_rich_pdf_enabled: bool = get_bool_env("REQUIREMENT_RICH_PDF_ENABLED")
     project_traceability_enabled: bool = get_bool_env("PROJECT_TRACEABILITY_ENABLED")
+    project_overview_schedule_enabled: bool = get_bool_env(
+        "PROJECT_OVERVIEW_SCHEDULE_ENABLED"
+    )
     requirement_verification_decisions_enabled: bool = get_bool_env(
         "REQUIREMENT_VERIFICATION_DECISIONS_ENABLED", False
     )
