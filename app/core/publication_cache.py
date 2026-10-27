@@ -24,6 +24,9 @@ class PublicationCacheMiddleware:
                     "guest-participations",
                     "guest-invitations",
                     "guest-fixed-approvals",
+                    "requirement-verification-plans",
+                    "requirement-verification-requests",
+                    "requirement-verdicts",
                 }
             )
             or (len(parts) >= 3 and parts[1:3] == ["shared", "publications"])

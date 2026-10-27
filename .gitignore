@@ -245,6 +245,7 @@ docker/pgadmin/
 !/docs/frontend-search-api.md
 !/docs/frontend-trash-api.md
 !/docs/frontend-specifications-api.md
+!/docs/frontend-requirement-verifications.md
 .codex
 AGENTS.md
 .verify/

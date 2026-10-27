@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 
 
 PERMISSIONS = [
+    ("requirement_verification:decide", "指定された固定要件の最終合否を判断する"),
+    ("requirement_verification:submit", "固定要件へ検証証拠を提出する"),
+    ("requirement_verification:read", "固定要件の確認表を閲覧する"),
+    ("requirement_verification:prepare", "固定要件の確認表を準備する"),
     ("artifact_publication:manage", "成果物の公開準備版を生成する"),
     ("artifact_publication:read", "成果物の公開準備版を内部で確認する"),
     ("artifact_publication:publish", "固定内容の本人別公開許可・停止を管理する"),
@@ -85,6 +89,10 @@ SYSTEM_ADMIN_PERMISSIONS = (
 ROLE_PERMISSIONS = {
     "system_admin": list(SYSTEM_ADMIN_PERMISSIONS),
     "project_admin": [
+        "requirement_verification:decide",
+        "requirement_verification:submit",
+        "requirement_verification:read",
+        "requirement_verification:prepare",
         "project:manage_goal_source",
         "artifact_publication:manage",
         "artifact_publication:read",
@@ -126,6 +134,10 @@ ROLE_PERMISSIONS = {
         "requirement:link",
     ],
     "manager": [
+        "requirement_verification:decide",
+        "requirement_verification:submit",
+        "requirement_verification:read",
+        "requirement_verification:prepare",
         "project:manage_goal_source",
         "artifact_publication:manage",
         "artifact_publication:read",
@@ -158,6 +170,9 @@ ROLE_PERMISSIONS = {
         "requirement:link",
     ],
     "member": [
+        "requirement_verification:decide",
+        "requirement_verification:submit",
+        "requirement_verification:read",
         "mcp:connect",
         "project:read",
         "task:read",
@@ -180,6 +195,7 @@ ROLE_PERMISSIONS = {
         "requirement:link",
     ],
     "viewer": [
+        "requirement_verification:read",
         "project:read",
         "task:read",
         "test_plan:read",

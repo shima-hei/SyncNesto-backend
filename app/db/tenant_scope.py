@@ -10,6 +10,22 @@ from app.db.base import Base
 
 # 所有関係は一箇所で定義する。認証Identityへの参照は所有関係に含めない。
 OWNERS = {
+    "requirement_verification_requests": [
+        ("plan_id", "requirement_verification_plans", "id")
+    ],
+    "requirement_verification_events": [
+        ("request_id", "requirement_verification_requests", "id")
+    ],
+    "requirement_verification_evidence_sets": [
+        ("plan_id", "requirement_verification_plans", "id")
+    ],
+    "requirement_verification_evidence_objects": [
+        ("set_id", "requirement_verification_evidence_sets", "id")
+    ],
+    "requirement_verification_plans": [("project_id", "projects", "id")],
+    "requirement_verification_plan_revisions": [
+        ("plan_id", "requirement_verification_plans", "id")
+    ],
     "project_goal_source_events": [("project_id", "projects", "id")],
     "notification_email_deliveries": [("notification_id", "notifications", "id")],
     "notification_email_attempts": [

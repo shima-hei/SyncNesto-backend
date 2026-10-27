@@ -238,6 +238,18 @@ class Settings:
     requirement_rich_html_enabled: bool = get_bool_env("REQUIREMENT_RICH_HTML_ENABLED")
     requirement_rich_pdf_enabled: bool = get_bool_env("REQUIREMENT_RICH_PDF_ENABLED")
     project_traceability_enabled: bool = get_bool_env("PROJECT_TRACEABILITY_ENABLED")
+    requirement_verification_decisions_enabled: bool = get_bool_env(
+        "REQUIREMENT_VERIFICATION_DECISIONS_ENABLED", False
+    )
+    requirement_verification_preparation_enabled: bool = get_bool_env(
+        "REQUIREMENT_VERIFICATION_PREPARATION_ENABLED"
+    )
+    requirement_verification_evidence_enabled: bool = get_bool_env(
+        "REQUIREMENT_VERIFICATION_EVIDENCE_ENABLED"
+    )
+    verification_evidence_bucket_name: str = os.getenv(
+        "VERIFICATION_EVIDENCE_BUCKET_NAME", ""
+    )
     project_requirement_agreements_enabled: bool = get_bool_env(
         "PROJECT_REQUIREMENT_AGREEMENTS_ENABLED"
     )
