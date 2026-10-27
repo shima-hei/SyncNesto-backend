@@ -67,6 +67,7 @@ from app.models.requirement import (
     RequirementSection,
     RequirementTargetComment,
 )
+from app.models.requirement_document_creation import RequirementDocumentCreationReceipt
 from app.models.requirement_verification import (
     RequirementVerificationPlan,
     RequirementVerificationRevision,
@@ -207,6 +208,7 @@ __all__ = [
     "RequirementComment",
     "RequirementDetail",
     "RequirementDocument",
+    "RequirementDocumentCreationReceipt",
     "RequirementLink",
     "RequirementOpenIssue",
     "RequirementRelation",

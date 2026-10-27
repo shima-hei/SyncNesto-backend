@@ -76,6 +76,7 @@ class RequirementSectionService:
         document_id: int,
         section_in: RequirementSectionCreate,
         actor_id: int | None = None,
+        commit: bool = True,
     ) -> RequirementSection:
         """要件定義セクションを作成する。
 
@@ -102,6 +103,7 @@ class RequirementSectionService:
             document_id=document_id,
             section_in=section_in,
             actor_id=actor_id,
+            commit=commit,
         )
         self._record_section_change_log(
             db,
@@ -109,6 +111,7 @@ class RequirementSectionService:
             action=RequirementChangeLogAction.CREATED,
             new_value=self._build_section_snapshot(section),
             changed_by=actor_id,
+            commit=commit,
         )
         return section
 
@@ -215,9 +218,7 @@ class RequirementSectionService:
             section=updated_section,
             old_snapshot=before_value,
             new_snapshot=self._build_section_snapshot(updated_section),
-            updated_fields=(
-                section_in.model_fields_set - {"version", "reason"}
-            )
+            updated_fields=(section_in.model_fields_set - {"version", "reason"})
             & REQUIREMENT_SECTION_UPDATABLE_FIELDS,
             changed_by=actor_id,
         )
@@ -349,6 +350,7 @@ class RequirementSectionService:
         old_value: dict[str, object] | None = None,
         new_value: dict[str, object] | None = None,
         changed_by: int | None = None,
+        commit: bool = True,
     ) -> None:
         """要件定義セクションの変更履歴を記録する。"""
         self.change_log_service.record(
@@ -360,6 +362,7 @@ class RequirementSectionService:
             old_value=old_value,
             new_value=new_value,
             changed_by=changed_by,
+            commit=commit,
         )
 
     def _record_section_update_change_log(

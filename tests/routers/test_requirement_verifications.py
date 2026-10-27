@@ -211,11 +211,13 @@ def test_validation_boundaries_quotes_and_no_forged_verdict(client, prepared):
     assert response.status_code == 200, response.text
 
 
-def test_nonempty_migration_cannot_remove_history(client, prepared):
+def test_nonempty_migration_cannot_remove_history(client, prepared, db):
     from alembic.config import Config
 
     from alembic import command
 
+    # 子表のFKを戻すDDLをfixtureの読み取りtransactionで待たせない。
+    db.commit()
     with pytest.raises(RuntimeError, match="確認表"):
         command.downgrade(Config("alembic.ini"), "d6e0f3b8a214")
     assert client.get(prepared["detail"]).status_code == 200

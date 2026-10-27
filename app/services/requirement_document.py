@@ -96,6 +96,7 @@ class RequirementDocumentService:
         project_id: int,
         document_in: RequirementDocumentCreate,
         actor_id: int | None = None,
+        commit: bool = True,
     ) -> RequirementDocument:
         """要件定義書を作成する。
 
@@ -142,7 +143,7 @@ class RequirementDocumentService:
                 changed_by=actor_id,
                 commit=False,
             )
-            db.commit()
+            db.commit() if commit else db.flush()
             db.refresh(document)
             return document
         except IntegrityError as exc:

@@ -1,6 +1,6 @@
 """要件定義書APIのルーティングを定義するモジュール。"""
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.auth import require_project_permission
@@ -19,9 +19,43 @@ from app.schemas.requirement import (
     RequirementDocumentListResponse,
     RequirementDocumentRead,
     RequirementDocumentUpdate,
+    StandardRequirementDocumentCreate,
+    StandardRequirementDocumentResult,
+)
+from app.services.standard_requirement_document import (
+    StandardRequirementDocumentService,
 )
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["requirements"])
+
+
+@router.post(
+    "/requirement-documents/standard",
+    response_model=StandardRequirementDocumentResult,
+    status_code=status.HTTP_201_CREATED,
+    responses={200: {"model": StandardRequirementDocumentResult}},
+)
+def create_standard_requirement_document(
+    project_id: int,
+    document_in: StandardRequirementDocumentCreate,
+    response: Response,
+    current_user: User = Depends(require_project_permission("requirement:create")),
+    _: User = Depends(require_project_permission("requirement:update")),
+    db: Session = Depends(get_db),
+) -> StandardRequirementDocumentResult:
+    """文書・標準7章・履歴を保存し、同じ送信の結果を再利用する。"""
+    document, replayed = StandardRequirementDocumentService().create(
+        db, project_id=project_id, actor=current_user, data=document_in
+    )
+    response.status_code = status.HTTP_200_OK if replayed else status.HTTP_201_CREATED
+    return StandardRequirementDocumentResult(
+        document=build_requirement_document_response(
+            document,
+            shared.get_requirement_document_users_by_id(db, [document]),
+            shared.storage_service,
+        ),
+        replayed=replayed,
+    )
 
 
 @router.post(
