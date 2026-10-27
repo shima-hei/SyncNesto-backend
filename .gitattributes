@@ -1,0 +1,3 @@
+# 上流ライセンス原文の空白/改行を保持する。
+app/assets/fonts/biz-ud-gothic/OFL.txt -whitespace
+app/assets/licenses/*.txt -whitespace

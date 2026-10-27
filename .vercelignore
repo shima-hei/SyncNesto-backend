@@ -11,3 +11,12 @@ docs/
 .codex/
 .vscode/
 *.log
+.verify/
+output/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+verification-results/
+AGENTS.md
+.github/

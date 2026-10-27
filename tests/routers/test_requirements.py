@@ -1,9 +1,12 @@
 """要件定義APIのテスト。"""
 
 import base64
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from html import unescape
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -257,7 +260,14 @@ def test_list_requirement_documents_allows_viewer(
     assert response.json()["items"][0]["document_code"] == "RD-A"
 
 
-def test_export_requirement_document_returns_markdown_and_records_change_log(
+@pytest.mark.parametrize(
+    "export_format,rich_html",
+    [("markdown", False), ("html", False), ("pdf", False), ("html", True)],
+)
+def test_export_requirement_document_returns_formats_and_records_change_log(
+    export_format: str,
+    rich_html: bool,
+    monkeypatch: pytest.MonkeyPatch,
     client: TestClient,
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
@@ -268,6 +278,9 @@ def test_export_requirement_document_returns_markdown_and_records_change_log(
     db: Session,
 ) -> None:
     """要件定義書をMarkdown出力でき、変更履歴が記録されることを確認する。"""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "requirement_rich_html_enabled", rich_html)
     user = create_test_user(email="viewer@example.com")
     project = create_test_project(name="Project")
     document = create_test_requirement_document(
@@ -292,10 +305,19 @@ def test_export_requirement_document_returns_markdown_and_records_change_log(
             Requirement(
                 document_id=document.id,
                 section_id=first_section.id,
-                requirement_code="REQ-001",
+                requirement_code="REQ-020",
                 requirement_type="business",
                 title="業務フローを管理できる",
                 description="業務フローを登録・参照できる。",
+                rationale="登録内容の判断理由を残す。",
+                acceptance_criteria="登録した内容を確認できる。",
+            ),
+            Requirement(
+                document_id=document.id,
+                section_id=first_section.id,
+                requirement_code="REQ-010",
+                requirement_type="business",
+                title="先に確認する要件",
             ),
             Requirement(
                 document_id=document.id,
@@ -332,20 +354,32 @@ def test_export_requirement_document_returns_markdown_and_records_change_log(
 
     response = client.post(
         f"/projects/{project.id}/requirement-documents/{document.id}/exports",
-        json={"format": "markdown", "include_comments": True},
+        json={"format": export_format, "include_comments": True},
     )
 
     assert response.status_code == 200
-    assert response.json()["format"] == "markdown"
+    assert response.json()["format"] == export_format
     content = response.json()["content"]
-    assert "# Syncnesto 要件定義書" in content
-    assert "#### REQ-001 業務フローを管理できる" in content
-    assert "#### REQ-002 ログインできる" in content
-    assert "## 未分類要件" in content
-    assert "#### REQ-999 未分類要件" in content
-    assert "### ISSUE-001 SSO範囲が未確定" in content
+    if export_format == "html":
+        content = unescape(re.sub(r"<[^>]+>", "", content))
+    elif export_format == "pdf":
+        content = "\n".join(
+            bytes.fromhex(value).decode("utf-16-be").lstrip("\ufeff")
+            for value in re.findall(
+                r"<([0-9A-F]+)> Tj", base64.b64decode(content).decode("latin-1")
+            )
+        )
+    assert "Syncnesto 要件定義書" in content
+    assert "REQ-020 業務フローを管理できる" in content
+    assert content.index("REQ-010") < content.index("REQ-020")
+    assert "登録内容の判断理由を残す。" in content
+    assert "登録した内容を確認できる。" in content
+    assert "REQ-002 ログインできる" in content
+    assert "未分類要件" in content
+    assert "REQ-999 未分類要件" in content
+    assert "ISSUE-001 SSO範囲が未確定" in content
     assert "レビューコメント" in content
-    assert content.index("### 業務要件") < content.index("### 機能要件")
+    assert content.index("業務要件") < content.index("機能要件")
 
     change_log = db.query(RequirementChangeLog).one()
     assert change_log.document_id == document.id
@@ -354,7 +388,7 @@ def test_export_requirement_document_returns_markdown_and_records_change_log(
     assert change_log.action == "exported"
     assert change_log.changed_by == user.id
     assert change_log.new_value == {
-        "format": "markdown",
+        "format": export_format,
         "include_comments": True,
         "include_change_logs": False,
     }
@@ -416,7 +450,10 @@ def test_export_requirement_document_returns_html(
     assert "<li>文書コード: RD-HTML</li>" in response.json()["content"]
 
 
+@pytest.mark.parametrize("rich_pdf", [False, True])
 def test_export_requirement_document_returns_pdf_base64(
+    rich_pdf: bool,
+    monkeypatch: pytest.MonkeyPatch,
     client: TestClient,
     create_test_user: Callable[..., User],
     create_test_project: Callable[..., Project],
@@ -424,6 +461,9 @@ def test_export_requirement_document_returns_pdf_base64(
     create_test_requirement_document: Callable[..., RequirementDocument],
 ) -> None:
     """要件定義書をPDF出力できることを確認する。"""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "requirement_rich_pdf_enabled", rich_pdf)
     user = create_test_user(email="viewer@example.com")
     project = create_test_project(name="Project")
     document = create_test_requirement_document(project=project, title="PDF Export")
@@ -440,6 +480,38 @@ def test_export_requirement_document_returns_pdf_base64(
     pdf_bytes = base64.b64decode(response.json()["content"])
     assert pdf_bytes.startswith(b"%PDF-1.4")
     assert b"%%EOF" in pdf_bytes
+
+
+def test_rich_pdf_missing_character_returns_safe_error_without_export_history(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    create_test_requirement_document: Callable[..., RequirementDocument],
+    db: Session,
+) -> None:
+    """既存400形式で対象を示し、欠字を含むPDFを成功記録しない。"""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "requirement_rich_pdf_enabled", True)
+    user = create_test_user(email="pdf-viewer@example.com")
+    project = create_test_project(name="PDF Project")
+    document = create_test_requirement_document(project=project, title="秘密😀")
+    assign_project_role(user=user, project=project, role_key="viewer")
+    authorize_as(client, user)
+    before = db.query(RequirementChangeLog).count()
+    response = client.post(
+        f"/projects/{project.id}/requirement-documents/{document.id}/exports",
+        json={"format": "pdf"},
+    )
+    assert response.status_code == 400
+    assert set(response.json()) == {"message", "code"}
+    assert response.json()["code"] == "REQUIREMENT_PDF_UNSUPPORTED_CONTENT"
+    assert f"document:{document.id}" in response.json()["message"]
+    assert "U+1F600" in response.json()["message"]
+    assert "秘密" not in response.json()["message"]
+    assert db.query(RequirementChangeLog).count() == before
 
 
 def test_export_requirement_document_filters_sections(

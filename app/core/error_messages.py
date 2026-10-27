@@ -69,6 +69,9 @@ REQUIREMENT_OPEN_ISSUE_NOT_FOUND = "Requirement open issue not found"
 REQUIREMENT_COMMENT_TARGET_NOT_FOUND = "Requirement comment target not found"
 REQUIREMENT_TARGET_COMMENT_NOT_FOUND = "Requirement target comment not found"
 UNSUPPORTED_REQUIREMENT_EXPORT_FORMAT = "Unsupported requirement export format"
+REQUIREMENT_PDF_UNSUPPORTED_CONTENT = (
+    "PDFを生成できません（{location}: {detail}）。HTML出力をご利用ください。"
+)
 REQUIREMENT_DETAIL_NOT_FOUND = "Requirement detail not found"
 REQUIREMENT_LINK_NOT_FOUND = "Requirement link not found"
 REQUIREMENT_RELATION_NOT_FOUND = "Requirement relation not found"

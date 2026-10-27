@@ -1,5 +1,12 @@
 # Syncnesto Frontend Requirements API Guide
 
+PDFの新rendererは既定OFFの`REQUIREMENT_RICH_PDF_ENABLED`で限定する。
+ONのPDFが幅超過・欠字/未対応結合列・分割不能・容量上限で生成できない場合、
+既存400 `{message, code}`形式で`REQUIREMENT_PDF_UNSUPPORTED_CONTENT`を返す。
+messageはモデルID/フィールド/位置と理由だけを含む安全な詳細で、原文を含めない。
+Frontendはこのcodeだけを既存通知へ表示する。成功schema、既存PDF/Markdown/HTML、
+認可・章選択・出力履歴は維持する。詳細は[新PDF](requirement-rich-pdf.md)。
+
 現在の要件への社内/外部合意の読取集約は[A3b-2a API](frontend-requirement-agreements-api.md)を参照。既存要件/追跡/承認の更新契約は変更しない。
 
 Phase 2A-3aの[公開準備版API](frontend-artifact-publications-api.md)は、要件/定義書を含む既存固定版から未公開の表現を保存する別機能。既存要件・承認の状態/本文/URLは変更しない。
@@ -311,7 +318,11 @@ is_resolved
 }
 ```
 
-現時点で対応している `format` は `markdown` と `html` です。PDF出力やS3保存は未対応で、レスポンスとして文字列を返します。
+対応する `format` は `markdown`・`html`・`pdf` です。`content` はMarkdown/HTMLでは本文文字列、PDFではPDFファイルのbase64文字列です。S3保存は行いません。
+
+出力は保存済みデータを使用し、章順（sort_order、同値はID順）→章本文→章内REQコード順（同値はID順）で掲載します。REQの説明・非空の理由・受け入れ条件を含みます。全章出力では章未所属REQも末尾へ掲載します。`section_ids` を省略すると全章、配列指定では指定章と関連する要件・未決事項・コメント・履歴に絞ります。文書情報・REQ属性、`include_comments` / `include_change_logs` の選択は維持します。
+
+HTML/PDFは印刷時の行幅と改ページを調整しますが、Markdownの表・強調の完全な描画には対応していません。ブラウザー全文プレビューとは出力固有の情報・描画が異なります。固定版や既に保存された出力ファイルを再生成・更新する操作ではありません。
 
 ```json
 {
