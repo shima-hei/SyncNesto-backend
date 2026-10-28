@@ -6,7 +6,7 @@
 
 `MCP_ENABLED`、`MCP_DEVELOPMENT_TOOLS_ENABLED`、`MCP_TASK_COMMENTS_ENABLED=true`のとき、通常の開発用OAuth clientへ2操作を追加する。公開clientでは開発用flagの代わりに `MCP_PLUGIN_EXTENDED_TOOLS_ENABLED` の明示ONを必要とし、初期OFFなら既存28操作を維持する。名前・説明・schema・注釈のdigestは既存テストで検証する。OAuth認証、同意、登録scope、role/permission割当と通常REST APIの形状は変更しない。
 
-既存の接続資格、現在の所属、同意済みProjectと現在の業務権限の交差を毎回確認する。対象Taskが指定Projectの有効データであることを検証し、internal/通常realm以外を受け付けない。閲覧専用ユーザー・ゲストのMCP接続資格を広げない。
+既存の接続資格、現在の所属、同意済みProjectと現在の業務権限の交差を毎回確認する。対象Taskが指定Projectの有効データであることを検証し、通常realmのinternal本人、または有効期限・取消・同一tenant隔離を検証した専用審査Identityだけを受け付ける。普通のゲスト・閲覧専用のMCP接続資格を広げない。
 
 ## 操作
 

@@ -2,10 +2,11 @@
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ForbiddenError, NotFoundError
-from app.models.user import User, UserType
+from app.core.exceptions import NotFoundError
+from app.models.user import User
 from app.presenters.task import TaskPresenter
 from app.schemas import mcp_development as s
+from app.services.review_account import ReviewAccountService
 from app.services.task import TaskService
 from app.services.task_comment import TaskCommentService
 
@@ -27,13 +28,8 @@ class McpTaskCommentService:
         return task
 
     def normal_user(self, db: Session, user: User) -> None:
-        """通常のinternal接続だけを受け付け、閲覧専用接続の権限を広げない。"""
-        if (
-            user.user_type != UserType.INTERNAL.value
-            or db.info.get("demo_id")
-            or db.info.get("data_realm") == "demo"
-        ):
-            raise ForbiddenError()
+        """社内本人と隔離審査Identityに限定し、普通のguestを許可しない。"""
+        ReviewAccountService().require_mcp_actor(db, user)
 
     def validate_create(
         self, db: Session, user: User, data: s.TaskCommentCreateInput
