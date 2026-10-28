@@ -13,6 +13,11 @@
 開発clientのflagは変更せず、未知clientを許可しない。停止は公開用flagをOFFへ戻す。
 公開準備の正本はProject5文書14、技術検証は `tests/test_mcp_plugin_catalog.py`。
 
+専用審査Identityには既存の `document:read/create/update` も審査用許可集合に含める。
+社内限定の情報取得・作業コメントは、社内本人に加え `ReviewAccountService.validate` を通る
+同一審査tenantのIdentityだけを受け付ける。期限・取消・隔離・通常realm・現在のRBACを維持し、
+普通のguestへこの例外を適用しない。DB/role割当や通常MFAは変更しない。
+
 | 操作 | 既存permission | 入出力 |
 | --- | --- | --- |
 | list_project_documents | document:read | page/page_size/q。本文なしの一覧 |

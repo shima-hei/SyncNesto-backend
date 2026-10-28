@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import ForbiddenError
 from app.models.review_account import ReviewAccountGrant
-from app.models.user import User
+from app.models.user import User, UserType
 from app.repositories.review_account import ReviewAccountRepository
 
 # Roleを変更されても、運営・組織・Projectメンバー管理を審査Identityへ開放しない。
@@ -33,6 +33,9 @@ REVIEW_PERMISSIONS = frozenset(
         "task:update",
         "task:delete",
         "task:comment",
+        "document:read",
+        "document:create",
+        "document:update",
     }
 )
 
@@ -66,4 +69,19 @@ class ReviewAccountService:
     def reject_identity_change(self, db: Session, user: User) -> None:
         """共有審査資格情報の変更・回復は運営CLIに限定する。"""
         if self.grant(db, user) is not None:
+            raise ForbiddenError()
+
+    def require_mcp_actor(self, db: Session, user: User) -> None:
+        """社内本人と、有効な隔離審査Identityだけに追加MCP操作を許可する。"""
+        if (
+            user.id is None
+            or db.info.get("data_realm") == "demo"
+            or db.info.get("demo_id")
+        ):
+            raise ForbiddenError()
+        grant = self.validate(db, user)
+        if grant is None:
+            if user.user_type != UserType.INTERNAL.value:
+                raise ForbiddenError()
+        elif grant.tenant_id != db.info.get("tenant_id"):
             raise ForbiddenError()

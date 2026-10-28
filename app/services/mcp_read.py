@@ -3,12 +3,12 @@
 from datetime import UTC, datetime
 
 from app.core.config import settings
-from app.core.exceptions import ForbiddenError, NotFoundError
-from app.models.user import UserType
+from app.core.exceptions import NotFoundError
 from app.repositories.mcp import McpRepository
 from app.repositories.mcp_read import McpReadRepository
 from app.schemas import mcp_read as s
 from app.services.authorization import AuthorizationService
+from app.services.review_account import ReviewAccountService
 
 RELATION_PERMISSIONS = {
     "designs": "document:read",
@@ -90,12 +90,7 @@ class McpReadService:
 
     def read(self, db, user, name, data):
         """追加3操作の成功結果を公開outputSchemaで検証する。"""
-        if (
-            user.user_type != UserType.INTERNAL.value
-            or db.info.get("demo_id")
-            or db.info.get("data_realm") == "demo"
-        ):
-            raise ForbiddenError()
+        ReviewAccountService().require_mcp_actor(db, user)
         if name == "search_project_items":
             result = self.search(db, user, data)
         elif name == "get_requirement_context":
