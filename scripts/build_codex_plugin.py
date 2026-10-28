@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 from urllib.parse import urlsplit
-from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
+from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile, ZipInfo
 
 ROOT = Path(__file__).resolve().parents[1] / "plugins" / "syncnesto"
 FILES = ("assets/icon.svg", "skills/syncnesto-work/SKILL.md")
@@ -48,6 +48,7 @@ def build(
     submission: bool = False,
     draft: bool = False,
     listing: Path | None = None,
+    approved_package: Path | None = None,
 ) -> None:
     """下書き登録・審査提出用portable形式かCodex検証用形式を出力する。"""
     if draft and (submission or listing is not None):
@@ -55,6 +56,29 @@ def build(
     manifest = json.loads((ROOT / "plugin.json").read_text())
     mcp = json.loads((ROOT / "mcp.json").read_text())
     extension = manifest["extensions"]["com.openai"]
+    if approved_package is not None:
+        if not submission:
+            raise ValueError("承認済みZIPの参照は最終申請用だけで指定してください")
+        with ZipFile(approved_package) as previous:
+            baseline = json.loads(previous.read("plugin.json"))
+            if (
+                baseline.get("name") != manifest["name"]
+                or json.loads(previous.read("mcp.json")) != mcp
+            ):
+                raise ValueError(
+                    "承認済みZIPのpackage名/OAuth/MCP接続設定が一致しません"
+                )
+        old_extension = baseline.get("extensions", {}).get("com.openai", {})
+        old_review = old_extension.get("review", {})
+        # 審査用資格情報など任意の旧フィールドを新しいZIPへ転記しない。
+        for name in ("demo_recording_url", "commerce", "commerce_description"):
+            if name in old_review:
+                extension.setdefault("review", {}).setdefault(name, old_review[name])
+        old_publication = old_extension.get("publication", {})
+        if "countries" in old_publication:
+            extension.setdefault("publication", {}).setdefault(
+                "countries", old_publication["countries"]
+            )
     payloads = {}
     for name in FILES:
         path = ROOT / name
@@ -108,6 +132,7 @@ def main() -> None:
         help="未確定の掲載URLを補わず非公開の下書き登録用を作成",
     )
     parser.add_argument("--listing", type=Path)
+    parser.add_argument("--approved-package", type=Path)
     args = parser.parse_args()
     try:
         build(
@@ -115,8 +140,9 @@ def main() -> None:
             submission=args.submission,
             draft=args.draft,
             listing=args.listing,
+            approved_package=args.approved_package,
         )
-    except (ValueError, OSError) as exc:
+    except (ValueError, OSError, BadZipFile, KeyError) as exc:
         parser.exit(1, str(exc) + "\n")
     purpose = "下書き登録用・審査提出不可" if args.draft else "アップロード未実施"
     print(f"作成しました: {args.output}（{purpose}、審査提出・公開は行っていません）")

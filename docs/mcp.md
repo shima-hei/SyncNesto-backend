@@ -4,8 +4,14 @@
 
 `MCP_DEVELOPMENT_TOOLS_ENABLED=true` の環境では、既存の開発用OAuth client
 `syncnesto-codex-local` に次の8操作を追加できる。審査用 `syncnesto-openai-plugin`
-にはflag ONでも追加しない。既存28件の入力schema・説明・注釈は維持する。
+には開発用flagだけでは追加しない。既存28件の入力schema・説明・注釈は維持する。
 新URL・DB構造・permission・role割当・依存追加はない。
+
+公開clientは独立した `MCP_PLUGIN_EXTENDED_TOOLS_ENABLED=true` で明示的に拡張する。
+初期OFFでは旧28操作のまま。ON時は文書8操作、情報取得3操作、作業コメント2操作が候補となり、
+既存の機能flagと現在のpermissionでさらに絞る。全条件を満たす場合だけ最大41操作となる。
+開発clientのflagは変更せず、未知clientを許可しない。停止は公開用flagをOFFへ戻す。
+公開準備の正本はProject5文書14、技術検証は `tests/test_mcp_plugin_catalog.py`。
 
 | 操作 | 既存permission | 入出力 |
 | --- | --- | --- |

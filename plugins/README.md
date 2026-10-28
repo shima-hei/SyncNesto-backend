@@ -2,7 +2,8 @@
 
 公開MCPは既存BackendのHTTPS `/mcp` を利用する。ローカルMCPの常時起動は不要。
 `syncnesto/` がportableパッケージのソースで、資格情報を含まない。
-発行者の本人確認と非公開Draft登録は完了。2026-10-12、審査用1 ProjectだけのOpenAI接続・28ツールのscanも完了した。公開審査提出は未完了。
+公開状態と作業範囲の正本は[Project5文書14](https://syncnesto.vercel.app/projects/joined/5/documents/14)。
+以下の過去の接続検証記録と現在の公開状態を混同しない。
 希望する発行者名は `shime-hei`、窓口は `syncnesto@gmail.com`。選択する確認済みidentityの公開名との一致は管理画面で確認する。
 サポート窓口、プライバシーポリシー、利用規約の実URLが必要。
 文面案と未確定事項は [公開登録の草案](publication-draft.ja.md) を参照する。
@@ -104,6 +105,12 @@ uv run python scripts/build_codex_plugin.py /tmp/syncnesto-draft.zip --draft
    `MCP_PLUGIN_INSTALL_URL` に設定・再配布する。アカウント画面のボタンから一連の導線を確認する。
 
 builderは固定allowlistのファイルだけをZIP化し、`.env`・DB・Git・ローカル設定・tokenを探索しない。
+
+承認済み版から更新するときは、PortalのDownload release ZIPで取得したZIPを保全し、
+最終申請用コマンドに `--approved-package /path/to/approved.zip` を追加できる。
+package名とMCP/OAuth設定の意味が一致する場合だけ、既存の動画/commerce/対象国を保持する。
+任意の旧フィールドや審査用資格情報はコピーしない。掲載URLは従来どおり確定済みlisting JSONが必要。
+更新ZIPの生成は、MCP拡張の本番有効化・OpenAIでの審査通過・Publishを意味しない。
 URLの形式検証は公開到達性や規約内容の審査を代行しない。審査・公開は自動実行しない。
 
 2026-10-10の仕様確認では、OpenAI公式のMCP認証例はserver内の `extensions.com.openai.auth` を使用する一方、
