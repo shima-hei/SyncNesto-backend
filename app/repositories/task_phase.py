@@ -78,6 +78,7 @@ class TaskPhaseRepository:
                 Task.id,
                 Task.phase_scope,
                 Task.phase_id,
+                Task.status,
                 Task.estimated_minutes,
                 Task.actual_minutes,
                 Task.estimated_basis,
@@ -104,9 +105,12 @@ class TaskPhaseRepository:
             )
         return (
             db.execute(
-                select(source.c.phase_scope, source.c.phase_id, *aggregates).group_by(
-                    source.c.phase_scope, source.c.phase_id
-                )
+                select(
+                    source.c.phase_scope,
+                    source.c.phase_id,
+                    source.c.status,
+                    *aggregates,
+                ).group_by(source.c.phase_scope, source.c.phase_id, source.c.status)
             )
             .mappings()
             .all()

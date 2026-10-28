@@ -142,6 +142,13 @@ class PhaseEffortGroup(BaseModel):
     totals: EffortTotals
 
 
+class StatusEffortGroup(BaseModel):
+    """完了・中止も同じ対象集合の内訳として保持する。"""
+
+    status: str
+    totals: EffortTotals
+
+
 class EffortSummary(BaseModel):
     """描画行や取得ページ数に左右されないProject集計。"""
 
@@ -150,3 +157,4 @@ class EffortSummary(BaseModel):
     filters: EffortFilters
     totals: EffortTotals
     groups: list[PhaseEffortGroup]
+    status_groups: list[StatusEffortGroup]

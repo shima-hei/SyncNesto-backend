@@ -30,4 +30,6 @@ effort-summaryは一覧と同じq/status/task_type/priority/assignee_id/requirem
 
 各metricはminutes/missing_count/unreviewed_count/complete。未入力・未確認があれば確認済み小計として扱う。groupsは工程・共通・未分類へ分け、アーカイブ分も含む和とtotalsを一致させる。filtersとunit=minutesを返す。進捗率・親達成率は更新しない。
 
+status_groupsは同じ一意集合の状態別内訳。完了・中止を既定で除外せず、各内訳の和はtotalsと一致する。工程別と状態別を同じSQL結果から作り、同時更新で両者の対象をずらさない。
+
 公開MCPはmcp_task_contract.pyで従来のTask入力を固定し、業務APIの新項目を公開しない。通常/デモの新表はtenant_scopeの所有関係に登録し、既存デモの上限・失効・回収を適用する。migration ab26d41066c1は利用済みの所属・根拠・履歴を削除するdowngradeを拒否する。UIの切戻しは追加DBを保持して行う。

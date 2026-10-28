@@ -23,6 +23,7 @@ from app.schemas.task_phase import (
     PhaseList,
     PhaseRead,
     PhaseUpdate,
+    StatusEffortGroup,
 )
 from app.services.audit_log import AuditLogService
 from app.services.conflict import (
@@ -215,33 +216,48 @@ class TaskPhaseService:
                 select(ProjectPhase).where(ProjectPhase.project_id == project_id)
             )
         }
-        sums = {
-            key: sum(int(row[key] or 0) for row in rows)
-            for key in (
-                "task_count",
-                "estimated_minutes",
-                "actual_minutes",
-                "estimated_missing",
-                "actual_missing",
-                "estimated_unreviewed",
-                "actual_unreviewed",
+        keys = (
+            "task_count",
+            "estimated_minutes",
+            "actual_minutes",
+            "estimated_missing",
+            "actual_missing",
+            "estimated_unreviewed",
+            "actual_unreviewed",
+        )
+        sums = dict.fromkeys(keys, 0)
+        phase_sums = {}
+        status_sums = {}
+        # 同一SQLの行から両内訳を作り、同時更新でもProject小計とずらさない。
+        for row in rows:
+            phase_sum = phase_sums.setdefault(
+                (row["phase_scope"], row["phase_id"]), dict.fromkeys(keys, 0)
             )
-        }
+            status_sum = status_sums.setdefault(row["status"], dict.fromkeys(keys, 0))
+            for key in keys:
+                value = int(row[key] or 0)
+                sums[key] += value
+                phase_sum[key] += value
+                status_sum[key] += value
         groups = [
             PhaseEffortGroup(
-                kind=row["phase_scope"],
-                phase=PhaseRead.model_validate(phases[row["phase_id"]]).model_copy(
-                    update={"task_count": phase_counts.get(row["phase_id"], 0)}
+                kind=kind,
+                phase=PhaseRead.model_validate(phases[phase_id]).model_copy(
+                    update={"task_count": phase_counts.get(phase_id, 0)}
                 )
-                if row["phase_id"] in phases
+                if phase_id in phases
                 else None,
-                totals=effort_totals(row),
+                totals=effort_totals(values),
             )
-            for row in rows
+            for (kind, phase_id), values in phase_sums.items()
         ]
         return EffortSummary(
             project_id=project_id,
             filters=filters,
             totals=effort_totals(sums),
             groups=groups,
+            status_groups=[
+                StatusEffortGroup(status=status, totals=effort_totals(values))
+                for status, values in sorted(status_sums.items())
+            ],
         )

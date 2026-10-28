@@ -112,6 +112,55 @@ def test_phase_management_does_not_expand_existing_project_permission(
     assert client.get(f"/projects/{project.id}/tasks/effort-summary").status_code == 200
 
 
+def test_status_breakdown_preserves_done_cancelled_and_incomplete_totals(
+    client, phase_context
+):
+    _, project = phase_context
+    url = f"/projects/{project.id}/tasks/effort-summary"
+    assert client.get(url).json()["status_groups"] == []
+    phase = create_phase(client, project)
+    for status, estimated, actual in (
+        ("done", 60, 30),
+        ("cancelled", 40, 20),
+        ("backlog", 60, None),
+        ("in_review", 999, 7),
+    ):
+        payload = {
+            "title": status,
+            "status": status,
+            "progress_percent": 100 if status == "done" else 0,
+            "estimated_minutes": estimated,
+            "actual_minutes": actual,
+        }
+        if status in {"done", "cancelled"}:
+            payload["phase_assignment"] = {"kind": "phase", "phase_id": phase["id"]}
+        elif status == "in_review":
+            payload.update(
+                phase_assignment={"kind": "shared"},
+                estimated_basis="unreviewed",
+                actual_basis="rollup",
+            )
+        response = client.post(f"/projects/{project.id}/tasks", json=payload)
+        assert response.status_code == 201, response.text
+    summary = client.get(url).json()
+    assert summary["totals"]["estimated"]["minutes"] == 160
+    assert summary["totals"]["estimated"]["unreviewed_count"] == 1
+    assert summary["totals"]["actual"]["minutes"] == 50
+    assert summary["totals"]["actual"]["missing_count"] == 1
+    assert len(summary["groups"]) == 3
+    for groups in (summary["groups"], summary["status_groups"]):
+        assert sum(g["totals"]["task_count"] for g in groups) == 4
+        for metric in ("estimated", "actual"):
+            for key in ("minutes", "missing_count", "unreviewed_count"):
+                assert (
+                    sum(g["totals"][metric][key] for g in groups)
+                    == summary["totals"][metric][key]
+                )
+    done = client.get(url, params={"status": "done"}).json()
+    assert [g["status"] for g in done["status_groups"]] == ["done"]
+    assert done["totals"]["estimated"]["minutes"] == 60
+
+
 def test_archive_preserves_task_values_and_history_and_rejects_new_assignment(
     client, phase_context, db
 ):
