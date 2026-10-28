@@ -79,6 +79,9 @@ TaskChangeLogActionCode: TypeAlias = Literal[
 ]
 
 TaskChangeLogFieldName: TypeAlias = Literal[
+    "phase_assignment",
+    "estimated_basis",
+    "actual_basis",
     "task_code",
     "title",
     "description",

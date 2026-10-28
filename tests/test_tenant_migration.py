@@ -10,9 +10,6 @@ import pytest
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session
-
-from app.models.task import Task
 
 
 @pytest.mark.parametrize("fail", [False, True])
@@ -84,10 +81,15 @@ def test_legacy_data_survives_tenant_migration(fail):
                         "VALUES ('tenant_owner','Already exists','tenant')"
                     )
                 )
-        # 目標列追加前の文書は、当時の列でfixtureを作る。
-        with Session(legacy) as db:
-            db.add(Task(project_id=1, task_code="KEEP", title="Preserved Task"))
-            db.commit()
+        # 旧schemaのfixtureに現在のORM列を持ち込まない。
+        with legacy.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO tasks (project_id,task_code,title,task_type,status,"
+                    "priority,progress_percent,sort_order,tags,version) VALUES "
+                    "(1,'KEEP','Preserved Task','other','backlog','medium',0,0,'[]',1)"
+                )
+            )
         with legacy.begin() as connection:
             document_id = connection.scalar(
                 text(

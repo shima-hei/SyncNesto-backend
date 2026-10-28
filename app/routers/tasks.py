@@ -9,6 +9,7 @@ from app.routers import (
     task_dependencies,
     task_items,
     task_milestones,
+    task_phases,
 )
 
 router = APIRouter(tags=["tasks"])
@@ -17,4 +18,5 @@ router.include_router(task_change_logs.router)
 router.include_router(task_comments.router)
 router.include_router(task_dependencies.router)
 router.include_router(task_items.router)
+router.include_router(task_phases.router)
 router.include_router(task_milestones.router)

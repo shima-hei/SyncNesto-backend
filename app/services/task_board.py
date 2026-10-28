@@ -101,7 +101,8 @@ class TaskBoardService:
         self.project_repository = project_repository or ProjectRepository()
         self.change_log_repository = change_log_repository or TaskChangeLogRepository()
         self.presentation_data_service = (
-            presentation_data_service or TaskPresentationDataService(
+            presentation_data_service
+            or TaskPresentationDataService(
                 task_repository=self.task_repository,
             )
         )
@@ -368,6 +369,7 @@ class TaskBoardService:
         )
         return {
             "parent_task_id": task.parent_task_id,
+            **presentation_data.phase_fields.get(task.id, {}),
             "task_code": task.task_code,
             "title": task.title,
             "description": task.description,

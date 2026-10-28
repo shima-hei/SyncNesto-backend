@@ -1,6 +1,6 @@
 """タスクレスポンスの表示補助データを収集するService。"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.task import Task, TaskDependency
 from app.repositories.task_dependency import TaskDependencyRepository
 from app.repositories.task_item import TaskRepository
+from app.repositories.task_phase import TaskPhaseRepository
 from app.repositories.task_requirement import RequirementTaskRelationRepository
 
 
@@ -17,6 +18,7 @@ class TaskPresentationData:
 
     requirements_by_task_id: dict[int, list[dict[str, Any]]]
     blocked_task_ids: set[int]
+    phase_fields: dict[int, dict[str, Any]] = field(default_factory=dict)
 
 
 class TaskPresentationDataService:
@@ -34,9 +36,7 @@ class TaskPresentationDataService:
         self.relation_repository = (
             relation_repository or RequirementTaskRelationRepository()
         )
-        self.dependency_repository = (
-            dependency_repository or TaskDependencyRepository()
-        )
+        self.dependency_repository = dependency_repository or TaskDependencyRepository()
 
     def get_task_presentation_data(
         self,
@@ -59,12 +59,9 @@ class TaskPresentationDataService:
                 task_ids,
             )
         )
-        blocked_task_ids = {
-            task.id
-            for task in tasks
-            if self.is_blocked(db, task)
-        }
+        blocked_task_ids = {task.id for task in tasks if self.is_blocked(db, task)}
         return TaskPresentationData(
+            phase_fields=TaskPhaseRepository().presentation(db, tasks),
             requirements_by_task_id=requirements_by_task_id,
             blocked_task_ids=blocked_task_ids,
         )

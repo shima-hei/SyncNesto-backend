@@ -49,6 +49,14 @@ class TaskRepository:
             progress_percent=task_in.progress_percent,
             estimated_minutes=task_in.estimated_minutes,
             actual_minutes=task_in.actual_minutes,
+            estimated_basis=task_in.estimated_basis,
+            actual_basis=task_in.actual_basis,
+            phase_scope=task_in.phase_assignment.kind
+            if task_in.phase_assignment
+            else "unclassified",
+            phase_id=task_in.phase_assignment.phase_id
+            if task_in.phase_assignment
+            else None,
             sort_order=task_in.sort_order,
             tags=task_in.tags,
             created_by=actor_id,
@@ -65,9 +73,7 @@ class TaskRepository:
     def get_by_id(self, db: Session, task_id: int) -> Task | None:
         """idに一致する未削除タスクを取得する。"""
         return (
-            db.query(Task)
-            .filter(Task.id == task_id, Task.deleted_at.is_(None))
-            .first()
+            db.query(Task).filter(Task.id == task_id, Task.deleted_at.is_(None)).first()
         )
 
     def list_by_ids(self, db: Session, task_ids: list[int]) -> list[Task]:
@@ -132,13 +138,11 @@ class TaskRepository:
         ).scalar_one()
         return int(result)
 
-    def list_paginated(
+    def filtered_query(
         self,
         db: Session,
         *,
         project_id: int,
-        page: int,
-        page_size: int,
         status: str | None = None,
         assignee_id: int | None = None,
         requirement_id: int | None = None,
@@ -150,9 +154,8 @@ class TaskRepository:
         task_type: str | None = None,
         priority: str | None = None,
         tag: str | None = None,
-        sort: str | None = None,
         q: str | None = None,
-    ) -> tuple[list[Task], int]:
+    ):
         """プロジェクト内タスク一覧をページング付きで取得する。"""
         query = db.query(Task).filter(
             Task.project_id == project_id,
@@ -187,8 +190,12 @@ class TaskRepository:
                 Task.due_date < today,
                 Task.status.notin_(["done", "cancelled"]),
             )
-            query = query.filter(*overdue_filter) if overdue else query.filter(
-                or_(Task.due_date >= today, Task.status.in_(["done", "cancelled"]))
+            query = (
+                query.filter(*overdue_filter)
+                if overdue
+                else query.filter(
+                    or_(Task.due_date >= today, Task.status.in_(["done", "cancelled"]))
+                )
             )
         if q:
             like_pattern = f"%{q}%"
@@ -199,15 +206,24 @@ class TaskRepository:
                     Task.description.ilike(like_pattern),
                 )
             )
+        return query
+
+    def list_paginated(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        page: int,
+        page_size: int,
+        sort: str | None = None,
+        **filters: Any,
+    ) -> tuple[list[Task], int]:
+        """既存条件とページ契約を保持する。"""
+        query = self.filtered_query(db, project_id=project_id, **filters)
         total = query.count()
-        order_by = self._build_order_by(sort)
-        tasks = (
-            query.order_by(*order_by)
-            .offset((page - 1) * page_size)
-            .limit(page_size)
-            .all()
-        )
-        return tasks, total
+        return query.order_by(*self._build_order_by(sort)).offset(
+            (page - 1) * page_size
+        ).limit(page_size).all(), total
 
     def _build_order_by(self, sort: str | None) -> list[Any]:
         """タスク一覧のソート条件を作成する。
@@ -305,11 +321,22 @@ class TaskRepository:
             "progress_percent",
             "estimated_minutes",
             "actual_minutes",
+            "estimated_basis",
+            "actual_basis",
             "sort_order",
             "tags",
         ]:
             if field in task_in.model_fields_set:
                 setattr(task, field, getattr(task_in, field))
+        if "phase_assignment" in task_in.model_fields_set:
+            task.phase_scope = (
+                task_in.phase_assignment.kind
+                if task_in.phase_assignment
+                else "unclassified"
+            )
+            task.phase_id = (
+                task_in.phase_assignment.phase_id if task_in.phase_assignment else None
+            )
         task.updated_by = actor_id
         task.version += 1
         if commit:

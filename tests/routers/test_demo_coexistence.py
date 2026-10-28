@@ -14,9 +14,54 @@ from app.core.security import DEMO_AUDIENCE, create_access_token, decode_access_
 from app.db.session import _demo_factory, demo_session_local, engine
 from app.models.demo import DemoSession
 from app.models.project import Project
+from app.models.task_phase import ProjectPhase, ProjectPhaseEvent
 from app.models.user import User
 from app.services.demo import DemoService
 from tests.routers.test_demo import start
+
+
+def test_phase_contract_is_available_and_cleaned_in_the_isolated_demo(
+    dedicated_demo, client, db, monkeypatch
+):
+    """工程・所属・履歴をデモDBだけへ保存し、終了時に同じ所有境界で回収する。"""
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(settings, "frontend_public_url", "http://testserver")
+    visitor = TestClient(client.app)
+    demo = start(visitor)
+    with demo_session_local() as demo_db:
+        project_id = demo_db.scalar(select(Project.id))
+    headers = {"X-CSRF-Token": visitor.cookies[settings.csrf_cookie_name]}
+    created = visitor.post(
+        f"/projects/{project_id}/phases", json={"name": "デモ工程"}, headers=headers
+    )
+    assert created.status_code == 201, created.text
+    phase_id = created.json()["id"]
+    task = visitor.post(
+        f"/projects/{project_id}/tasks",
+        json={
+            "title": "デモ工程作業",
+            "estimated_minutes": 60,
+            "phase_assignment": {"kind": "phase", "phase_id": phase_id},
+        },
+        headers=headers,
+    )
+    assert task.status_code == 201, task.text
+    archived = visitor.patch(
+        f"/projects/{project_id}/phases/{phase_id}",
+        json={"version": 1, "archived": True},
+        headers=headers,
+    )
+    assert archived.status_code == 200, archived.text
+    assert visitor.get(f"/tasks/{task.json()['id']}").json()["phase_archived"]
+    assert db.scalar(select(func.count()).select_from(ProjectPhase)) == 0
+    assert db.scalar(select(func.count()).select_from(ProjectPhaseEvent)) == 0
+    with demo_session_local() as demo_db:
+        DemoService().revoke(demo_db, UUID(demo["id"]), "test")
+    assert DemoService().cleanup(UUID(demo["id"]))
+    with demo_session_local() as demo_db:
+        assert demo_db.scalar(select(func.count()).select_from(ProjectPhase)) == 0
+        assert demo_db.scalar(select(func.count()).select_from(ProjectPhaseEvent)) == 0
 
 
 @pytest.fixture
