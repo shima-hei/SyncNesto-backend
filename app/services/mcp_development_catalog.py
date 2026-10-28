@@ -1,7 +1,7 @@
-"""通常の開発用OAuth clientに限定した追加ツール。審査clientには公開しない。"""
+"""追加ツールの公開をOAuth clientごとの明示flagで制御する。"""
 
 from app.core.config import settings
-from app.core.mcp import CLIENT_ID
+from app.core.mcp import CLIENT_ID, PLUGIN_CLIENT_ID
 from app.models.mcp import McpConnection
 from app.schemas import mcp_development as s
 from app.schemas import mcp_read as r
@@ -98,8 +98,12 @@ DEVELOPMENT_TOOLS = {
 
 
 def development_tools(connection: McpConnection) -> dict[str, McpTool]:
-    """flagだけで審査接続のツール契約を拡張しない。"""
-    if not settings.mcp_development_tools_enabled or connection.client_id != CLIENT_ID:
+    """開発用flagで公開接続を拡張せず、未知clientも許可しない。"""
+    enabled = {
+        CLIENT_ID: settings.mcp_development_tools_enabled,
+        PLUGIN_CLIENT_ID: settings.mcp_plugin_extended_tools_enabled,
+    }.get(connection.client_id, False)
+    if not enabled:
         return {}
     return {
         name: tool
