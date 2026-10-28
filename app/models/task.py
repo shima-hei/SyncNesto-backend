@@ -4,9 +4,11 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Integer,
     String,
     Text,
@@ -28,6 +30,21 @@ class Task(Base):
     __tablename__ = "tasks"
     __table_args__ = (
         UniqueConstraint("project_id", "task_code", name="uq_tasks_project_task_code"),
+        ForeignKeyConstraint(
+            ["project_id", "phase_id"],
+            ["project_phases.project_id", "project_phases.id"],
+            name="fk_tasks_project_phase",
+        ),
+        CheckConstraint(
+            "(phase_scope = 'phase' AND phase_id IS NOT NULL) OR "
+            "(phase_scope IN ('unclassified','shared') AND phase_id IS NULL)",
+            name="ck_tasks_phase_assignment",
+        ),
+        CheckConstraint(
+            "estimated_basis IN ('own','rollup','unreviewed') AND "
+            "actual_basis IN ('own','rollup','unreviewed')",
+            name="ck_tasks_effort_basis",
+        ),
         {
             "comment": db_comment(
                 "タスク",
@@ -51,6 +68,29 @@ class Task(Base):
         nullable=True,
         index=True,
         comment=db_comment("親タスクID", "親タスクのID"),
+    )
+    phase_scope: Mapped[str] = mapped_column(
+        String(20),
+        default="unclassified",
+        server_default="unclassified",
+        comment=db_comment("工程所属区分", "未分類・共通・単一工程"),
+    )
+    phase_id: Mapped[int | None] = mapped_column(
+        Integer,
+        index=True,
+        comment=db_comment("工程ID", "同一Projectの工程。アーカイブ後も保持"),
+    )
+    estimated_basis: Mapped[str] = mapped_column(
+        String(20),
+        default="own",
+        server_default="own",
+        comment=db_comment("見積根拠", "自身・子集計・未確認"),
+    )
+    actual_basis: Mapped[str] = mapped_column(
+        String(20),
+        default="own",
+        server_default="own",
+        comment=db_comment("実績根拠", "自身・子集計・未確認"),
     )
     task_code: Mapped[str] = mapped_column(
         String(100),

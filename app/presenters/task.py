@@ -166,9 +166,7 @@ class TaskPresenter:
         return TaskCommentRead.model_validate(comment).model_copy(
             update={
                 "created_by_user": (
-                    self._build_change_log_user(user)
-                    if user is not None
-                    else None
+                    self._build_change_log_user(user) if user is not None else None
                 ),
             },
         )
@@ -364,10 +362,7 @@ class TaskPresenter:
         Returns:
             マイルストーンレスポンス一覧。
         """
-        return [
-            self.build_milestone_response(milestone)
-            for milestone in milestones
-        ]
+        return [self.build_milestone_response(milestone) for milestone in milestones]
 
     def build_gantt_response(
         self,
@@ -491,7 +486,12 @@ class TaskPresenter:
                 [],
             )
         ]
-        return task_read
+        return TaskRead.model_validate(
+            {
+                **task_read.model_dump(),
+                **presentation_data.phase_fields.get(task.id, {}),
+            }
+        )
 
     def _build_change_log_user(self, user: User) -> ChangeLogUserRead:
         """変更履歴の変更者として返す軽量ユーザー情報を組み立てる。"""

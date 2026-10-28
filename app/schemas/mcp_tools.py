@@ -5,15 +5,14 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.mcp_task_contract import TaskCreate, TaskUpdate
 from app.schemas.requirement import (
     RequirementCreate,
     RequirementSectionCreate,
 )
 from app.schemas.task import (
     MilestoneCreate,
-    TaskCreate,
     TaskDependencyCreate,
-    TaskUpdate,
 )
 from app.schemas.test_collaboration import (
     RequirementTestItemCreate,

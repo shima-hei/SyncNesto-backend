@@ -10,6 +10,11 @@ from app.db.base import Base
 
 # 所有関係は一箇所で定義する。認証Identityへの参照は所有関係に含めない。
 OWNERS = {
+    "project_phases": [("project_id", "projects", "id")],
+    "project_phase_events": [
+        ("project_id", "projects", "id"),
+        ("phase_id", "project_phases", "id"),
+    ],
     "requirement_document_creation_receipts": [("project_id", "projects", "id")],
     "requirement_verification_requests": [
         ("plan_id", "requirement_verification_plans", "id")
@@ -259,6 +264,12 @@ def validate_tenant_writes(db: Session, flush_context, instances) -> None:
             if value is None:
                 continue
             for fk in column.foreign_keys:
+                # MATCH SIMPLEと同じく、任意の複合参照が未設定なら検証対象外。
+                if any(
+                    getattr(row, part.parent.name) is None
+                    for part in fk.constraint.elements
+                ):
+                    continue
                 parent = fk.column.table.name
                 if parent == "users" and (
                     row in db.new

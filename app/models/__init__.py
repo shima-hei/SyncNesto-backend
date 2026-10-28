@@ -90,6 +90,7 @@ from app.models.task import (
     TaskComment,
     TaskDependency,
 )
+from app.models.task_phase import ProjectPhase, ProjectPhaseEvent
 from app.models.tenant import Tenant, TenantMember
 from app.models.test_design import (
     ExpectedValue,
@@ -200,6 +201,8 @@ __all__ = [
     "Milestone",
     "Permission",
     "Project",
+    "ProjectPhase",
+    "ProjectPhaseEvent",
     "ProjectMember",
     "ProjectGoalSourceEvent",
     "Requirement",

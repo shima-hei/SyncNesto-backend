@@ -26,7 +26,7 @@ from app.schemas.requirement import (
     RequirementDocumentCreate,
     RequirementTargetCommentCreate,
 )
-from app.schemas.task import TaskUpdate
+from app.schemas.task import TaskCreate, TaskUpdate
 from app.schemas.test_design import TestDesignUpdate
 from app.services.audit_log import AuditLogService
 from app.services.mcp_auth import McpAuthService
@@ -611,14 +611,24 @@ class McpOperationsService:
                 raise ForbiddenError()
             return summary(
                 self.tasks.create_task(
-                    db, project_id=project_id, task_in=data.data, actor_id=actor_id
+                    db,
+                    project_id=project_id,
+                    task_in=TaskCreate.model_validate(
+                        data.data.model_dump(exclude_unset=True)
+                    ),
+                    actor_id=actor_id,
                 )
             )
         if name == "update_task":
             task = self.task(db, project_id, data.task_id)
             try:
                 updated = self.tasks.update_task(
-                    db, task_id=data.task_id, task_in=data.data, actor_id=actor_id
+                    db,
+                    task_id=data.task_id,
+                    task_in=TaskUpdate.model_validate(
+                        data.data.model_dump(exclude_unset=True)
+                    ),
+                    actor_id=actor_id,
                 )
             except VersionConflictError:
                 # 業務Serviceが更新した現行値から、MCP用の要約だけを返す。

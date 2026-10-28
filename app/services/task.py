@@ -21,6 +21,7 @@ from app.models.task import (
     Task,
     TaskDependency,
 )
+from app.models.task_phase import ProjectPhase
 from app.models.test_design import TestCaseIssue
 from app.models.user import User
 from app.repositories.project import ProjectRepository
@@ -51,6 +52,7 @@ from app.services.conflict import (
     raise_if_version_conflict,
 )
 from app.services.notification import NotificationService
+from app.services.task_phase import TaskPhaseService
 from app.services.task_presentation import (
     TaskPresentationData,
     TaskPresentationDataService,
@@ -59,6 +61,9 @@ from app.services.task_presentation import (
 AUTO_TASK_CODE_PREFIX = "TASK"
 AUTO_TASK_CODE_RETRY_LIMIT = 5
 TASK_UPDATABLE_FIELDS = {
+    "phase_assignment",
+    "estimated_basis",
+    "actual_basis",
     "parent_task_id",
     "task_code",
     "title",
@@ -142,6 +147,9 @@ TASK_CHANGE_LOG_FORMATTER = ChangeLogFormatter(
             "task_comment": "task_comment",
         },
         field_names={
+            "phase_assignment",
+            "estimated_basis",
+            "actual_basis",
             "task_code",
             "title",
             "description",
@@ -299,6 +307,9 @@ class TaskService:
         )
         retry_limit = 1 if requested_task_code else AUTO_TASK_CODE_RETRY_LIMIT
         for attempt in range(retry_limit):
+            TaskPhaseService().validate_assignment(
+                db, project_id, task_in.phase_assignment
+            )
             task_code = requested_task_code or self._generate_task_code(db, project_id)
             normalized = task_in.model_copy(
                 update={
@@ -432,6 +443,10 @@ class TaskService:
         actor_id: int | None,
     ) -> Task:
         """タスクを更新する。"""
+        if db.info.get("demo_id") is not None:
+            from app.db.demo_scope import lock_active_demo
+
+            lock_active_demo(db)
         task = self.get_task(db, task_id)
         db.refresh(task, with_for_update=True)
         current = self._build_task_conflict_current(db, task)
@@ -485,6 +500,10 @@ class TaskService:
             else task.progress_percent
         )
         self._validate_task_state(next_status, next_progress)
+        if "phase_assignment" in task_in.model_fields_set:
+            TaskPhaseService().validate_assignment(
+                db, task.project_id, task_in.phase_assignment, task.phase_id
+            )
         normalized = task_in.model_copy(
             update=self._normalize_task_dates(
                 status=next_status,
@@ -497,7 +516,15 @@ class TaskService:
                 else task.actual_end_date,
             )
         )
-        before_snapshot = self._task_snapshot(task)
+        if task_in.model_fields_set <= {
+            "version",
+            "change_reason",
+            "phase_assignment",
+            "estimated_basis",
+            "actual_basis",
+        }:
+            normalized = task_in
+        before_snapshot = self._task_snapshot(task, db)
         try:
             task = self.task_repository.update(
                 db,
@@ -529,7 +556,7 @@ class TaskService:
         )
         updated_fields, old_values, new_values = build_changed_field_snapshots(
             before_snapshot,
-            self._task_snapshot(task),
+            self._task_snapshot(task, db),
             candidate_fields,
         )
         if updated_fields:
@@ -800,6 +827,7 @@ class TaskService:
         """
         presentation_data = self.get_task_presentation_data(db, [task])
         return {
+            **presentation_data.phase_fields.get(task.id, {}),
             "parent_task_id": task.parent_task_id,
             "task_code": task.task_code,
             "title": task.title,
@@ -977,9 +1005,19 @@ class TaskService:
                 normalized["actual_end_date"] = today
         return normalized
 
-    def _task_snapshot(self, task: Task) -> dict[str, Any]:
+    def _task_snapshot(self, task: Task, db: Session) -> dict[str, Any]:
         """タスクの変更前スナップショットを作成する。"""
+        phase = (
+            db.get(ProjectPhase, task.phase_id) if task.phase_id is not None else None
+        )
         return {
+            "phase_assignment": {
+                "kind": task.phase_scope,
+                "phase_id": task.phase_id,
+                "name": phase.name if phase is not None else None,
+            },
+            "estimated_basis": task.estimated_basis,
+            "actual_basis": task.actual_basis,
             "parent_task_id": task.parent_task_id,
             "task_code": task.task_code,
             "title": task.title,

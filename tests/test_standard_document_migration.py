@@ -41,9 +41,13 @@ def test_used_receipt_prevents_downgrade(db, create_test_user, create_test_proje
     )
     db.commit()
     with pytest.raises(RuntimeError, match="再送記録"):
+        head_before = db.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
+        db.commit()
         command.downgrade(Config("alembic.ini"), "f9b3c6e1d547")
     assert (
         db.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        == "fa14c7d2e658"
+        == head_before
     )
     assert db.query(RequirementDocumentCreationReceipt).count() == 1

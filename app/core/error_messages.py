@@ -101,6 +101,11 @@ REQUIREMENT_REVIEW_NOT_FOUND = "Requirement review not found"
 
 TASK_CODE_ALREADY_EXISTS = "Task code already exists"
 TASK_NOT_FOUND = "Task not found"
+TASK_PHASE_NOT_FOUND = "工程が見つかりません"
+TASK_PHASE_ARCHIVED = "アーカイブされた工程へ新しく割り当てることはできません"
+TASK_PHASE_NAME_EXISTS = (
+    "同じ名称の工程があります。アーカイブ済みの工程も確認してください"
+)
 TASK_COMMENT_NOT_FOUND = "Task comment not found"
 TASK_PARENT_NOT_FOUND = "Parent task not found"
 TASK_PARENT_FILTER_CONFLICT = "parent_task_id and root_only cannot be used together"

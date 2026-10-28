@@ -231,6 +231,7 @@ docker/pgadmin/
 !/docs/deleted-data-cleanup.md
 !/docs/frontend-notifications-api.md
 !/docs/frontend-home-api.md
+!/docs/frontend-task-phases-api.md
 !/docs/frontend-file-upload.md
 !/docs/frontend-authorization.md
 !/docs/frontend-guest-invitations.md
