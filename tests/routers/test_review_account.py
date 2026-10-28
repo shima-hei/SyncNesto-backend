@@ -6,6 +6,7 @@ import pytest
 
 from app.core.config import settings
 from app.core.exceptions import ForbiddenError
+from app.core.mcp import PLUGIN_CLIENT_ID
 from app.models.mcp import McpConnection
 from app.models.project import ProjectMember
 from app.models.rbac import Role, UserRole
@@ -14,6 +15,7 @@ from app.models.session import UserSession
 from app.models.tenant import Tenant, TenantMember
 from app.models.user import User
 from app.services.account_action import AccountActionService
+from app.services.review_account import ReviewAccountService
 from app.services.review_fixture import ReviewFixtureService
 from tests.routers.test_mcp import api_headers, connect, operate
 
@@ -226,3 +228,116 @@ def test_review_logout_does_not_destroy_fixture(client, db, review):
     assert client.post("/auth/logout").status_code == 204
     assert client.get("/auth/me").status_code == 401
     assert db.get(ReviewAccountGrant, review["user_id"]) is not None
+
+
+def test_review_public_mcp_can_use_documents_context_and_comments(
+    client, review, monkeypatch
+):
+    """隔離された審査guestの新操作を、実際の公開OAuth経路で検証する。"""
+    for name in (
+        "mcp_plugin_extended_tools_enabled",
+        "mcp_read_context_enabled",
+        "mcp_task_comments_enabled",
+        "project_objectives_enabled",
+    ):
+        monkeypatch.setattr(settings, name, True)
+    project_id = review["consented_project_id"]
+    direct, tokens, _ = connect(client, project_id, client_id=PLUGIN_CLIENT_ID)
+    headers = api_headers(direct, tokens["access_token"])
+    catalog = direct.get("/integrations/mcp/catalog", headers=headers)
+    assert catalog.status_code == 200, catalog.text
+    assert len(catalog.json()["tools"]) == 41
+    created = operate(
+        direct,
+        headers,
+        "create_project_document",
+        project_id,
+        data={"title": "Review notes", "body": "Draft"},
+    )
+    assert created.status_code == 200, created.text
+    document_id = created.json()["id"]
+    outline = operate(
+        direct,
+        headers,
+        "get_project_document_content",
+        project_id,
+        document_id=document_id,
+        key=False,
+    )
+    assert outline.status_code == 200, outline.text
+    patched = operate(
+        direct,
+        headers,
+        "patch_project_document",
+        project_id,
+        document_id=document_id,
+        version=outline.json()["version"],
+        edits=[
+            {"start": 0, "end": 5, "expected_text": "Draft", "replacement": "Reviewed"}
+        ],
+    )
+    assert patched.status_code == 200, patched.text
+    assert (
+        operate(
+            direct,
+            headers,
+            "get_project_document",
+            review["unconsented_project_id"],
+            document_id=document_id,
+            key=False,
+        ).status_code
+        == 403
+    )
+    brief = operate(direct, headers, "get_project_brief", project_id, key=False)
+    assert brief.status_code == 200, brief.text
+    task = operate(
+        direct, headers, "create_task", project_id, data={"title": "Review task"}
+    )
+    assert task.status_code == 200, task.text
+    comment = operate(
+        direct,
+        headers,
+        "create_task_comment",
+        project_id,
+        task_id=task.json()["id"],
+        data={"body": "Review complete"},
+    )
+    assert comment.status_code == 200, comment.text
+    comments = operate(
+        direct,
+        headers,
+        "list_task_comments",
+        project_id,
+        task_id=task.json()["id"],
+        key=False,
+    )
+    assert comments.status_code == 200, comments.text
+    assert comments.json()["total"] == 1
+
+
+@pytest.mark.parametrize(
+    "change", ["ordinary_guest", "wrong_tenant", "expired", "revoked", "demo"]
+)
+def test_extended_mcp_actor_guard_keeps_review_boundaries(
+    db, review, create_test_user, monkeypatch, change
+):
+    """許可行の存在だけでguest/別組織/失効/デモを通さない。"""
+    user = db.get(User, review["user_id"])
+    if change == "ordinary_guest":
+        user = create_test_user()
+        user.user_type = "guest"
+        db.commit()
+    monkeypatch.setitem(db.info, "tenant_id", review["tenant_id"])
+    if change == "wrong_tenant":
+        monkeypatch.setitem(db.info, "tenant_id", review["tenant_id"] + 1000)
+    elif change == "demo":
+        monkeypatch.setitem(db.info, "data_realm", "demo")
+    elif change in {"expired", "revoked"}:
+        grant = db.get(ReviewAccountGrant, user.id)
+        if change == "expired":
+            grant.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        else:
+            grant.revoked_at = datetime.now(UTC)
+        db.commit()
+    with pytest.raises(ForbiddenError):
+        ReviewAccountService().require_mcp_actor(db, user)

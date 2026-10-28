@@ -4,9 +4,9 @@
 
 ## 有効化と認可
 
-`MCP_ENABLED`、`MCP_DEVELOPMENT_TOOLS_ENABLED` に加え、`MCP_READ_CONTEXT_ENABLED=true` で通常の開発用OAuth clientへ3操作を追加する。新flagは初期OFF。審査clientは両flagがONでも元の28操作のまま。旧28操作の入力・説明・注釈のdigestは既存テストで検証する。
+`MCP_ENABLED`、`MCP_DEVELOPMENT_TOOLS_ENABLED` に加え、`MCP_READ_CONTEXT_ENABLED=true` で通常の開発用OAuth clientへ3操作を追加する。公開clientは `MCP_PLUGIN_EXTENDED_TOOLS_ENABLED` の独立した明示ONも必要で、初期OFFなら元の28操作のまま。旧28操作の入力・説明・注釈のdigestは既存テストで検証する。
 
-毎回、既存の接続資格（`mcp:connect`＋編集資格）、同意済みProject、現在の業務権限、internal/通常realmを確認する。読み取り専用ユーザー・ゲストの接続資格は拡張しない。新permission/role割当はない。関連ごとに `document:read` / `task:read` / `test_plan:read` を再確認する。既存UIの `ProjectObjectiveService.access` のMCP拒否ガードはそのまま保持し、利用者承認済みの新MCP経路だけから同じread権限で取得する。
+毎回、既存の接続資格（`mcp:connect`＋編集資格）、同意済みProject、現在の業務権限、通常realmを確認する。本人はinternal、または期限・取消・同一tenant隔離を `ReviewAccountService.validate` で検証した専用審査Identityに限定する。普通のゲスト・閲覧専用の接続資格は拡張しない。新permission/role割当はない。関連ごとに `document:read` / `task:read` / `test_plan:read` を再確認する。既存UIの `ProjectObjectiveService.access` のMCP拒否ガードは保持し、承認済みのMCP経路だけから同じread権限で取得する。
 
 既存の `PROJECT_OBJECTIVES_ENABLED` / `PROJECT_TRACEABILITY_ENABLED` がOFFなら `disabled` とし、取得経路から有効化しない。DB構造・HTTP URL・既存REST response model・依存の追加はない。Frontend / Orvalの変更は不要。
 
