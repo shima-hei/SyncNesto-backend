@@ -480,6 +480,7 @@ class TaskPresenter:
             and task.status not in {"done", "cancelled"}
         )
         task_read.is_blocked = task.id in presentation_data.blocked_task_ids
+        task_read.has_children = task.id in presentation_data.task_ids_with_children
         parent = presentation_data.parents_by_task_id.get(task.id)
         task_read.parent_summary = (
             TaskParentSummary(

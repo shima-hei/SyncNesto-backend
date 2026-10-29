@@ -3,8 +3,8 @@
 from datetime import UTC, date, datetime
 from typing import Any
 
-from sqlalchemy import or_, text
-from sqlalchemy.orm import Session
+from sqlalchemy import or_, select, text
+from sqlalchemy.orm import Session, aliased
 
 from app.models.task import (
     RequirementTaskRelation,
@@ -18,6 +18,34 @@ from app.schemas.task import (
 
 class TaskRepository:
     """Taskテーブルへのデータアクセス処理を提供する。"""
+
+    @staticmethod
+    def _has_children():
+        """一覧条件に依存せず、同Projectの未削除の子を判定する。"""
+        child = aliased(Task)
+        return (
+            select(child.id)
+            .where(
+                child.parent_task_id == Task.id,
+                child.project_id == Task.project_id,
+                child.deleted_at.is_(None),
+            )
+            .exists()
+        )
+
+    def list_ids_with_children(self, db: Session, task_ids: list[int]) -> set[int]:
+        """表示対象の子の有無を一括取得する。"""
+        if not task_ids:
+            return set()
+        return set(
+            db.scalars(
+                select(Task.id).where(
+                    Task.id.in_(task_ids),
+                    Task.deleted_at.is_(None),
+                    self._has_children(),
+                )
+            ).all()
+        )
 
     def create(
         self,
@@ -144,6 +172,9 @@ class TaskRepository:
         *,
         project_id: int,
         status: str | None = None,
+        statuses: list[str] | None = None,
+        exclude_statuses: list[str] | None = None,
+        hierarchy: str | None = None,
         assignee_id: int | None = None,
         requirement_id: int | None = None,
         parent_task_id: int | None = None,
@@ -172,6 +203,18 @@ class TaskRepository:
             query = query.filter(Task.parent_task_id.is_(None))
         if status is not None:
             query = query.filter(Task.status == status)
+        if statuses is not None:
+            query = query.filter(Task.status.in_(statuses))
+        if exclude_statuses:
+            query = query.filter(Task.status.notin_(exclude_statuses))
+        if hierarchy in {"parent", "root_parent", "middle_parent"}:
+            query = query.filter(self._has_children())
+        elif hierarchy in {"leaf", "standalone"}:
+            query = query.filter(~self._has_children())
+        if hierarchy in {"root_parent", "standalone"}:
+            query = query.filter(Task.parent_task_id.is_(None))
+        elif hierarchy in {"middle_parent", "leaf"}:
+            query = query.filter(Task.parent_task_id.is_not(None))
         if task_type is not None:
             query = query.filter(Task.task_type == task_type)
         if priority is not None:

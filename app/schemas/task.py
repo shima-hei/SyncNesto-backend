@@ -1,6 +1,7 @@
 """タスク管理schemaを定義するモジュール。"""
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -18,6 +19,10 @@ from app.schemas.task_phase import (
     PhaseAssignment,
     PhaseScope,
 )
+
+TaskHierarchyFilter = Literal[
+    "parent", "root_parent", "middle_parent", "leaf", "standalone"
+]
 
 
 class TaskBase(BaseModel):
@@ -144,6 +149,7 @@ class TaskRead(TaskBase):
     project_id: int
     version: int
     parent_summary: TaskParentSummary | None = None
+    has_children: bool = False
     phase_scope: PhaseScope = "unclassified"
     phase_id: int | None = None
     phase_name: str | None = None

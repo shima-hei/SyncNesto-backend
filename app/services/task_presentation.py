@@ -20,6 +20,7 @@ class TaskPresentationData:
     blocked_task_ids: set[int]
     phase_fields: dict[int, dict[str, Any]] = field(default_factory=dict)
     parents_by_task_id: dict[int, Task] = field(default_factory=dict)
+    task_ids_with_children: set[int] = field(default_factory=set)
 
 
 class TaskPresentationDataService:
@@ -69,6 +70,9 @@ class TaskPresentationDataService:
             for parent in self.task_repository.list_by_ids(db, parent_ids)
         }
         return TaskPresentationData(
+            task_ids_with_children=self.task_repository.list_ids_with_children(
+                db, task_ids
+            ),
             phase_fields=TaskPhaseRepository().presentation(db, tasks),
             requirements_by_task_id=requirements_by_task_id,
             blocked_task_ids=blocked_task_ids,
