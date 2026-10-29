@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.change_log import (
     ChangeLogUserRead,
@@ -92,6 +92,33 @@ class TaskUpdate(BaseModel):
         return self
 
 
+class TaskPlanningUpdate(BaseModel):
+    """状態や実績を変更しない、Task行単位の計画更新schema。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: int = Field(ge=1, strict=True)
+    assignee_id: int | None = Field(default=None, strict=True)
+    start_date: date | None = None
+    due_date: date | None = None
+    estimated_minutes: int | None = Field(
+        default=None, ge=0, le=2_147_483_647, strict=True
+    )
+    change_reason: str | None = None
+
+    @model_validator(mode="after")
+    def validate_planning_fields(self):
+        """省略と解除を区別し、変更対象のない更新を拒否する。"""
+        if not self.model_fields_set & {
+            "assignee_id",
+            "start_date",
+            "due_date",
+            "estimated_minutes",
+        }:
+            raise ValueError("計画の変更対象を1項目以上指定してください")
+        return self
+
+
 class TaskRequirementSummary(BaseModel):
     """タスクに紐づく要件の概要を返すschema。"""
 
@@ -102,12 +129,21 @@ class TaskRequirementSummary(BaseModel):
     relation_type: str
 
 
+class TaskParentSummary(BaseModel):
+    """一覧の表示範囲外でも親Taskを名称で識別する軽量参照。"""
+
+    id: int
+    title: str
+    task_code: str
+
+
 class TaskRead(TaskBase):
     """タスク読み取り時に返すschema。"""
 
     id: int
     project_id: int
     version: int
+    parent_summary: TaskParentSummary | None = None
     phase_scope: PhaseScope = "unclassified"
     phase_id: int | None = None
     phase_name: str | None = None

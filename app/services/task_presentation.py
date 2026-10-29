@@ -19,6 +19,7 @@ class TaskPresentationData:
     requirements_by_task_id: dict[int, list[dict[str, Any]]]
     blocked_task_ids: set[int]
     phase_fields: dict[int, dict[str, Any]] = field(default_factory=dict)
+    parents_by_task_id: dict[int, Task] = field(default_factory=dict)
 
 
 class TaskPresentationDataService:
@@ -60,10 +61,23 @@ class TaskPresentationDataService:
             )
         )
         blocked_task_ids = {task.id for task in tasks if self.is_blocked(db, task)}
+        parent_ids = sorted(
+            {task.parent_task_id for task in tasks if task.parent_task_id is not None}
+        )
+        parents = {
+            parent.id: parent
+            for parent in self.task_repository.list_by_ids(db, parent_ids)
+        }
         return TaskPresentationData(
             phase_fields=TaskPhaseRepository().presentation(db, tasks),
             requirements_by_task_id=requirements_by_task_id,
             blocked_task_ids=blocked_task_ids,
+            parents_by_task_id={
+                task.id: parents[task.parent_task_id]
+                for task in tasks
+                if task.parent_task_id in parents
+                and parents[task.parent_task_id].project_id == task.project_id
+            },
         )
 
     def is_blocked(self, db: Session, task: Task) -> bool:
