@@ -33,6 +33,7 @@ from app.schemas.task import (
     TaskCommentRead,
     TaskDependencyRead,
     TaskListResponse,
+    TaskParentSummary,
     TaskRead,
     TaskRequirementSummary,
     TaskTagListResponse,
@@ -479,6 +480,14 @@ class TaskPresenter:
             and task.status not in {"done", "cancelled"}
         )
         task_read.is_blocked = task.id in presentation_data.blocked_task_ids
+        parent = presentation_data.parents_by_task_id.get(task.id)
+        task_read.parent_summary = (
+            TaskParentSummary(
+                id=parent.id, title=parent.title, task_code=parent.task_code
+            )
+            if parent is not None
+            else None
+        )
         task_read.requirements = [
             TaskRequirementSummary.model_validate(requirement)
             for requirement in presentation_data.requirements_by_task_id.get(

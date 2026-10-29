@@ -21,6 +21,7 @@ from app.schemas.task import (
     RequirementTaskRelationRead,
     TaskCreate,
     TaskListResponse,
+    TaskPlanningUpdate,
     TaskRead,
     TaskTagListResponse,
     TaskUpdate,
@@ -165,6 +166,36 @@ def update_task(
         permission_code="task:update",
     )
     task = task_service.update_task(
+        db,
+        task_id=task_id,
+        task_in=task_in,
+        actor_id=current_user.id,
+    )
+    return task_presenter.build_task_response(
+        task,
+        presentation_data=task_presentation_data_service.get_task_presentation_data(
+            db,
+            [task],
+        ),
+    )
+
+
+@router.patch("/tasks/{task_id}/planning", response_model=TaskRead)
+def update_task_planning(
+    task_id: int,
+    task_in: TaskPlanningUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TaskRead:
+    """Task行の計画だけを更新し、状態と実績を保持する。"""
+    task = task_service.get_task(db, task_id)
+    task_service.ensure_user_can_access_task(
+        db,
+        user=current_user,
+        task=task,
+        permission_code="task:update",
+    )
+    task = task_service.update_task_planning(
         db,
         task_id=task_id,
         task_in=task_in,

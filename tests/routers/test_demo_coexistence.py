@@ -14,6 +14,7 @@ from app.core.security import DEMO_AUDIENCE, create_access_token, decode_access_
 from app.db.session import _demo_factory, demo_session_local, engine
 from app.models.demo import DemoSession
 from app.models.project import Project
+from app.models.task import Task
 from app.models.task_phase import ProjectPhase, ProjectPhaseEvent
 from app.models.user import User
 from app.services.demo import DemoService
@@ -31,6 +32,7 @@ def test_phase_contract_is_available_and_cleaned_in_the_isolated_demo(
     demo = start(visitor)
     with demo_session_local() as demo_db:
         project_id = demo_db.scalar(select(Project.id))
+        owner_id = demo_db.scalar(select(User.id))
     headers = {"X-CSRF-Token": visitor.cookies[settings.csrf_cookie_name]}
     created = visitor.post(
         f"/projects/{project_id}/phases", json={"name": "デモ工程"}, headers=headers
@@ -47,6 +49,21 @@ def test_phase_contract_is_available_and_cleaned_in_the_isolated_demo(
         headers=headers,
     )
     assert task.status_code == 201, task.text
+    planned = visitor.patch(
+        f"/tasks/{task.json()['id']}/planning",
+        json={
+            "version": task.json()["version"],
+            "assignee_id": owner_id,
+            "start_date": "2026-11-01",
+            "due_date": "2026-11-02",
+            "estimated_minutes": 0,
+        },
+        headers=headers,
+    )
+    assert planned.status_code == 200, planned.text
+    assert planned.json()["estimated_minutes"] == 0
+    assert planned.json()["actual_start_date"] is None
+    assert planned.json()["status"] == task.json()["status"]
     archived = visitor.patch(
         f"/projects/{project_id}/phases/{phase_id}",
         json={"version": 1, "archived": True},
@@ -56,12 +73,20 @@ def test_phase_contract_is_available_and_cleaned_in_the_isolated_demo(
     assert visitor.get(f"/tasks/{task.json()['id']}").json()["phase_archived"]
     assert db.scalar(select(func.count()).select_from(ProjectPhase)) == 0
     assert db.scalar(select(func.count()).select_from(ProjectPhaseEvent)) == 0
+    assert db.scalar(select(func.count()).select_from(Task)) == 0
     with demo_session_local() as demo_db:
         DemoService().revoke(demo_db, UUID(demo["id"]), "test")
+    rejected = visitor.patch(
+        f"/tasks/{task.json()['id']}/planning",
+        json={"version": planned.json()["version"], "estimated_minutes": 10},
+        headers=headers,
+    )
+    assert rejected.status_code == 401, rejected.text
     assert DemoService().cleanup(UUID(demo["id"]))
     with demo_session_local() as demo_db:
         assert demo_db.scalar(select(func.count()).select_from(ProjectPhase)) == 0
         assert demo_db.scalar(select(func.count()).select_from(ProjectPhaseEvent)) == 0
+        assert demo_db.scalar(select(func.count()).select_from(Task)) == 0
 
 
 @pytest.fixture

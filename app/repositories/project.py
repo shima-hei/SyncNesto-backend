@@ -297,6 +297,27 @@ class ProjectRepository:
 class ProjectMemberRepository:
     """ProjectMemberテーブルへのデータアクセス処理を提供する。"""
 
+    def is_active_member_user(
+        self, db: Session, *, project_id: int, user_id: int
+    ) -> bool:
+        """有効な組織所属とProject所属を持つ担当候補か確認する。"""
+        return (
+            db.query(User.id)
+            .join(ProjectMember, ProjectMember.user_id == User.id)
+            .join(TenantMember, TenantMember.user_id == User.id)
+            .filter(
+                User.id == user_id,
+                User.deleted_at.is_(None),
+                User.is_active.is_(True),
+                ProjectMember.project_id == project_id,
+                ProjectMember.deleted_at.is_(None),
+                TenantMember.tenant_id == db.info.get("tenant_id"),
+                TenantMember.status == "active",
+            )
+            .first()
+            is not None
+        )
+
     def create(
         self,
         db: Session,

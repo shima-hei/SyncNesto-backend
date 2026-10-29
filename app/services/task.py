@@ -24,7 +24,7 @@ from app.models.task import (
 from app.models.task_phase import ProjectPhase
 from app.models.test_design import TestCaseIssue
 from app.models.user import User
-from app.repositories.project import ProjectRepository
+from app.repositories.project import ProjectMemberRepository, ProjectRepository
 from app.repositories.task_change_log import TaskChangeLogRepository
 from app.repositories.task_comment import TaskCommentRepository
 from app.repositories.task_dependency import TaskDependencyRepository
@@ -37,6 +37,7 @@ from app.repositories.task_requirement import (
 from app.schemas.task import (
     RequirementTaskProgressRead,
     TaskCreate,
+    TaskPlanningUpdate,
     TaskUpdate,
 )
 from app.services.audit_log import AuditLogService
@@ -443,6 +444,41 @@ class TaskService:
         actor_id: int | None,
     ) -> Task:
         """タスクを更新する。"""
+        return self._update_task(
+            db,
+            task_id=task_id,
+            task_in=task_in,
+            actor_id=actor_id,
+            planning_only=False,
+        )
+
+    def update_task_planning(
+        self,
+        db: Session,
+        *,
+        task_id: int,
+        task_in: TaskPlanningUpdate,
+        actor_id: int | None,
+    ) -> Task:
+        """状態・実績・工数根拠を保持して計画項目だけを更新する。"""
+        return self._update_task(
+            db,
+            task_id=task_id,
+            task_in=TaskUpdate.model_validate(task_in.model_dump(exclude_unset=True)),
+            actor_id=actor_id,
+            planning_only=True,
+        )
+
+    def _update_task(
+        self,
+        db: Session,
+        *,
+        task_id: int,
+        task_in: TaskUpdate,
+        actor_id: int | None,
+        planning_only: bool,
+    ) -> Task:
+        """共通の排他・履歴・通知を同一transactionで更新する。"""
         if db.info.get("demo_id") is not None:
             from app.db.demo_scope import lock_active_demo
 
@@ -455,6 +491,8 @@ class TaskService:
             requested_version=task_in.version,
             current=current,
         )
+        if planning_only:
+            self._validate_planning_update(db, task, task_in)
         if (
             task.task_type == "bug"
             and task_in.task_type is not None
@@ -499,23 +537,26 @@ class TaskService:
             if task_in.progress_percent is not None
             else task.progress_percent
         )
-        self._validate_task_state(next_status, next_progress)
+        if not planning_only:
+            self._validate_task_state(next_status, next_progress)
         if "phase_assignment" in task_in.model_fields_set:
             TaskPhaseService().validate_assignment(
                 db, task.project_id, task_in.phase_assignment, task.phase_id
             )
-        normalized = task_in.model_copy(
-            update=self._normalize_task_dates(
-                status=next_status,
-                progress_percent=next_progress,
-                actual_start_date=task_in.actual_start_date
-                if "actual_start_date" in task_in.model_fields_set
-                else task.actual_start_date,
-                actual_end_date=task_in.actual_end_date
-                if "actual_end_date" in task_in.model_fields_set
-                else task.actual_end_date,
+        normalized = task_in
+        if not planning_only:
+            normalized = task_in.model_copy(
+                update=self._normalize_task_dates(
+                    status=next_status,
+                    progress_percent=next_progress,
+                    actual_start_date=task_in.actual_start_date
+                    if "actual_start_date" in task_in.model_fields_set
+                    else task.actual_start_date,
+                    actual_end_date=task_in.actual_end_date
+                    if "actual_end_date" in task_in.model_fields_set
+                    else task.actual_end_date,
+                )
             )
-        )
         if task_in.model_fields_set <= {
             "version",
             "change_reason",
@@ -981,6 +1022,32 @@ class TaskService:
         """タスク状態と進捗率の整合性を検証する。"""
         if status == "done" and progress_percent != 100:
             raise BadRequestError(error_messages.TASK_DONE_PROGRESS_INVALID)
+
+    def _validate_planning_update(
+        self, db: Session, task: Task, task_in: TaskUpdate
+    ) -> None:
+        """変更後の予定日と、新しく選択された担当だけを検証する。"""
+        fields = task_in.model_fields_set
+        if fields & {"start_date", "due_date"}:
+            start_date = (
+                task_in.start_date if "start_date" in fields else task.start_date
+            )
+            due_date = task_in.due_date if "due_date" in fields else task.due_date
+            if (
+                start_date is not None
+                and due_date is not None
+                and start_date > due_date
+            ):
+                raise BadRequestError(error_messages.TASK_PLANNING_DATES_INVALID)
+        if (
+            "assignee_id" in fields
+            and task_in.assignee_id is not None
+            and task_in.assignee_id != task.assignee_id
+            and not ProjectMemberRepository().is_active_member_user(
+                db, project_id=task.project_id, user_id=task_in.assignee_id
+            )
+        ):
+            raise BadRequestError(error_messages.TASK_PLANNING_ASSIGNEE_INVALID)
 
     def _normalize_task_dates(
         self,
