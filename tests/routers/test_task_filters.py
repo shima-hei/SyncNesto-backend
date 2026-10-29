@@ -166,7 +166,7 @@ def test_new_filters_keep_project_read_authorization(
 ):
     """検索用の新引数を付けても未参加者の閲覧権限を拡張しない。"""
     project, _ = filter_context
-    outsider = create_test_user()
+    outsider = create_test_user(email="filter-outsider@example.com")
     authorize_as(client, outsider)
     response = client.get(
         f"/projects/{project.id}/tasks?hierarchy=parent&exclude_statuses=done"
