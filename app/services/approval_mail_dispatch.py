@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 def dispatch_pending_mail(*, limit=20, budget_seconds=25):
     """本文や宛先を出さず、結果不明の配送を自動再送しない。"""
-    if not settings.is_public_environment:
+    if not settings.is_public_environment or settings.demo_mode:
         return {"idle": 1}
     worker = ApprovalMailWorker(engine)
     counts = Counter()

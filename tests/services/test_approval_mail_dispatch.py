@@ -17,6 +17,15 @@ from app.services import approval_mail_dispatch as dispatch
 pytestmark = pytest.mark.no_db
 
 
+def test_demo_does_not_construct_worker_or_connect_to_normal_database(monkeypatch):
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "demo_mode", True)
+    worker = Mock()
+    monkeypatch.setattr(dispatch, "ApprovalMailWorker", worker)
+    assert dispatch.dispatch_pending_mail() == {"idle": 1}
+    worker.assert_not_called()
+
+
 def test_queue_is_bounded_and_unknown_is_not_retried_in_dispatch(monkeypatch):
     monkeypatch.setattr(settings, "app_env", "production")
     worker = Mock()
