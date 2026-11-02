@@ -2,8 +2,6 @@
 
 from sqlalchemy import func, select
 
-from app.core.config import settings
-from app.core.exceptions import NotFoundError
 from app.db.base import Base
 from app.models.user import User
 from app.repositories.guest_fixed_approval import GuestFixedApprovalRepository
@@ -21,8 +19,6 @@ class ApprovalNextActionsService:
 
     def read(self, original, user, project_id, approval_id):
         """元が削除済みでも固定した履歴を残し、編集リンクは返さない。"""
-        if not settings.fixed_approval_notifications_enabled:
-            raise NotFoundError()
         approvals = FixedApprovalService()
         with approvals.access(original, user, project_id) as (db, actor):
             row = approvals.get_row(db, actor, project_id, approval_id)

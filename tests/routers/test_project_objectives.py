@@ -7,7 +7,6 @@ import pytest
 from sqlalchemy import delete, select, text
 from sqlalchemy.exc import IntegrityError
 
-from app.core.config import settings
 from app.models.artifact_release import ArtifactRelease
 from app.models.project import Project
 from app.models.project_goal_source_event import ProjectGoalSourceEvent
@@ -30,7 +29,7 @@ def objective_setup(
     monkeypatch,
 ):
     """通常DBを利用せず、本人と案件の認可を作る。"""
-    monkeypatch.setattr(settings, "project_objectives_enabled", True)
+    monkeypatch.setenv("PROJECT_OBJECTIVES_ENABLED", "true")
 
     def make(role="project_admin"):
         user = create_test_user()
@@ -167,7 +166,7 @@ def test_document_fields_are_optional_preserved_and_versioned(
     assert updated.status_code == 200
     data = updated.json()
     assert data["project_scope"] is None and data["purpose"] == "既存の文書目的"
-    monkeypatch.setattr(settings, "project_objectives_enabled", False)
+    monkeypatch.setenv("PROJECT_OBJECTIVES_ENABLED", "false")
     old = client.patch(
         url, json={"version": data["version"], "title": "従来からの文書更新"}
     )
@@ -176,9 +175,9 @@ def test_document_fields_are_optional_preserved_and_versioned(
         client.patch(
             url, json={"version": old.json()["version"], "project_goal": None}
         ).status_code
-        == 403
+        == 200
     )
-    assert client.get(c.url).json()["state"] == "disabled"
+    assert client.get(c.url).json()["state"] == "unselected"
 
 
 def test_fields_length_and_document_version_guard(client, objective_setup):

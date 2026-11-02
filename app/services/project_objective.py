@@ -3,7 +3,6 @@
 from sqlalchemy.orm import Session
 
 from app.core import error_messages
-from app.core.config import settings
 from app.core.exceptions import (
     BadRequestError,
     ForbiddenError,
@@ -58,8 +57,6 @@ class ProjectObjectiveService:
         if db.info.get("demo_id") or db.info.get("data_realm") == "demo":
             return ProjectObjectiveRead(enabled=False, state="disabled")
         project = self.access(db, user, project_id)
-        if not settings.project_objectives_enabled:
-            return ProjectObjectiveRead(enabled=False, state="disabled")
         if not self.can(db, user, project_id, "requirement:read"):
             return ProjectObjectiveRead(enabled=True, state="restricted")
         document = (
@@ -89,7 +86,7 @@ class ProjectObjectiveService:
         """版確認した出典と追記履歴を同じtransactionで確定する。"""
         try:
             project = self.access(db, user, project_id)
-            if not settings.project_objectives_enabled or not all(
+            if not all(
                 self.can(db, user, project_id, code)
                 for code in ("requirement:read", "project:manage_goal_source")
             ):

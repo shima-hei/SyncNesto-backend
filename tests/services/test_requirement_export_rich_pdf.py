@@ -8,7 +8,6 @@ import pytest
 from reportlab.pdfbase.pdfdoc import PDFDocument
 from reportlab.platypus import KeepTogether, LongTable, Paragraph
 
-from app.core.config import settings
 from app.core.exceptions import RequirementPdfExportError
 from app.services import requirement_export_rich_pdf as pdf
 from tests.services.test_requirement_export_html import (
@@ -23,27 +22,31 @@ pytestmark = pytest.mark.no_db
 @pytest.fixture
 def saved(monkeypatch):
     """既存HTML契約と同じ保存済み入力を新PDF経路で使う。"""
-    monkeypatch.setattr(settings, "requirement_rich_pdf_enabled", True)
+    monkeypatch.setenv("REQUIREMENT_RICH_PDF_ENABLED", "true")
     return make_service(monkeypatch)
 
 
-def test_default_flag_is_off():
-    """本番設定を変えず、PDFを有効化しない初期値を維持する。"""
+def test_rich_export_has_no_release_switch():
+    """描画形式を追加の環境変数で隠さない。"""
     from app.core.config import Settings
 
-    assert (
-        Settings.__dataclass_fields__["requirement_rich_pdf_enabled"].default is False
-    )
+    assert "requirement_rich_pdf_enabled" not in Settings.__dataclass_fields__
+    assert "requirement_rich_html_enabled" not in Settings.__dataclass_fields__
 
 
 @pytest.mark.parametrize("kind", ["markdown", "html", "pdf"])
-def test_disabled_pdf_preserves_frozen_legacy_bytes(monkeypatch, kind):
-    """新PDFがOFFなら、固定済みのMarkdown/HTML/PDFを一切変えない。"""
-    monkeypatch.setattr(settings, "requirement_rich_pdf_enabled", False)
-    monkeypatch.setattr(settings, "requirement_rich_html_enabled", False)
+def test_standard_formats_ignore_obsolete_switches(monkeypatch, kind):
+    """旧設定falseでも標準描画を使い、既存Markdownを維持する。"""
+    monkeypatch.setenv("REQUIREMENT_RICH_PDF_ENABLED", "false")
+    monkeypatch.setenv("REQUIREMENT_RICH_HTML_ENABLED", "false")
     service, _, _, _ = make_service(monkeypatch)
     content = export(service, kind, include_comments=True, include_change_logs=True)
-    assert hashlib.sha256(content.encode()).hexdigest() == LEGACY_SHA256[kind]
+    if kind == "markdown":
+        assert hashlib.sha256(content.encode()).hexdigest() == LEGACY_SHA256[kind]
+    elif kind == "html":
+        assert "<!doctype html>" in content
+    else:
+        assert base64.b64decode(content).startswith(b"%PDF-")
 
 
 def test_embedded_real_regular_and_bold_and_success_history(saved):

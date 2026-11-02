@@ -16,8 +16,8 @@ from app.repositories.fixed_approval_notification import (
 )
 from app.services.email import OutgoingEmail
 from app.services.notification_email_preferences import (
-    capture_available,
     email_identity,
+    recipient_delivery_available,
 )
 
 LABELS = {
@@ -80,7 +80,7 @@ def eligible_notification(db, notification_id):
         or preference is None
         or not preference.enabled
         or preference.email_digest != email_identity(user)
-        or not capture_available(user)
+        or not recipient_delivery_available(user.email)
     ):
         return None
     return item, user, preference, external
@@ -90,15 +90,19 @@ def render_email(item, user, external, delivery_id):
     """任意URL・氏名・本文・判断結果を取り込まない。"""
     origin = urlsplit(settings.frontend_public_url)
     if (
-        origin.scheme != "http"
-        or origin.hostname not in {"localhost", "127.0.0.1", "::1"}
+        (
+            origin.scheme != "https"
+            if settings.is_public_environment
+            else origin.scheme != "http"
+            or origin.hostname not in {"localhost", "127.0.0.1", "::1"}
+        )
         or origin.username
         or origin.password
         or origin.path not in {"", "/"}
         or origin.query
         or origin.fragment
     ):
-        raise ValueError("local_frontend_origin_required")
+        raise ValueError("configured_frontend_origin_required")
     title = (
         item["public_context"]["title"] if external else item["fixed_scope"]["title"]
     )

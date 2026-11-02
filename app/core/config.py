@@ -236,33 +236,8 @@ class Settings:
     initial_admin_password: str | None = os.getenv("INITIAL_ADMIN_PASSWORD")
     initial_admin_name: str = os.getenv("INITIAL_ADMIN_NAME", "Initial Admin")
     email_provider: str = os.getenv("EMAIL_PROVIDER", "disabled")
-    fixed_approval_email_enabled: bool = get_bool_env("FIXED_APPROVAL_EMAIL_ENABLED")
-    project_objectives_enabled: bool = get_bool_env("PROJECT_OBJECTIVES_ENABLED")
-    requirement_rich_html_enabled: bool = get_bool_env("REQUIREMENT_RICH_HTML_ENABLED")
-    requirement_rich_pdf_enabled: bool = get_bool_env("REQUIREMENT_RICH_PDF_ENABLED")
-    project_traceability_enabled: bool = get_bool_env("PROJECT_TRACEABILITY_ENABLED")
-    project_overview_schedule_enabled: bool = get_bool_env(
-        "PROJECT_OVERVIEW_SCHEDULE_ENABLED"
-    )
-    requirement_verification_decisions_enabled: bool = get_bool_env(
-        "REQUIREMENT_VERIFICATION_DECISIONS_ENABLED", False
-    )
-    requirement_verification_preparation_enabled: bool = get_bool_env(
-        "REQUIREMENT_VERIFICATION_PREPARATION_ENABLED"
-    )
-    requirement_verification_evidence_enabled: bool = get_bool_env(
-        "REQUIREMENT_VERIFICATION_EVIDENCE_ENABLED"
-    )
     verification_evidence_bucket_name: str = os.getenv(
         "VERIFICATION_EVIDENCE_BUCKET_NAME", ""
-    )
-    project_requirement_agreements_enabled: bool = get_bool_env(
-        "PROJECT_REQUIREMENT_AGREEMENTS_ENABLED"
-    )
-    guest_invitations_enabled: bool = get_bool_env("GUEST_INVITATIONS_ENABLED")
-    guest_fixed_approvals_enabled: bool = get_bool_env("GUEST_FIXED_APPROVALS_ENABLED")
-    fixed_approval_notifications_enabled: bool = get_bool_env(
-        "FIXED_APPROVAL_NOTIFICATIONS_ENABLED"
     )
     local_email_capture_recipients: str = os.getenv(
         "LOCAL_EMAIL_CAPTURE_RECIPIENTS", ""
@@ -305,9 +280,6 @@ class Settings:
         3600,
     )
     default_avatar_key: str = os.getenv("DEFAULT_AVATAR_KEY", "default-avatar.png")
-    shared_publication_download_enabled: bool = get_bool_env(
-        "SHARED_PUBLICATION_DOWNLOAD_ENABLED"
-    )
     shared_file_delivery_endpoint_url: str = os.getenv(
         "SHARED_FILE_DELIVERY_ENDPOINT_URL", ""
     )

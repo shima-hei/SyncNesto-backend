@@ -1,4 +1,4 @@
-"""承認保存transaction内の配送待ちと、LOCALだけの配送worker。"""
+"""承認保存transaction内の配送待ちと、通常DBだけの配送worker。"""
 
 from contextlib import contextmanager
 from datetime import timedelta
@@ -17,7 +17,7 @@ from app.services.notification_email_content import (
     eligible_notification,
     render_email,
 )
-from app.services.notification_email_preferences import local_mail_enabled
+from app.services.notification_email_preferences import approval_mail_available
 from app.services.notification_email_transport import (
     LocalApprovalMailTransport,
     MailOutcome,
@@ -28,7 +28,7 @@ WORKER_LOCK = 1398362934
 
 def enqueue_notification_email(db, notification_id):
     """今回INSERTできた通知だけを同じtransactionで保存する。"""
-    if not local_mail_enabled():
+    if not approval_mail_available():
         return
     value = eligible_notification(db, notification_id)
     if value is None:
@@ -64,14 +64,18 @@ class ApprovalMailWorker:
         self.transport = transport or LocalApprovalMailTransport()
 
     def local_only(self):
-        """公開・デモ・遠隔DBを操作しない。"""
+        """通常の配送先だけを使い、デモDBへ切り替えない。"""
+        from sqlalchemy.engine import make_url
+
         from app.core.config import settings
 
-        if (
-            settings.is_public_environment
-            or settings.demo_mode
-            or self.engine.url.host not in {"localhost", "127.0.0.1", "::1"}
-        ):
+        if settings.demo_mode:
+            raise ValueError("normal_database_required")
+        if settings.is_public_environment:
+            settings.validate_production()
+            if self.engine.url != make_url(settings.database_url):
+                raise ValueError("normal_database_required")
+        elif self.engine.url.host not in {"localhost", "127.0.0.1", "::1"}:
             raise ValueError("local_database_required")
 
     @contextmanager
@@ -323,7 +327,7 @@ class ApprovalMailWorker:
         with self.gate() as acquired:
             if not acquired:
                 return {"busy": 1}
-            if not local_mail_enabled():
+            if not approval_mail_available():
                 return {"disabled": 1}
             claimed = self.recover_and_claim()
             if claimed is None:

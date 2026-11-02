@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query, Response
 
 from app.core.auth import require_project_permission
 from app.models.user import User
+from app.routers.approval_mail_route import ApprovalMailRoute
 from app.routers.artifact_releases import Creator, Db
 from app.routers.guest_invitations import InvitationRoute
 from app.schemas.fixed_approval import (
@@ -31,7 +32,11 @@ from app.services.fixed_approval import FixedApprovalService
 from app.services.fixed_approval_history import FixedApprovalHistoryService
 from app.services.fixed_approval_migration import FixedApprovalMigrationService
 
-router = APIRouter(prefix="/projects/{project_id}", tags=["fixed-approvals"])
+router = APIRouter(
+    prefix="/projects/{project_id}",
+    tags=["fixed-approvals"],
+    route_class=ApprovalMailRoute,
+)
 Reader = Annotated[User, Depends(require_project_permission("requirement:read"))]
 Decider = Annotated[User, Depends(require_project_permission("requirement:approve"))]
 service = FixedApprovalService()

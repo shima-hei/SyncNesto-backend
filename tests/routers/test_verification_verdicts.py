@@ -20,7 +20,7 @@ from tests.routers.test_verification_evidence import evidence as evidence
 @pytest.fixture(autouse=True)
 def enabled(monkeypatch):
     for flag in ("preparation", "evidence", "decisions"):
-        monkeypatch.setattr(settings, f"requirement_verification_{flag}_enabled", True)
+        monkeypatch.setenv(f"REQUIREMENT_VERIFICATION_{flag.upper()}_ENABLED", "false")
 
 
 @pytest.fixture
@@ -584,10 +584,10 @@ def test_flags_cross_project_and_denials_are_private(
         denied.status_code == 404
         and denied.headers["cache-control"] == "private, no-store"
     )
-    monkeypatch.setattr(settings, "requirement_verification_decisions_enabled", False)
+    monkeypatch.setenv("REQUIREMENT_VERIFICATION_DECISIONS_ENABLED", "false")
     disabled = client.get(c["verdicts"])
-    assert disabled.status_code == 200 and disabled.json()["state"] == "disabled"
-    assert client.get(c["verdicts"] + "/" + row["id"]).status_code == 404
+    assert disabled.status_code == 200 and disabled.json()["state"] == "ready"
+    assert client.get(c["verdicts"] + "/" + row["id"]).status_code == 200
 
 
 def test_file_proof_required_head_failure_and_source_removal(
@@ -620,7 +620,7 @@ def test_file_proof_required_head_failure_and_source_removal(
         def verify(self, *args, **kwargs):
             self.calls += 1
 
-        def head_object(self, **kwargs):
+        def head(self, **kwargs):
             if self.unavailable:
                 raise SharedFileUnavailableError()
             return {"VersionId": "dummy-v1", "ContentLength": 5}

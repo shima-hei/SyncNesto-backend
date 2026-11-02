@@ -9,7 +9,6 @@ from unittest.mock import Mock
 import pytest
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.models.requirement import (
     Requirement,
     RequirementChangeLog,
@@ -234,19 +233,28 @@ LEGACY_SHA256 = {
         ("pdf", True),
     ],
 )
-def test_legacy_bytes_and_html_only_flag(monkeypatch, export_format, enabled):
-    """flagがMarkdown/PDFに影響せず、OFFのHTMLも旧出力のままとなる。"""
-    monkeypatch.setattr(settings, "requirement_rich_html_enabled", enabled)
+def test_formats_without_release_switch(monkeypatch, export_format, enabled):
+    """旧設定を変えても標準描画を使い、Markdownの既存内容を保つ。"""
+    monkeypatch.setenv("REQUIREMENT_RICH_HTML_ENABLED", "true" if enabled else "false")
     service, _, _, _ = make_service(monkeypatch)
     content = export(
         service, export_format, include_comments=True, include_change_logs=True
     )
-    assert hashlib.sha256(content.encode()).hexdigest() == LEGACY_SHA256[export_format]
+    if export_format == "markdown":
+        assert (
+            hashlib.sha256(content.encode()).hexdigest() == LEGACY_SHA256[export_format]
+        )
+    elif export_format == "html":
+        assert "<!doctype html>" in content
+    else:
+        import base64
+
+        assert base64.b64decode(content).startswith(b"%PDF-")
 
 
 def test_rich_markup_keeps_structural_boundaries_and_metadata(monkeypatch):
     """本文のh4はREQを分割せず、属性・順番・理由・未所属を残す。"""
-    monkeypatch.setattr(settings, "requirement_rich_html_enabled", True)
+    monkeypatch.setenv("REQUIREMENT_RICH_HTML_ENABLED", "true")
     service, _, _, record = make_service(monkeypatch)
     content = export(service, include_comments=True, include_change_logs=True)
     parsed = HtmlContent(content)
@@ -279,7 +287,7 @@ def test_raw_html_images_mermaid_and_footnotes_are_visible_without_resources(
     monkeypatch,
 ):
     """未対応構文を落とさず、画像/HTMLで外部・ローカル資源を読み込まない。"""
-    monkeypatch.setattr(settings, "requirement_rich_html_enabled", True)
+    monkeypatch.setenv("REQUIREMENT_RICH_HTML_ENABLED", "true")
     service, _, items, _ = make_service(monkeypatch)
     items[1].description = (
         '<script>alert(1)</script>\n<iframe src="https://example.test"></iframe>\n\n'
@@ -319,7 +327,7 @@ def test_raw_html_images_mermaid_and_footnotes_are_visible_without_resources(
 )
 def test_selection_and_optional_sections_are_shared(monkeypatch, comments, history):
     """新HTMLも既存の章選択・コメント/履歴指定を使い、対象外を混ぜない。"""
-    monkeypatch.setattr(settings, "requirement_rich_html_enabled", True)
+    monkeypatch.setenv("REQUIREMENT_RICH_HTML_ENABLED", "true")
     service, _, _, _ = make_service(monkeypatch)
     content = export(
         service,
@@ -335,9 +343,9 @@ def test_selection_and_optional_sections_are_shared(monkeypatch, comments, histo
     assert ("created document:1" in content) == history
 
 
-def test_render_failure_does_not_record_success_and_flag_off_recovers(monkeypatch):
-    """描画失敗前に成功履歴を作らず、OFFで旧HTMLへ戻せる。"""
-    monkeypatch.setattr(settings, "requirement_rich_html_enabled", True)
+def test_render_failure_does_not_record_success_or_hide_failure(monkeypatch):
+    """描画失敗は成功履歴へ残さず、旧設定でも失敗を隠さない。"""
+    monkeypatch.setenv("REQUIREMENT_RICH_HTML_ENABLED", "true")
     service, _, _, record = make_service(monkeypatch)
 
     def fail(*_):
@@ -347,6 +355,7 @@ def test_render_failure_does_not_record_success_and_flag_off_recovers(monkeypatc
     with pytest.raises(RuntimeError, match="renderer failed"):
         export(service)
     record.assert_not_called()
-    monkeypatch.setattr(settings, "requirement_rich_html_enabled", False)
-    assert "<!doctype html>" in export(service)
-    record.assert_called_once()
+    monkeypatch.setenv("REQUIREMENT_RICH_HTML_ENABLED", "false")
+    with pytest.raises(RuntimeError, match="renderer failed"):
+        export(service)
+    record.assert_not_called()

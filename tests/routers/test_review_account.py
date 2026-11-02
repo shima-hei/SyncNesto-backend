@@ -238,7 +238,6 @@ def test_review_public_mcp_can_use_documents_context_and_comments(
         "mcp_plugin_extended_tools_enabled",
         "mcp_read_context_enabled",
         "mcp_task_comments_enabled",
-        "project_objectives_enabled",
     ):
         monkeypatch.setattr(settings, name, True)
     project_id = review["consented_project_id"]

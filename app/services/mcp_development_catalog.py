@@ -113,8 +113,4 @@ def development_tools(connection: McpConnection) -> dict[str, McpTool]:
             name not in {"list_task_comments", "create_task_comment"}
             or settings.mcp_task_comments_enabled
         )
-        and (
-            name != "set_requirement_document_objectives"
-            or settings.project_objectives_enabled
-        )
     }

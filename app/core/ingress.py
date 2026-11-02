@@ -51,7 +51,12 @@ class IngressMiddleware(BaseHTTPMiddleware):
         if request.url.path == "/" and request.method in {"GET", "HEAD"}:
             return await call_next(request)
         if (
-            request.url.path in {"/internal/demo/cleanup", "/internal/trash/cleanup"}
+            request.url.path
+            in {
+                "/internal/demo/cleanup",
+                "/internal/trash/cleanup",
+                "/internal/approval-mail/deliver",
+            }
             and request.method == "GET"
         ):
             # CronはBFFを経由しない。専用秘密の検証はRouterで行う。

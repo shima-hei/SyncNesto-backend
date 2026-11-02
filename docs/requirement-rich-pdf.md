@@ -2,8 +2,8 @@
 
 業務方針はProject5文書10 §19–20、方式決定は作業101、実装は作業103。
 
-`REQUIREMENT_RICH_PDF_ENABLED`は初期false。PDFだけを切り替えます。
-OFFは既存PDF、HTML flagとは独立です。ReportLab/font読込は新PDF経路だけ。
+PDFは構造化rendererを通常機能として使い、一時リリースフラグは使用しません。
+ReportLab/font読込はPDF経路だけで行います。
 元データ、Markdown/HTML、保存済み出力/固定版を変換保存・再生成しません。
 APIの成功schema、章選択/順序/属性/コメント・履歴、認可と成功時のEXPORTEDは共通です。
 
@@ -29,6 +29,6 @@ docsはdeploy除外ですが、通知/fontは除外しません。共有fontのs
 避けるため同一プロセス内の生成をロックします。PDFが3,000,000 bytesを超えたら
 生成停止し、base64/JSONの4.5 MB上限に余裕を残します。maxDuration=60は維持します。
 
-出力回帰はPDF flagをfalseにして再起動/再deploy。依存/importによる起動障害は
-直前の検証済みcommit/deploymentへ戻します。DB migration/downgradeは不要です。
-有効化・merge・本番反映は別承認。HTML/PDFの字形/改ページの完全一致は保証しません。
+出力回帰や依存/importによる起動障害は検証済みの互換commit/deploymentへ戻します。
+DB migration/downgradeは不要です。PRマージ後のCI/CD成功で通常機能として反映します。
+HTML/PDFの字形/改ページの完全一致は保証しません。

@@ -33,8 +33,8 @@ from tests.routers.test_publication_access import access_fixture as access_fixtu
 @pytest.fixture(autouse=True)
 def enabled(monkeypatch):
     """新しい明示ダミーだけを使い、実メールへ接続しない。"""
-    monkeypatch.setattr(settings, "fixed_approval_email_enabled", True)
-    monkeypatch.setattr(settings, "fixed_approval_notifications_enabled", True)
+    monkeypatch.setenv("FIXED_APPROVAL_EMAIL_ENABLED", "true")
+    monkeypatch.setenv("FIXED_APPROVAL_NOTIFICATIONS_ENABLED", "true")
     monkeypatch.setattr(settings, "frontend_public_url", "http://localhost:3000")
     monkeypatch.setattr(settings, "local_email_capture_host", "127.0.0.1")
     monkeypatch.setattr(settings, "local_email_capture_port", 1025)
@@ -207,7 +207,7 @@ def test_pending_delivery_reauthorizes_and_never_revives(
 
         original_email = ctx["approver"].email
         if change == "email_while_disabled":
-            monkeypatch.setattr(settings, "fixed_approval_email_enabled", False)
+            monkeypatch.setenv("FIXED_APPROVAL_EMAIL_ENABLED", "false")
         for email in ["ux-mail-new@example.com", original_email]:
             UserService().update_user(
                 db,
@@ -215,7 +215,7 @@ def test_pending_delivery_reauthorizes_and_never_revives(
                 user_in=UserUpdate(version=ctx["approver"].version, email=email),
             )
             db.commit()
-        monkeypatch.setattr(settings, "fixed_approval_email_enabled", True)
+        monkeypatch.setenv("FIXED_APPROVAL_EMAIL_ENABLED", "true")
         assert not db.get(Preference, ctx["approver"].id).enabled
         assert (
             preference_read(
@@ -322,16 +322,26 @@ def test_new_hook_failure_rolls_back_business(
     assert db.scalar(select(func.count()).select_from(Notification)) == 0
 
 
-def test_feature_off_and_worker_reject_remote(
+def test_mail_preferences_without_release_switch_and_foreign_worker_rejected(
     db, client, approval_context, monkeypatch
 ):
-    """public/遠隔DBや停止中に新経路を開かない。"""
-    monkeypatch.setattr(settings, "fixed_approval_email_enabled", False)
-    assert client.get("/notification-preferences").status_code == 404
+    """旧設定falseでも本人設定を読み、別DBの配送workerは拒否する。"""
+    monkeypatch.setenv("FIXED_APPROVAL_EMAIL_ENABLED", "false")
+    assert client.get("/notification-preferences").status_code == 200
     mail_worker, _ = worker(db)
-    assert mail_worker.run_once() == {"disabled": 1}
+    assert mail_worker.run_once() == {"idle": 1}
     monkeypatch.setattr(settings, "app_env", "production")
-    with pytest.raises(ValueError, match="local_database_required"):
+    monkeypatch.setattr(settings, "validate_production", lambda: None)
+    from types import SimpleNamespace
+
+    from sqlalchemy.engine import make_url
+
+    monkeypatch.setattr(
+        mail_worker,
+        "engine",
+        SimpleNamespace(url=make_url("postgresql://dummy:dummy@foreign.invalid/other")),
+    )
+    with pytest.raises(ValueError, match="normal_database_required"):
         mail_worker.run_once()
 
 

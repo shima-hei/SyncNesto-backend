@@ -13,7 +13,6 @@ from app.core.exceptions import (
     ConflictError,
     EmailUnavailableError,
     ForbiddenError,
-    NotFoundError,
     VersionConflictError,
 )
 from app.models.notification_email import NotificationEmailPreference
@@ -24,14 +23,9 @@ from app.services.email import EmailService
 from app.services.publication_access_context import PublicationAccessContext
 
 
-def local_mail_enabled() -> bool:
-    """明示したLOCALだけで新機能を開く。"""
-    return (
-        settings.fixed_approval_email_enabled
-        and settings.fixed_approval_notifications_enabled
-        and not settings.is_public_environment
-        and not settings.demo_mode
-    )
+def approval_mail_available() -> bool:
+    """通常環境の本人選択を扱い、デモでは配送しない。"""
+    return not settings.demo_mode
 
 
 def email_identity(user: User) -> str:
@@ -43,10 +37,15 @@ def email_identity(user: User) -> str:
     ).hexdigest()
 
 
-def capture_available(user: User) -> bool:
-    """通常SMTPへ漏らさず、当該本人だけの可用性を返す。"""
+def recipient_delivery_available(email: str) -> bool:
+    """本番は既存配信設定、LOCALは明示したダミーだけを使う。"""
     try:
-        return local_mail_enabled() and EmailService.is_local_capture(user.email)
+        if not approval_mail_available():
+            return False
+        if settings.is_public_environment:
+            EmailService().ensure_available()
+            return True
+        return EmailService.is_local_capture(email)
     except EmailUnavailableError:
         return False
 
@@ -54,8 +53,7 @@ def capture_available(user: User) -> bool:
 def pause_email_selection(db: Session, user_id: int) -> None:
     """宛先変更と同じtransactionで旧ONを停止し、元のアドレスでも復活させない。"""
     if (
-        settings.is_public_environment
-        or settings.demo_mode
+        settings.demo_mode
         or db.info.get("data_realm") == "demo"
         or db.info.get("mcp_connection_id")
     ):
@@ -88,7 +86,7 @@ def preference_read(row, user: User) -> NotificationEmailPreferences:
     return NotificationEmailPreferences(
         fixed_approval_email_enabled=bool(row and row.enabled and not changed),
         version=row.version if row else 0,
-        available=capture_available(user),
+        available=recipient_delivery_available(user.email),
         pause_reason="identity_changed" if changed else None,
     )
 
@@ -98,8 +96,8 @@ class NotificationEmailPreferencesService:
 
     def access(self, db, user):
         """デモ・審査・MCP・他人のContextを利用しない。"""
-        if not local_mail_enabled():
-            raise NotFoundError()
+        if settings.demo_mode:
+            raise ForbiddenError()
         if db.info.get("data_realm") == "demo" or db.info.get("mcp_connection_id"):
             raise ForbiddenError()
         if db.get(ReviewAccountGrant, user.id) is not None:
@@ -139,7 +137,9 @@ class NotificationEmailPreferencesService:
                 data.version != 0 and (row is None or row.version != data.version)
             ):
                 raise VersionConflictError(preference_read(row, actor).model_dump())
-            if data.fixed_approval_email_enabled and not capture_available(actor):
+            if data.fixed_approval_email_enabled and not recipient_delivery_available(
+                actor.email
+            ):
                 raise ConflictError(NOTIFICATION_EMAIL_UNAVAILABLE)
             assert row is not None
             row.enabled = data.fixed_approval_email_enabled

@@ -1,7 +1,7 @@
 # 固定承認のアプリ内通知・次操作（Phase 2B-3a）
 
 新規5URL/5操作。DB構造/permission/role/依存の追加なし。
-`FIXED_APPROVAL_NOTIFICATIONS_ENABLED` / `NEXT_PUBLIC_FIXED_APPROVAL_NOTIFICATIONS_ENABLED` は既定false。
+通常機能として新規イベントを通知する。一時リリースフラグは使用しない。
 
 ## 正本と宛先
 
@@ -40,9 +40,9 @@ GET `/projects/{project_id}/fixed-approvals/{approval_id}/next-actions`。
 生URLは返さず、Frontendの既存ルートresolverを使用。元削除/失権時は編集リンクを返さない。
 依頼中でも外部資格が失効していれば次の対応者は申請者。取消後に新しい依頼を作る。
 
-## 停止とrollback
+## rollback
 
-flag=falseで新通知生成を停止し、新5APIは404、新UIは非表示。既存承認・共有本文・添付・招待は維持。
-社内の新通知readerはflag=falseでも型互換を維持する。新enumを持たない旧buildへ無条件に戻すと500になるため、
+PRマージ後のCI/CD成功で反映する。障害時は検証済みの互換commit/deploymentへ戻す。
+新enumを持たない旧buildへ無条件に戻すと500になるため、
 互換readerを含むrollback artifactを使う。通知/判断履歴の削除をrollback手順にしない。
-メール配送・新permission・実顧客送信・PRマージ/本番反映はこの変更に含まない。
+メール配送は[承認メール](approval-email.md)を参照する。新permissionは追加しない。

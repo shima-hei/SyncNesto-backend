@@ -10,6 +10,7 @@ from uuid import uuid4
 import boto3
 import pytest
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 from app.core.config import settings
 from app.core.exceptions import SharedFileUnavailableError
@@ -103,3 +104,36 @@ def test_invalid_size_does_not_access_storage(storage, size):
     with pytest.raises(SharedFileUnavailableError):
         storage.ensure_copy(source(size))
     storage.destination.get_object.assert_not_called()
+
+
+def test_public_environment_reuses_private_storage_and_checks_existing_bytes(
+    monkeypatch,
+):
+    """本番専用の新設定なしで派生コピーを保存し、改変時は署名へ進まない。"""
+    monkeypatch.setattr(settings, "app_env", "production")
+    objects = {"private/source.bin": b"abc"}
+    client = Mock()
+
+    def get_object(**values):
+        key = values["Key"]
+        if key not in objects:
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
+        return {"ContentLength": len(objects[key]), "Body": BytesIO(objects[key])}
+
+    def put_object(**values):
+        assert "IfNoneMatch" not in values
+        objects[values["Key"]] = values["Body"]
+
+    client.get_object.side_effect = get_object
+    client.put_object.side_effect = put_object
+    storage = PublicationDeliveryStorage(
+        source=SimpleNamespace(bucket_name="existing-private", s3_client=client)
+    )
+    item = source()
+    key = storage.ensure_copy(item)
+    assert storage.destination is client and key.startswith("delivery-v1/")
+    assert item.storage_key not in key and str(item.object_id) not in key
+    objects[key] = b"bad"
+    with pytest.raises(SharedFileUnavailableError):
+        storage.ensure_copy(item)
+    assert client.put_object.call_count == 1

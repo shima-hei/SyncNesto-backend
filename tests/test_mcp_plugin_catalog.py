@@ -37,7 +37,6 @@ def enabled_domains(monkeypatch):
     for name in (
         "mcp_read_context_enabled",
         "mcp_task_comments_enabled",
-        "project_objectives_enabled",
     ):
         monkeypatch.setattr(settings, name, True)
 
@@ -84,7 +83,6 @@ def test_public_flag_is_independent_and_unknown_clients_stay_closed(
             {"search_project_items", "get_requirement_context", "get_project_brief"},
         ),
         ("mcp_task_comments_enabled", {"list_task_comments", "create_task_comment"}),
-        ("project_objectives_enabled", {"set_requirement_document_objectives"}),
     ],
 )
 def test_public_flag_preserves_domain_flags(

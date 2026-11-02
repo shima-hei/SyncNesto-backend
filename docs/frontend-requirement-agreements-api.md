@@ -4,7 +4,7 @@
 
 表示対象の正整数IDを1〜100件、繰り返しqueryで渡す。順序/重複を正規化し、同じProjectの有効な要件/文書/章だけを対象にする。対象外IDが混在した場合は全体404。新しい保存/判断操作はない。
 
-有効な社内tenant/Project所属とproject:read/requirement:readを要求する。MCP/guestは不可、demoはdisabled。PROJECT_TRACEABILITY_ENABLEDと新PROJECT_REQUIREMENT_AGREEMENTS_ENABLEDの両方が必要（後者は初期false）。artifact_release:read/document:read/test_plan:readのいずれかが欠ければ、存在を0件へ補完せず全体restricted、items=[]。新permission/role付与はない。
+有効な社内tenant/Project所属とproject:read/requirement:readを要求する。MCP/guestは不可、demoはdisabled。一時リリースフラグを使わず通常機能として提供する。artifact_release:read/document:read/test_plan:readのいずれかが欠ければ、存在を0件へ補完せず全体restricted、items=[]。新permission/role付与はない。
 
 応答はenabled/state（disabled/restricted/ready）/evaluated_at/items。行はrequirement_id/version/internal/externalだけ。各結果はstate/reasonと代表approval_id/event_id。本文・氏名・メール・添付・全履歴は含めない。
 
@@ -24,4 +24,4 @@
 
 Backendはno-store、BFFは成功/失敗ともprivate,no-storeとno-referrer。Queryはtenant/本人/Project/ID集合で分離。復帰・手動更新で再取得し、取得中/失敗/対象版不一致では古い合意表示を使わない。Orvalの配列queryを使い、要件ごとのHTTPは発行しない。既存の追跡GET/承認判定/固定本文を変更しない。
 
-戻す場合は新flagをfalseにしてAPIを再起動する。保存行や権限を変更していないためDB downgradeは不要。
+障害時は互換commit/deploymentへ戻す。保存行や権限を変更していないためDB downgradeは不要。

@@ -1,6 +1,5 @@
 """要件の追跡を、本人/tenant/分野の読取権限内に制限する。"""
 
-from app.core.config import settings
 from app.core.exceptions import ForbiddenError, NotFoundError
 from app.repositories.requirement_trace import EXCERPT_LIMIT, RequirementTraceRepository
 from app.schemas.requirement_trace import (
@@ -42,8 +41,6 @@ class RequirementTraceService:
         if db.info.get("demo_id") or db.info.get("data_realm") == "demo":
             return RequirementTracePage(enabled=False, state="disabled", **base)
         self.access.access(db, user, project_id)
-        if not settings.project_traceability_enabled:
-            return RequirementTracePage(enabled=False, state="disabled", **base)
         if not self.access.can(db, user, project_id, "requirement:read"):
             return RequirementTracePage(enabled=True, state="restricted", **base)
         rows, total = self.repository.rows(
@@ -81,8 +78,6 @@ class RequirementTraceService:
         self.access.access(db, user, project_id)
         if not self.access.can(db, user, project_id, "requirement:read"):
             raise ForbiddenError()
-        if not settings.project_traceability_enabled:
-            raise NotFoundError()
         row = self.repository.detail(db, project_id, requirement_id)
         if row is None:
             raise NotFoundError()

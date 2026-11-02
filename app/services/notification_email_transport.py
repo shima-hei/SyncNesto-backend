@@ -1,9 +1,10 @@
-"""既存SMTP契約を変えない、期限付きLOCAL通知専用adapter。"""
+"""既存SMTP/Resend設定を使う、期限付き承認通知adapter。"""
 
 import hashlib
 import multiprocessing
 import signal
 import smtplib
+import ssl
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -113,26 +114,60 @@ def _capture_child(pipe, message, sender, expires_at):
         return
     signal.setitimer(signal.ITIMER_REAL, remaining)
     try:
+        if settings.is_public_environment and settings.email_provider == "resend":
+            identity = EmailService().send(message)
+            pipe.send(MailOutcome("accepted", "provider_accepted", identity))
+            return
         pipe.send(
-            smtp_exchange(message, sender, expires_at=expires_at, receipt=pipe.send)
+            smtp_exchange(
+                message,
+                sender,
+                expires_at=expires_at,
+                receipt=pipe.send,
+                smtp_factory=configured_smtp
+                if settings.is_public_environment
+                else smtplib.SMTP,
+            )
         )
     except Exception:
-        pass
+        pipe.send(MailOutcome("unknown", "transport_uncertain"))
     finally:
         pipe.close()
+
+
+def configured_smtp(_host, _port, *, timeout):
+    """本番の既存SMTP設定でTLSと認証を行い、捕捉先へ切り替えない。"""
+    EmailService().ensure_available()
+    client = smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=timeout)
+    try:
+        client.ehlo()
+        if settings.smtp_starttls:
+            client.starttls(context=ssl.create_default_context())
+            client.ehlo()
+        if settings.smtp_username:
+            client.login(settings.smtp_username, settings.smtp_password)
+        return client
+    except Exception:
+        client.close()
+        raise
 
 
 class LocalApprovalMailTransport:
     """全体10秒・ロック接続喪失時の停止・process回収を行う。"""
 
     def send(self, message: OutgoingEmail, guard, expires_at) -> MailOutcome:
-        """送信先の既存LOCAL検証を再利用し、fallbackしない。"""
+        """送信先の既存設定を検証し、providerをfallbackしない。"""
         from sqlalchemy import text
 
-        from app.services.notification_email_preferences import local_mail_enabled
+        from app.services.notification_email_preferences import (
+            approval_mail_available,
+            recipient_delivery_available,
+        )
 
-        if not local_mail_enabled() or not EmailService.is_local_capture(message.to):
-            return MailOutcome("failed", "capture_required")
+        if not approval_mail_available() or not recipient_delivery_available(
+            message.to
+        ):
+            return MailOutcome("failed", "delivery_unavailable")
         context = multiprocessing.get_context("spawn")
         parent, child = context.Pipe(duplex=False)
         remaining = min(10, expires_at.timestamp() - time.time())
@@ -145,7 +180,9 @@ class LocalApprovalMailTransport:
             args=(
                 child,
                 message,
-                settings.local_email_capture_from,
+                settings.email_from
+                if settings.is_public_environment
+                else settings.local_email_capture_from,
                 expires_at.timestamp(),
             ),
             daemon=True,

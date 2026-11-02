@@ -4,7 +4,6 @@ import json
 
 from sqlalchemy import select, text
 
-from app.core.config import settings
 from app.core.exceptions import ForbiddenError, NotFoundError
 from app.models.document import DocumentAttachment, ProjectDocument
 from app.models.requirement import Requirement, RequirementDetail
@@ -22,18 +21,9 @@ from app.services.verification_evidence_access import EvidenceAccess
 
 
 class VerdictAccess(EvidenceAccess):
-    @staticmethod
-    def enabled():
-        return (
-            EvidenceAccess.enabled()
-            and settings.requirement_verification_decisions_enabled
-        )
-
     def require(
         self, db, actor, project_id, *, prepare=False, decide=False, document=False
     ):
-        if not self.enabled():
-            raise NotFoundError()
         for code in (
             READS
             + (("requirement_verification:prepare",) if prepare else ())

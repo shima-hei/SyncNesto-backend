@@ -159,8 +159,6 @@ class VerificationEvidenceService:
 
     def page(self, original, user, project_id, plan_id, version, cursor, page_size):
         with self.access.transaction(original, user, project_id) as (db, actor):
-            if not self.access.enabled():
-                return s.EvidencePage(enabled=False, state="disabled")
             if not all(
                 self.access.can(db, actor, project_id, code)
                 for code in (
@@ -525,7 +523,7 @@ class VerificationEvidenceService:
                     set_id=row.id,
                     slot=file["slot"],
                     attempt_id=row.lease_id,
-                    storage_key="verification-evidence-v1/" + uuid4().hex,
+                    storage_key="verification-evidence-v2/" + uuid4().hex,
                     state="reserved",
                     selected=False,
                 )

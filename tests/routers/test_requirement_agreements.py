@@ -5,7 +5,6 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import delete, select
 
-from app.core.config import settings
 from app.models.rbac import Permission, RolePermission
 from app.models.requirement import RequirementDetail
 from app.repositories.requirement_agreement import RequirementAgreementRepository
@@ -28,8 +27,8 @@ from tests.routers.test_requirement_trace import trace_setup as trace_setup
 @pytest.fixture(autouse=True)
 def enabled(monkeypatch):
     """新規読取flagだけを隔離DBで有効にする。"""
-    monkeypatch.setattr(settings, "project_traceability_enabled", True)
-    monkeypatch.setattr(settings, "project_requirement_agreements_enabled", True)
+    monkeypatch.setenv("PROJECT_TRACEABILITY_ENABLED", "true")
+    monkeypatch.setenv("PROJECT_REQUIREMENT_AGREEMENTS_ENABLED", "true")
 
 
 def read(client, project_id, ids):
@@ -72,8 +71,8 @@ def test_no_record_scope_validation_and_restricted(
     db.commit()
     restricted = read(client, c.project.id, [c.req.id]).json()
     assert restricted["state"] == "restricted" and restricted["items"] == []
-    monkeypatch.setattr(settings, "project_requirement_agreements_enabled", False)
-    assert read(client, c.project.id, [c.req.id]).json()["state"] == "disabled"
+    monkeypatch.setenv("PROJECT_REQUIREMENT_AGREEMENTS_ENABLED", "false")
+    assert read(client, c.project.id, [c.req.id]).json()["state"] == "restricted"
 
 
 def test_actual_fixed_digest_and_detail_only_change(client, db, approval_context):

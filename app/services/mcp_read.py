@@ -2,7 +2,6 @@
 
 from datetime import UTC, datetime
 
-from app.core.config import settings
 from app.core.exceptions import NotFoundError
 from app.repositories.mcp import McpRepository
 from app.repositories.mcp_read import McpReadRepository
@@ -111,7 +110,7 @@ class McpReadService:
             project,
             user.id,
             data,
-            include_objectives=settings.project_objectives_enabled,
+            include_objectives=True,
         )
         items = [
             s.SearchMatch(
@@ -207,8 +206,6 @@ class McpReadService:
                 relations[kind] = s.ReadCollection(state="not_requested")
             elif not self.can(db, user, pid, permission):
                 relations[kind] = s.ReadCollection(state="unavailable")
-            elif not settings.project_traceability_enabled:
-                relations[kind] = s.ReadCollection(state="disabled")
             else:
                 total, targets = self.repository.related(
                     db,
@@ -283,8 +280,6 @@ class McpReadService:
         """同意済み案件の、選択された同案件文書だけを既存read権限で読む。"""
         if not self.can(db, user, project.id, "requirement:read"):
             return s.ObjectiveContext(state="unavailable")
-        if not settings.project_objectives_enabled:
-            return s.ObjectiveContext(state="disabled")
         if project.goal_document_id is None:
             return s.ObjectiveContext(
                 state="loaded",

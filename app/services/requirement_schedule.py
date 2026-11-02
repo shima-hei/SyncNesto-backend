@@ -5,7 +5,6 @@ from datetime import date, timedelta
 from sqlalchemy import select
 
 from app.core import error_messages
-from app.core.config import settings
 from app.core.exceptions import BadRequestError, ForbiddenError
 from app.models.project import ProjectMember
 from app.repositories.requirement_schedule import RequirementScheduleRepository
@@ -48,8 +47,6 @@ class RequirementScheduleService:
             is None
         ):
             raise ForbiddenError()
-        if not settings.project_overview_schedule_enabled:
-            return RequirementSchedule(enabled=False)
         if not all(
             access.can(db, user, project_id, code)
             for code in ("task:read", "requirement:read")

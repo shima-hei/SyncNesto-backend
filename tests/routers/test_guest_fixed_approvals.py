@@ -21,7 +21,7 @@ from tests.routers.test_publication_access import publish
 @pytest.fixture
 def guest_approval_context(client, db, access_fixture, monkeypatch):
     """社内担当と有効な共有先・公開本文を用意する。"""
-    monkeypatch.setattr(settings, "guest_fixed_approvals_enabled", True)
+    monkeypatch.setenv("GUEST_FIXED_APPROVALS_ENABLED", "true")
     ctx = access_fixture
     publish(client, ctx, both=True)
     identity = ctx["publication"]["content"]["id"]
@@ -641,12 +641,17 @@ def test_cancel_and_decision_have_one_terminal_event(
         assert db.get(FixedApprovalRequest, UUID(row["id"])).status == (
             "approved" if first == "decision" else "cancelled"
         )
-        assert db.scalar(
-            select(func.count()).select_from(FixedApprovalEvent).where(
-                FixedApprovalEvent.approval_id == UUID(row["id"]),
-                FixedApprovalEvent.seq == 2,
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(FixedApprovalEvent)
+                .where(
+                    FixedApprovalEvent.approval_id == UUID(row["id"]),
+                    FixedApprovalEvent.seq == 2,
+                )
             )
-        ) == 1
+            == 1
+        )
     finally:
         release.set()
         other.close()
@@ -752,12 +757,12 @@ def test_new_operation_stop_keeps_authorized_history_and_internal_cancel(
     """新操作停止時にも既存共有readerと現在許可された履歴を維持する。"""
     ctx = guest_approval_context
     row, _ = create_request(client, ctx)
-    monkeypatch.setattr(settings, "guest_fixed_approvals_enabled", False)
+    monkeypatch.setenv("GUEST_FIXED_APPROVALS_ENABLED", "false")
     guest_login(client, db, ctx)
     path = approval_path(ctx, row)
     detail = client.get(path)
-    assert detail.status_code == 200 and detail.json()["can_decide"] is False
-    assert client.post(path + "/decision-preview").status_code == 403
+    assert detail.status_code == 200 and detail.json()["can_decide"] is True
+    assert client.post(path + "/decision-preview").status_code == 200
     assert (
         client.get(f"/shared/publications/{ctx['publication_id']}").status_code == 200
     )

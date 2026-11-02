@@ -2,7 +2,6 @@
 
 from uuid import uuid4
 
-from app.core.config import settings
 from tests.helpers.auth import authorize_as
 from tests.routers.test_artifact_publications import publication_base
 from tests.routers.test_artifact_releases import context as context  # noqa: F401
@@ -20,7 +19,7 @@ from tests.routers.test_publication_access import (
 def test_v2_objectives_shared_read_and_withdraw(client, access_fixture, monkeypatch):
     """新本文は固定版のまま本人だけに公開し、停止後は全sharedから消す。"""
     ctx = access_fixture
-    monkeypatch.setattr(settings, "project_objectives_enabled", True)
+    monkeypatch.setenv("PROJECT_OBJECTIVES_ENABLED", "true")
     values = {
         "project_goal": "同じゴールへ進む",
         "project_scope": "公開する対象範囲",

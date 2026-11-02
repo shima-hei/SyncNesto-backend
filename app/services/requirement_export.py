@@ -9,7 +9,6 @@ from html import escape
 from sqlalchemy.orm import Session
 
 from app.core import error_messages
-from app.core.config import settings
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.models.requirement import (
     Requirement,
@@ -140,7 +139,7 @@ class RequirementExportService:
             project_id=project_id,
             document_id=document_id,
         )
-        if export_in.format == "pdf" and settings.requirement_rich_pdf_enabled:
+        if export_in.format == "pdf":
             from app.services.requirement_export_rich_pdf import render_document
 
             data = self._get_export_data(
@@ -153,8 +152,7 @@ class RequirementExportService:
             content = base64.b64encode(
                 render_document(data, self._format_value)
             ).decode("ascii")
-        elif export_in.format == "html" and settings.requirement_rich_html_enabled:
-            # 新しい依存の読込もHTMLの有効化時に限定する。
+        elif export_in.format == "html":
             from app.services.requirement_export_html import render_document
 
             data = self._get_export_data(

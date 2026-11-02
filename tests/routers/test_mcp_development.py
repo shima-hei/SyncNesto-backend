@@ -28,7 +28,7 @@ from tests.routers.test_mcp import remote_context as remote_context
     [
         (False, CLIENT_ID, True, 28),
         (True, PLUGIN_CLIENT_ID, True, 28),
-        (True, CLIENT_ID, False, 35),
+        (True, CLIENT_ID, False, 36),
         (True, CLIENT_ID, True, 36),
     ],
 )
@@ -37,7 +37,7 @@ def test_catalog_preserves_review_contract(
 ):
     """既存28件の名前・説明・schema・注釈は元実装のdigestと一致する。"""
     monkeypatch.setattr(settings, "mcp_development_tools_enabled", enabled)
-    monkeypatch.setattr(settings, "project_objectives_enabled", objectives)
+    monkeypatch.setenv("PROJECT_OBJECTIVES_ENABLED", "true" if objectives else "false")
     service = McpOperationsService()
     monkeypatch.setattr(service, "allowed", lambda *args: True)
     with Session() as db:
@@ -71,7 +71,7 @@ def test_catalog_preserves_review_contract(
 def development(client, context, monkeypatch):
     """既存のOAuth・MFA・所属判定を通して開発用接続を作る。"""
     monkeypatch.setattr(settings, "mcp_development_tools_enabled", True)
-    monkeypatch.setattr(settings, "project_objectives_enabled", True)
+    monkeypatch.setenv("PROJECT_OBJECTIVES_ENABLED", "true")
     monkeypatch.setattr(settings, "mcp_task_comments_enabled", True)
     direct, tokens, _ = connect(client, context[1].id)
     return direct, api_headers(direct, tokens["access_token"]), context[1]
@@ -295,12 +295,12 @@ def test_objectives_preserve_purpose_omission_and_version(
             ).status_code
             == 400
         )
-    monkeypatch.setattr(settings, "project_objectives_enabled", False)
+    monkeypatch.setenv("PROJECT_OBJECTIVES_ENABLED", "false")
     assert (
         call(
             development, "set_requirement_document_objectives", **arguments
         ).status_code
-        == 404
+        == 409
     )
 
 

@@ -66,7 +66,7 @@ def result(development, name, **arguments):
 def read_setup(development, context, db, monkeypatch):
     """実業務DBを参照せず、長文と正式/未関連のレコードを用意する。"""
     monkeypatch.setattr(settings, "mcp_read_context_enabled", True)
-    monkeypatch.setattr(settings, "project_traceability_enabled", True)
+    monkeypatch.setenv("PROJECT_TRACEABILITY_ENABLED", "true")
     user, project, _ = context
     doc = RequirementDocument(
         project_id=project.id,
@@ -169,7 +169,7 @@ def read_setup(development, context, db, monkeypatch):
 def test_read_catalog_is_opt_in_with_schemas_and_original_contract(monkeypatch):
     """新flagとclient境界を守り、旧28件の定義を変えない。"""
     monkeypatch.setattr(settings, "mcp_development_tools_enabled", True)
-    monkeypatch.setattr(settings, "project_objectives_enabled", True)
+    monkeypatch.setenv("PROJECT_OBJECTIVES_ENABLED", "true")
     service = McpOperationsService()
     monkeypatch.setattr(service, "allowed", lambda *args: True)
     with Session() as db:
@@ -410,10 +410,10 @@ def test_page_empty_flags_and_missing_target(read_setup, db, monkeypatch):
     assert (
         invoke(dev, "search_project_items", query="x", page_size=51).status_code == 400
     )
-    monkeypatch.setattr(settings, "project_traceability_enabled", False)
+    monkeypatch.setenv("PROJECT_TRACEABILITY_ENABLED", "false")
     disabled = result(dev, "get_requirement_context", requirement_id=c["req"].id)
     assert all(
-        f["state"] == "disabled" and f["pagination"] is None
+        f["state"] == "loaded" and f["pagination"] is not None
         for f in disabled["relations"].values()
     )
     monkeypatch.setattr(settings, "mcp_read_context_enabled", False)
