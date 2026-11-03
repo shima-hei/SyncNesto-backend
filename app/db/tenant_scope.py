@@ -215,6 +215,11 @@ def scope_orm_statement(state) -> None:
     if tenant_id is None or not (state.is_select or state.is_update or state.is_delete):
         return
     user_id = state.session.info.get("tenant_user_id")
+    context = (tenant_id, user_id)
+    cached = state.session.info.get("tenant_scope_options")
+    if cached is not None and cached[0] == context:
+        state.statement = state.statement.options(*cached[1])
+        return
     options = []
     for model in scoped_models():
         name = model.__tablename__
@@ -229,6 +234,9 @@ def scope_orm_statement(state) -> None:
                 include_aliases=True,
             )
         )
+    # SQL条件だけを同じSession内で再利用する。所属・権限の判定結果は保存しない。
+    # tenant/userが切り替わる場合は全条件を再生成する。
+    state.session.info["tenant_scope_options"] = (context, tuple(options))
     state.statement = state.statement.options(*options)
 
 

@@ -31,6 +31,30 @@ PUBLIC_ADDITIONS = {
 }
 
 
+def test_catalog_rechecks_permissions_on_each_request(monkeypatch, enabled_domains):
+    """一覧内で重複を減らしても次の一覧では権限の剥奪を反映する。"""
+    monkeypatch.setattr(settings, "mcp_plugin_extended_tools_enabled", True)
+    service = McpOperationsService()
+    permissions = True
+    calls = []
+
+    def allowed(db, connection, user, project_id, required):
+        calls.append((project_id, required))
+        return permissions
+
+    monkeypatch.setattr(service, "allowed", allowed)
+    connection = McpConnection(project_ids=[1], client_id=PLUGIN_CLIENT_ID)
+    with Session() as db:
+        first = service.catalog(db, connection, User())
+        assert len(first) == 41
+        assert len(calls) == len(set(calls))
+        permissions = False
+        calls.clear()
+        second = service.catalog(db, connection, User())
+        assert {row["name"] for row in second} == {"list_projects"}
+        assert calls
+
+
 @pytest.fixture
 def enabled_domains(monkeypatch):
     """公開用のmaster flagとは独立した既存の機能制約を有効にする。"""
