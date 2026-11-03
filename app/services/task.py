@@ -550,7 +550,13 @@ class TaskService:
                 db, task.project_id, task_in.phase_assignment, task.phase_id
             )
         normalized = task_in
-        if not planning_only:
+        if not planning_only and task_in.model_fields_set & {
+            "status",
+            "progress_percent",
+            "actual_start_date",
+            "actual_end_date",
+            "actual_minutes",
+        }:
             normalized = task_in.model_copy(
                 update=self._normalize_task_dates(
                     status=next_status,

@@ -355,6 +355,52 @@ def test_legacy_patch_still_applies_its_existing_actual_date_normalization(
     assert first.json()["actual_start_date"] == date.today().isoformat()
 
 
+@pytest.mark.parametrize(
+    "status,progress,changes",
+    [
+        ("in_progress", 40, {"priority": "high"}),
+        ("done", 100, {"priority": "high", "due_date": "2026-11-20"}),
+        ("in_progress", 40, {"title": "内容を見直す"}),
+    ],
+)
+def test_metadata_edits_preserve_actuals_and_do_not_record_state_changes(
+    client, db, planning_context, status, progress, changes
+):
+    """軽微な編集や名称保存だけで実績日を補完せず、履歴にも混ぜない。"""
+    _, _, task = planning_context
+    task.status = status
+    task.progress_percent = progress
+    task.actual_start_date = None
+    task.actual_end_date = None
+    task.actual_minutes = 77
+    task.estimated_minutes = 0
+    task.estimated_basis = "rollup"
+    task.actual_basis = "unreviewed"
+    db.commit()
+    before = client.get(f"/tasks/{task.id}").json()
+    response = client.patch(
+        f"/tasks/{task.id}", json={"version": before["version"], **changes}
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    for field in (
+        "status",
+        "progress_percent",
+        "actual_start_date",
+        "actual_end_date",
+        "actual_minutes",
+        "estimated_minutes",
+        "estimated_basis",
+        "actual_basis",
+    ):
+        assert body[field] == before[field], field
+    assert body["version"] == before["version"] + 1
+    assert all(body[field] == value for field, value in changes.items())
+    history = client.get(f"/tasks/{task.id}/change-logs").json()["items"]
+    assert len(history) == 1
+    assert set(history[0]["new_value"]["updated_fields"]) == set(changes)
+
+
 def test_planning_estimate_respects_integer_storage_boundary(client, planning_context):
     """格納できる最大値は保存し、1超過はDB例外ではなく422にする。"""
     _, _, task = planning_context
