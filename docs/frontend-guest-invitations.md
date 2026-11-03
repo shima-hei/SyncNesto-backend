@@ -1,6 +1,6 @@
 # Project限定のゲスト招待（Phase 2B-1）
 
-この段階はLOCALの明示ダミーだけ。`GUEST_INVITATIONS_ENABLED=true` と `LOCAL_EMAIL_CAPTURE_RECIPIENTS=ux-...@example.com` の完全一致リストを必要とする。既存メール設定を変更せず、対象宛先の招待・通常MFA通知だけ127.0.0.1:1025へ捕捉する。非対象の既存メールは従来adapter。公開環境の捕捉設定、遠隔捕捉先、非ダミーallowlistは拒否する。送信失敗時に遠隔へfallbackしない。
+招待は通常機能として提供する。本番は既存EMAIL_PROVIDER/SMTP設定を利用し、新しい環境変数は不要。LOCALでは `LOCAL_EMAIL_CAPTURE_RECIPIENTS=ux-...@example.com` の完全一致リストのダミーだけを127.0.0.1:1025へ捕捉する。公開環境の捕捉設定、遠隔捕捉先、非ダミーallowlistは拒否し、送信失敗時に別送信先へfallbackしない。
 
 内部 `/projects/{project_id}/guest-invitations` のGET/POST、`/{id}/resend` POST、`/{id}/events` GETは既存 `project:invite_member`。`/{id}/revoke` POSTは既存 `project:remove_member`。既存組織管理の経路も再検査する。新permission/role割当なし。POSTはrequest_id、更新時version、取消時reasonを送る。送信受付は受諾を意味しない。再送は旧token/確認Cookieを失効し、招待期限/参加期限を延長しない。結果不明を自動再送しない。
 
@@ -12,4 +12,4 @@
 
 通常LOCALの既存 `MFA_REQUIRED=false` は保持する。新しい受諾ではこの全体flagと独立して追加認証済みsessionを必須にする。ログイン済みで未検証なら新GETのnext_step=mfaを表示し、既存 `/auth/mfa/reauth` と `/mfa` で設定/確認する。既存の任意MFA再認証はsessionのsecurity_versionを複写しないため、その場合だけ5分以内の再認証を認める。認証器/認証情報変更時の既存session一括失効と、確定時のsession/本人再照合を維持する。通常login/MFAのAPIや設定は変更しない。
 
-受諾は参加資格のみ。TenantMember/ProjectMember/role/grant/承認権限を追加しない。公開資料と承認は別工程。各URLはprivate,no-store/no-referrer。feature停止時は新操作を拒否し、内部一覧・履歴と既存の共有閲覧/参加失効を保持する。証跡があるmigrationのdowngradeは拒否し、停止flagで戻す。
+受諾は参加資格のみ。TenantMember/ProjectMember/role/grant/承認権限を追加しない。公開資料と承認は別工程。各URLはprivate,no-store/no-referrer。障害時は互換性を確認したcommit/deploymentへ戻し、内部一覧・履歴と既存の共有閲覧/参加失効を保持する。証跡があるmigrationのdowngradeは拒否する。

@@ -5,8 +5,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 
-from app.core.config import settings
-from app.core.exceptions import ConflictError, ForbiddenError, TokenExpiredError
+from app.core.exceptions import ConflictError, TokenExpiredError
 from app.models.session import UserSession
 from app.repositories.publication_download import PublicationDownloadRepository
 from app.schemas.publication_download import SharedFileDownload
@@ -82,8 +81,6 @@ class PublicationDownloadService:
 
     def download(self, original, user, identity, file_id, data):
         """IO中の停止を妨げず、最終再検査を通った時だけURLを返す。"""
-        if not settings.shared_publication_download_enabled:
-            raise ForbiddenError()
         source = self._resolve(
             original, user, identity, file_id, data.expected_authorization_revision
         )

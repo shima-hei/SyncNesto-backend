@@ -1,6 +1,6 @@
 # 外部参加者による固定内容への判断（Phase 2B-2）
 
-`GUEST_FIXED_APPROVALS_ENABLED=true` の環境だけで新申請・新判断を許可する。停止しても現在の公開資格での本人履歴readと内部取消を保持する。新permission/role割当はない。既存の社内専用申請は要件/文書のまま。
+新申請・新判断は通常機能として提供し、現在の公開資格・指定本人・状態で認可する。一時リリースフラグは使用しない。本人履歴readと内部取消を保持し、新permission/role割当はない。既存の社内専用申請は要件/文書のまま。
 
 独立対象はrequirement（個別合意）、requirement_document（正式承認）、specification（画面/API設計）、test_design（全項目・因子水準・マトリクス・書式）。設計承認は可変statusや実行/合否を更新しない。本文・添付は申請時の不変な公開版へ固定する。
 

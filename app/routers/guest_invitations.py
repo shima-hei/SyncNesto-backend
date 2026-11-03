@@ -7,7 +7,6 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from fastapi.routing import APIRoute
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_authenticated_user, get_current_user
@@ -23,6 +22,7 @@ from app.core.tenant import require_project_management
 from app.db.session import get_db
 from app.models.review_account import ReviewAccountGrant
 from app.models.user import User
+from app.routers.approval_mail_route import ApprovalMailRoute
 from app.schemas.guest_invitation import (
     InvitationCreate,
     InvitationEvents,
@@ -39,7 +39,7 @@ from app.services.guest_invitation import GuestInvitationService
 from app.services.request_limit import consume_email_request_budget, consume_mfa_budget
 
 
-class InvitationRoute(APIRoute):
+class InvitationRoute(ApprovalMailRoute):
     """新しい入口の422へ確認secretやパスワードを反射させない。"""
 
     def get_route_handler(self):
@@ -48,7 +48,8 @@ class InvitationRoute(APIRoute):
 
         async def sanitized(request: Request):
             try:
-                return await handler(request)
+                response = await handler(request)
+                return response
             except RequestValidationError as exc:
                 return JSONResponse(
                     status_code=422,

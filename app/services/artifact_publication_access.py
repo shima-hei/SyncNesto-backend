@@ -7,7 +7,6 @@ from sqlalchemy import func, select, text
 from app.core.exceptions import (
     ConflictError,
     DuplicateResourceError,
-    ForbiddenError,
     NotFoundError,
     VersionConflictError,
 )
@@ -21,7 +20,6 @@ from app.schemas.artifact_publication_access import (
     PublicationGrantRead,
     PublicationOperationResult,
 )
-from app.services import publication_access_context
 from app.services.artifact_publication import ArtifactPublicationService
 from app.services.artifact_publication_projection import NAMESPACE
 from app.services.artifact_release_snapshot import digest
@@ -221,8 +219,6 @@ class ArtifactPublicationAccessService:
     @retry_publication_operation
     def publish(self, original, user, project_id, identity, data, *, adding=False):
         """全文確認・相手・期限を一括確認して、部分成功なしで許可する。"""
-        if not publication_access_context.PUBLICATION_ACCESS_ENABLED:
-            raise ForbiddenError()
         with self.context.transaction(original, user, project_id, write=True) as (
             db,
             actor,

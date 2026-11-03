@@ -1,4 +1,4 @@
-"""元Storageとは別の非公開配信先へ、検証済みの派生コピーを作る。"""
+"""非公開配信先の用途別キーへ、検証済みの派生コピーを作る。"""
 
 import hashlib
 import hmac
@@ -22,11 +22,15 @@ class PublicationDeliveryStorage:
     """公開許可を持たない派生データ。認可は呼出元が毎回行う。"""
 
     def __init__(self, *, source=None, destination=None):
-        """用途ごとにclientとcredentialsを分離する。"""
+        """本番の既存Storageと、LOCALの隔離配信先を使い分ける。"""
+        self.source = source or StorageService(request_timeout_seconds=10)
+        if settings.is_public_environment:
+            self.bucket = self.source.bucket_name
+            self.destination = destination or self.source.s3_client
+            return
         endpoint = urlsplit(settings.shared_file_delivery_endpoint_url)
         if (
-            settings.is_public_environment
-            or endpoint.scheme != "http"
+            endpoint.scheme != "http"
             or endpoint.hostname not in {"127.0.0.1", "localhost"}
             or endpoint.port in {None, 4566}
             or endpoint.username
@@ -41,7 +45,6 @@ class PublicationDeliveryStorage:
         ):
             raise SharedFileUnavailableError()
         self.bucket = settings.shared_file_delivery_bucket_name
-        self.source = source or StorageService(request_timeout_seconds=10)
         self.destination = destination or boto3.client(
             "s3",
             endpoint_url=settings.shared_file_delivery_endpoint_url,
@@ -106,6 +109,9 @@ class PublicationDeliveryStorage:
                 source,
             )
             try:
+                conditions = (
+                    {} if settings.is_public_environment else {"IfNoneMatch": "*"}
+                )
                 self.destination.put_object(
                     Bucket=self.bucket,
                     Key=key,
@@ -113,7 +119,7 @@ class PublicationDeliveryStorage:
                     ContentType="application/octet-stream",
                     CacheControl="private, no-store",
                     Metadata={"sha256": source.content_digest},
-                    IfNoneMatch="*",
+                    **conditions,
                 )
             except ClientError as error:
                 if error.response.get("ResponseMetadata", {}).get(

@@ -12,7 +12,6 @@ from app.core.exceptions import (
     BadRequestError,
     ConflictError,
     DuplicateResourceError,
-    ForbiddenError,
     NotFoundError,
     VersionConflictError,
 )
@@ -37,8 +36,6 @@ from app.services.artifact_release_snapshot import MAX_PAGE_BYTES, digest
 from app.services.audit_log import AuditLogService
 from app.services.fixed_approval_cursor import decode_cursor, encode_cursor
 
-PUBLICATION_WRITES_ENABLED = True
-
 
 class ArtifactPublicationService:
     """ゲスト公開・ダウンロード経路を増やさず準備版を扱う。"""
@@ -51,8 +48,6 @@ class ArtifactPublicationService:
     @contextmanager
     def access(self, original, user, project_id, *, write=False):
         """現在session/MFA/組織/Project所属を再検証する。"""
-        if write and not PUBLICATION_WRITES_ENABLED:
-            raise ForbiddenError()
         with self.releases._transaction(original, user, project_id, "read") as (
             db,
             actor,

@@ -369,14 +369,11 @@ def test_test_graph_public_projection_whole_and_multi_parts(client, db, design_c
     assert '"project_id"' not in raw
 
 
-def test_stop_write_keeps_reader_and_download_is_explicit(client, context, monkeypatch):
-    """準備版生成の停止でreaderを壊さず、新DLは専用POSTだけに限定する。"""
+def test_normal_write_keeps_reader_and_download_is_explicit(client, context):
+    """準備版は通常機能として保存し、新DLは専用POSTだけに限定する。"""
     row, data = create(client, context)
     base = publication_base(context)
-    monkeypatch.setattr(
-        "app.services.artifact_publication.PUBLICATION_WRITES_ENABLED", False
-    )
-    assert client.post(base, json=data).status_code == 403
+    assert client.post(base, json=data).status_code == 200
     assert client.get(f"{base}/{row['content']['id']}").status_code == 200
     paths = client.get("/openapi.json").json()["paths"]
     downloads = {

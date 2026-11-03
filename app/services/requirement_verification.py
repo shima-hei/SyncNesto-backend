@@ -10,7 +10,6 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import DBAPIError
 
 from app.core import error_messages
-from app.core.config import settings
 from app.core.exceptions import (
     ArtifactReleaseTooLargeError,
     BadRequestError,
@@ -72,8 +71,6 @@ class RequirementVerificationService:
             ("requirement_verification:prepare",) if prepare else ()
         ):
             self.access._permission(db, user, project_id, permission)
-        if not settings.requirement_verification_preparation_enabled:
-            raise NotFoundError(error_messages.VERIFICATION_DISABLED)
 
     def scope(self, project_id, *parts):
         return uuid5(
@@ -85,8 +82,6 @@ class RequirementVerificationService:
         with self.access._transaction(original, user, project_id, None) as (db, actor):
             for code in ("project:read", "requirement_verification:read"):
                 self.access._permission(db, actor, project_id, code)
-            if not settings.requirement_verification_preparation_enabled:
-                return s.VerificationList(enabled=False, state="disabled")
             if not all(self.can(db, actor, project_id, code) for code in READS):
                 return s.VerificationList(enabled=True, state="restricted")
             scope = self.scope(project_id, "list", requirement_id, actor.id)

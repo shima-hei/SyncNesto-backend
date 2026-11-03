@@ -5,8 +5,7 @@ from contextlib import contextmanager
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
-from app.core.exceptions import ForbiddenError, NotFoundError
+from app.core.exceptions import ForbiddenError
 from app.db.base import Base
 from app.models.document import DocumentAttachment, ProjectDocument
 from app.models.project import Project
@@ -31,21 +30,12 @@ class EvidenceAccess:
     def __init__(self):
         self.context = PublicationAccessContext()
 
-    @staticmethod
-    def enabled():
-        return (
-            settings.requirement_verification_preparation_enabled
-            and settings.requirement_verification_evidence_enabled
-        )
-
     def can(self, db, actor, project_id, code):
         return self.context.authorization.has_project_permission(
             db, user=actor, project_id=project_id, permission_code=code
         )
 
     def require(self, db, actor, project_id, *, submit=False, document=False):
-        if not self.enabled():
-            raise NotFoundError()
         for code in (
             READS
             + (("requirement_verification:submit",) if submit else ())
@@ -201,8 +191,7 @@ class EvidenceAccess:
         self, original, user, project_id, *, write=False, selection=None, plan_id=None
     ):
         if (
-            settings.is_public_environment
-            or original.info.get("demo_id") is not None
+            original.info.get("demo_id") is not None
             or original.info.get("data_realm") == "demo"
             or original.info.get("mcp_connection_id") is not None
             or original.info.get("tenant_id") is None

@@ -3,7 +3,6 @@
 from datetime import UTC, datetime
 from typing import cast
 
-from app.core.config import settings
 from app.core.exceptions import ForbiddenError, NotFoundError
 from app.repositories.requirement_agreement import RequirementAgreementRepository
 from app.schemas.requirement_agreement import (
@@ -36,13 +35,6 @@ class RequirementAgreementService:
         self.access.access(db, user, project_id)
         if not self.access.can(db, user, project_id, "requirement:read"):
             raise ForbiddenError()
-        if not (
-            settings.project_traceability_enabled
-            and settings.project_requirement_agreements_enabled
-        ):
-            return RequirementAgreementPage(
-                enabled=False, state="disabled", evaluated_at=now
-            )
         if not all(
             self.access.can(db, user, project_id, code) for code in REQUIRED_READS
         ):

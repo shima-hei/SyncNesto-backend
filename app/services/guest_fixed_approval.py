@@ -6,12 +6,10 @@ from uuid import uuid4
 
 from sqlalchemy import func, select
 
-from app.core.config import settings
 from app.core.exceptions import (
     DuplicateResourceError,
     FixedApprovalScopeConflictError,
     FixedApprovalTooLargeError,
-    ForbiddenError,
     NotFoundError,
     VersionConflictError,
 )
@@ -51,12 +49,6 @@ class GuestFixedApprovalService:
         self.access = PublicationAccessRepository()
         self.repository = GuestFixedApprovalRepository()
         self.approvals = FixedApprovalService()
-
-    @staticmethod
-    def enabled():
-        """新しい申請・判断のみを停止できる。"""
-        if not settings.guest_fixed_approvals_enabled:
-            raise ForbiddenError()
 
     def related_user(self, original, project_id, grant_id):
         """資格境界より先に取得するFK対象のIDだけを予備解決する。"""
@@ -257,14 +249,12 @@ class GuestFixedApprovalService:
     @retry_publication_operation
     def preview(self, original, user, project_id, data):
         """保存せず相手に見える依頼を確認する。"""
-        self.enabled()
         with self.internal(original, user, project_id) as (db, actor):
             return self.scope(db, actor, project_id, data)[0]
 
     @retry_publication_operation
     def create(self, original, user, project_id, data):
         """対応・依頼・根拠・封印・監査を一つのtransactionで保存する。"""
-        self.enabled()
         related = self.related_user(original, project_id, data.grant_id)
         with self.internal(
             original, user, project_id, related=(related,) if related else ()

@@ -1,7 +1,7 @@
 # 固定要件の確認表 V1a
 
 既存の要件・固定承認・テスト実行を変更せず、確認の準備を保存する。
-`REQUIREMENT_VERIFICATION_PREPARATION_ENABLED` は既定false。公開/MCPでは有効化しない。
+通常機能として社内の有効な所属・権限・MFAを要求する。MCP/guest/demoでは利用不可。一時リリースフラグは使用しない。
 
 ## API
 
@@ -52,11 +52,11 @@ not_evaluatedとして示し、実行0件やOKへ変換しない。
 
 隔離の代表契約はtests/routers/test_requirement_verifications.pyとtest_verification_candidates.py。
 性能測定は10→50ケースで業務SQL7/全SQL28が一定（約0.21秒、1環境の測定）。
-保持を優先し、戻す際はflag OFF。履歴を消すdowngradeや既存承認の変換は行わない。
+保持を優先し、戻す際は互換commit/deploymentを使用する。履歴を消すdowngradeや既存承認の変換は行わない。
 
 ## V1b: 証拠の提出と保全
 
-`REQUIREMENT_VERIFICATION_EVIDENCE_ENABLED` は既定false。V1aの有効化も必要。
+確認表と証拠は通常機能として提供し、それぞれの既存権限を要求する。
 保存済みの確認表版へ証拠を結び付け、最終合否は決めない。`ready` は保全完了だけを示す。
 
 基点は `/{plan_id}/evidence-sets`（上記Project/確認表prefixの配下）。
@@ -86,9 +86,9 @@ not_evaluatedとして示し、実行0件やOKへ変換しない。
 自身の提出を操作でき、prepareとsubmitの両方を持つ担当者は他者の提出も操作できる。
 当初の提出者と実際の保全/回収操作者は区別して記録する。guest/demo/MCP/運営権限だけの非参加者は不可。
 
-コピーは既存SeaweedFSの専用private bucketで行い、元keyや署名URLを本文・監査へ保存しない。
+新しいコピーは既存Storageのprivate bucketの `verification-evidence-v2/` 配下へ一意キーで追記し、元keyや署名URLを本文・監査へ保存しない。新サービス・新しい環境変数は追加しない。
 90秒leaseで試行を排他し、IO中のDB lockを避け、完了前に版・本人資格・元記録を再確認する。
-VersionIdとSHA256を保全し、元Storageへのfallbackはしない。DB lock待ちは1秒で409、
+SHA256とサイズをDBの不変記録に保全し、取得/最終判断前に実体を照合する。destination_versionは新方式で `sha256:<digest>`、旧方式でnative VersionIdを保持し、旧LOCAL読取も維持する。Storage側の過去版復元は提供しない。元ファイルへのfallbackはしない。DB lock待ちは1秒で409、
 serialization/deadlockだけ最大3回。失効・削除・取消・期限切れの後着コピーは採用しない。
 回収失敗は`safe_error=cleanup_retry_required`、未確認試行数は`comparison.cleanup_pending`。
 これは採用済みファイルの保全状態と別であり、`ready`を不合格に書き換えない。
@@ -96,5 +96,4 @@ serialization/deadlockだけ最大3回。失効・削除・取消・期限切れ
 同一request_idの別内容/版・preview以降の変更は409。無効404、権限外403、入力422/400、容量413。
 全応答はprivate/no-store/no-referrer。一覧は本文を遅延読込せず、件数に伴うSQL増加を避ける。
 Storage障害で元URLを代用せず、同じ操作の再確認/再試行から続ける。
-復旧はflag OFFを基本とし、履歴のあるDBをdowngradeしない。保全の復元にはDBだけでなく、
-VersionIdを保持する停止済みSeaweedFSデータ領域の整合したバックアップが必要。
+障害時は互換commit/deploymentへ戻し、履歴のあるDBをdowngradeしない。復元にはDBとStorage実体の整合したバックアップが必要。新方式を読めない旧buildへ無条件に戻さない。

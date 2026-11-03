@@ -7,7 +7,6 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import delete, event, select
 
-from app.core.config import settings
 from app.models.project import Project
 from app.models.rbac import Permission, RolePermission
 from app.models.requirement import Requirement
@@ -23,7 +22,7 @@ from tests.routers.test_project_objectives import objective_setup as objective_s
 @pytest.fixture
 def trace_setup(objective_setup, create_test_requirement, monkeypatch):
     """A3aと同じ実認可のfixtureを使い、新規GETだけを有効化する。"""
-    monkeypatch.setattr(settings, "project_traceability_enabled", True)
+    monkeypatch.setenv("PROJECT_TRACEABILITY_ENABLED", "true")
 
     def make(role="project_admin"):
         c = objective_setup(role)
@@ -274,11 +273,11 @@ def test_trace_paging_search_and_constant_sql(client, trace_setup, db):
 def test_trace_disabled_and_guest(client, trace_setup, db, monkeypatch):
     """flagで新規読取を止め、外部本人へ内部一覧を開放しない。"""
     c = trace_setup()
-    monkeypatch.setattr(settings, "project_traceability_enabled", False)
+    monkeypatch.setenv("PROJECT_TRACEABILITY_ENABLED", "false")
     data = client.get(c.url).json()
-    assert data["state"] == "disabled" and not data["enabled"] and data["items"] == []
-    assert client.get(f"{c.url}/{c.req.id}").status_code == 404
-    monkeypatch.setattr(settings, "project_traceability_enabled", True)
+    assert data["state"] == "ready" and data["enabled"] and data["items"]
+    assert client.get(f"{c.url}/{c.req.id}").status_code == 200
+    monkeypatch.setenv("PROJECT_TRACEABILITY_ENABLED", "true")
     c.user.user_type = "guest"
     db.commit()
     assert client.get(c.url).status_code == 403

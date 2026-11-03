@@ -5,7 +5,6 @@ from datetime import UTC, date, datetime, timedelta
 import pytest
 from sqlalchemy import delete, event, select
 
-from app.core.config import settings
 from app.models.project import ProjectMember
 from app.models.rbac import Permission, RolePermission
 from app.models.task import Milestone, RequirementTaskRelation
@@ -17,7 +16,7 @@ from tests.routers.test_project_objectives import objective_setup as objective_s
 @pytest.fixture
 def schedule_setup(objective_setup, create_test_requirement, monkeypatch):
     """実認可と一時DBだけを使用する。"""
-    monkeypatch.setattr(settings, "project_overview_schedule_enabled", True)
+    monkeypatch.setenv("PROJECT_OVERVIEW_SCHEDULE_ENABLED", "true")
 
     def make(role="project_admin"):
         c = objective_setup(role)
@@ -39,10 +38,10 @@ def test_schedule_roles_flag_metadata_and_no_writes(
     assert meta.headers["cache-control"] == "no-store"
     assert meta.json()["enabled"] and meta.json()["groups"] == []
     assert client.post(c.url, json={}).status_code == 405
-    monkeypatch.setattr(settings, "project_overview_schedule_enabled", False)
+    monkeypatch.setenv("PROJECT_OVERVIEW_SCHEDULE_ENABLED", "false")
     disabled = client.get(c.url).json()
-    assert not disabled["enabled"] and disabled["summary"] is None
-    assert disabled["total"] is None and disabled["common_total"] is None
+    assert disabled["enabled"] and disabled["summary"] is not None
+    assert disabled["total"] is not None and disabled["common_total"] is not None
 
 
 def test_schedule_unique_tasks_filters_dates_and_deleted_sources(

@@ -22,7 +22,7 @@ def deployment_config(
         raise ValueError("Unknown DELETED_DATA_CLEANUP_MODE")
     # 前の環境向けCronを持ち込まない。
     result.pop("crons", None)
-    crons = []
+    crons = [{"path": "/internal/approval-mail/deliver", "schedule": "0 20 * * *"}]
     if demo_mode or demo_cleanup_configured:
         crons.append({"path": "/internal/demo/cleanup", "schedule": "0 18 * * *"})
     if cleanup_mode != "disabled":

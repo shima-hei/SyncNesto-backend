@@ -379,8 +379,6 @@ class VerificationVerdictService:
 
     def page(self, original, user, project_id, requirement_id, cursor, page_size):
         with self.access.transaction(original, user, project_id) as (db, actor):
-            if not self.access.enabled():
-                return s.VerdictPage(enabled=False, state="disabled")
             try:
                 self.access.require(db, actor, project_id)
             except ForbiddenError:
@@ -728,10 +726,12 @@ class VerificationVerdictService:
                 assert storage is not None
                 if time.monotonic() >= deadline:
                     raise SharedFileUnavailableError()
-                response = storage.destination.head_object(
-                    Bucket=storage.bucket,
-                    Key=file["preserved_key"],
-                    VersionId=file["destination_version"],
+                response = storage.head(
+                    key=file["preserved_key"],
+                    version=file["destination_version"],
+                    sha=file["sha256"],
+                    size=file["byte_size"],
+                    deadline=deadline,
                 )
                 if (
                     response.get("VersionId") != file["destination_version"]
@@ -791,8 +791,6 @@ class VerificationVerdictService:
 
     def verdicts(self, original, user, project_id, ids):
         with self.access.transaction(original, user, project_id) as (db, actor):
-            if not self.access.enabled():
-                return s.RequirementVerdicts(enabled=False, state="disabled")
             try:
                 self.access.require(db, actor, project_id)
             except ForbiddenError:

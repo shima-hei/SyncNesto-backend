@@ -1,18 +1,20 @@
-"""公開設定に秘密を混ぜず、通常環境へCronを増やさない。"""
+"""秘密を含めず、承認配送と明示した回収だけを日次登録する。"""
 
 import pytest
 
 from scripts.configure_demo_deployment import deployment_config, main
 
 pytestmark = pytest.mark.no_db
+MAIL_CRON = {"path": "/internal/approval-mail/deliver", "schedule": "0 20 * * *"}
 
 
 def test_demo_adds_only_daily_cron():
     base = {"functions": {"app/main.py": {"maxDuration": 60}}}
     assert deployment_config(base, "production", demo_mode=True)["crons"] == [
-        {"path": "/internal/demo/cleanup", "schedule": "0 18 * * *"}
+        MAIL_CRON,
+        {"path": "/internal/demo/cleanup", "schedule": "0 18 * * *"},
     ]
-    assert deployment_config(base, "production") == base
+    assert deployment_config(base, "production") == {**base, "crons": [MAIL_CRON]}
     assert "crons" not in base
 
 
@@ -27,11 +29,13 @@ def test_normal_cleanup_is_opt_in_and_does_not_keep_demo_cron(mode):
     """通常回収は明示した時だけ追加し、環境を跨ぐ古いCronは残さない。"""
     base = {"crons": [{"path": "/internal/demo/cleanup", "schedule": "0 18 * * *"}]}
     assert deployment_config(base, "production", mode)["crons"] == [
-        {"path": "/internal/trash/cleanup", "schedule": "0 19 * * *"}
+        MAIL_CRON,
+        {"path": "/internal/trash/cleanup", "schedule": "0 19 * * *"},
     ]
-    assert "crons" not in deployment_config(base, "production")
+    assert deployment_config(base, "production")["crons"] == [MAIL_CRON]
     assert base["crons"][0]["path"] == "/internal/demo/cleanup"
     assert deployment_config(base, "production", mode, demo_mode=True)["crons"] == [
+        MAIL_CRON,
         {"path": "/internal/demo/cleanup", "schedule": "0 18 * * *"},
         {"path": "/internal/trash/cleanup", "schedule": "0 19 * * *"},
     ]
@@ -71,6 +75,6 @@ def test_pulled_demo_flag_selects_cron_without_copying_secrets(
     assert "private-demo-uri" not in generated
     config = json.loads(generated)
     if demo_mode or demo_connections:
-        assert config["crons"][0]["path"] == "/internal/demo/cleanup"
+        assert config["crons"][1]["path"] == "/internal/demo/cleanup"
     else:
-        assert "crons" not in config
+        assert config["crons"] == [MAIL_CRON]

@@ -16,8 +16,6 @@ from app.models.session import UserSession
 from app.models.user import User
 from app.services.authorization import AuthorizationService
 
-PUBLICATION_ACCESS_ENABLED = True
-
 
 def retry_publication_operation(method):
     """新しい操作だけを最大3回再試行し、既存APIの失敗方針を変えない。"""
@@ -138,8 +136,6 @@ class PublicationAccessContext:
         ):
             raise ForbiddenError()
         internal = project_id is not None
-        if not internal and not PUBLICATION_ACCESS_ENABLED:
-            raise ForbiddenError()
         if internal and (
             original.info.get("tenant_id") is None
             or original.info.get("tenant_user_id") != user.id

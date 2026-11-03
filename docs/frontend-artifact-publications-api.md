@@ -36,4 +36,4 @@
 
 認証/MFA/CSRFエラーコードは既存と同じ。別Project/不存在404、権限不足403、previewと生成のdigest不一致409 VERSION_CONFLICT（currentにはdigestだけ）、未ready添付409、容量413、未知構成400。入力422。cursor改変・別対象再利用も拒否する。
 
-停止用 `PUBLICATION_WRITES_ENABLED=False` はpreview/createを拒否し、内部reader/DBガード/固定本文を保持する。データがあるdowngradeは拒否。元資源のpurgeに公開証跡を加えない。通常Storageの実体・設定・既存DLは変更しない。
+一時リリースフラグを使わず、既存の管理/作成権限でpreview/createを認可する。内部reader/DBガード/固定本文を保持し、データがあるdowngradeは拒否。元資源のpurgeに公開証跡を加えない。通常Storageの実体・設定・既存DLは変更しない。

@@ -4,7 +4,6 @@ from contextlib import contextmanager
 
 from sqlalchemy import func, select, text, update
 
-from app.core.config import settings
 from app.core.exceptions import NotFoundError
 from app.repositories.fixed_approval_notification import (
     FixedApprovalNotificationRepository,
@@ -28,8 +27,6 @@ class SharedNotificationService:
     @contextmanager
     def access(self, original, user):
         """Project順に境界を取り、待機後に再認可して件数も保護する。"""
-        if not settings.fixed_approval_notifications_enabled:
-            raise NotFoundError()
         with self.approvals.shared.context.transaction(original, user) as (db, actor):
             query = self.repository.shared(actor.id)
             projects = sorted(
@@ -65,8 +62,7 @@ class SharedNotificationService:
             requester_name=public["requester_name"],
             action=item["action"],
             current_status=item["current_status"],
-            can_decide=item["current_status"] == "requested"
-            and settings.guest_fixed_approvals_enabled,
+            can_decide=item["current_status"] == "requested",
             is_read=item["read_at"] is not None,
             read_at=item["read_at"],
             created_at=item["created_at"],

@@ -7,7 +7,6 @@ import pytest
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import DBAPIError
 
-from app.core.config import settings
 from app.models.rbac import Permission, RolePermission
 from app.models.requirement import RequirementDetail
 from app.models.requirement_verification import RequirementVerificationPlan as Plan
@@ -22,7 +21,7 @@ from tests.routers.test_artifact_releases import context as context
 
 @pytest.fixture(autouse=True)
 def enabled(monkeypatch):
-    monkeypatch.setattr(settings, "requirement_verification_preparation_enabled", True)
+    monkeypatch.setenv("REQUIREMENT_VERIFICATION_PREPARATION_ENABLED", "true")
 
 
 @pytest.fixture
@@ -186,8 +185,8 @@ def test_domain_loss_disabled_cross_project_and_nonmember(
     assert denied.status_code == 403
     assert denied.headers["cache-control"] == "private, no-store"
     assert denied.headers["referrer-policy"] == "no-referrer"
-    monkeypatch.setattr(settings, "requirement_verification_preparation_enabled", False)
-    assert client.get(c["url"]).json()["state"] == "disabled"
+    monkeypatch.setenv("REQUIREMENT_VERIFICATION_PREPARATION_ENABLED", "false")
+    assert client.get(c["url"]).json()["state"] == "restricted"
     assert client.get(c["detail"]).status_code in (403, 404)
     outsider = create_test_user(email="outsider@example.com")
     authorize_as(client, outsider)

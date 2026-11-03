@@ -4,8 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core import error_messages
-from app.core.config import settings
-from app.core.exceptions import DuplicateResourceError, ForbiddenError, NotFoundError
+from app.core.exceptions import DuplicateResourceError, NotFoundError
 from app.models.requirement import RequirementDocument
 from app.repositories.project import ProjectRepository
 from app.repositories.requirement_document import RequirementDocumentRepository
@@ -113,7 +112,6 @@ class RequirementDocumentService:
             NotFoundError: プロジェクトが存在しない場合。
             DuplicateResourceError: document_codeが重複している場合。
         """
-        self._check_objective_write(document_in)
         self._ensure_project_exists(db, project_id)
         if (
             self.repository.get_by_project_document_code(
@@ -244,7 +242,6 @@ class RequirementDocumentService:
             VersionConflictError: versionが一致しない場合。
             DuplicateResourceError: document_codeが重複している場合。
         """
-        self._check_objective_write(document_in)
         document = self.get_document(
             db, project_id=project_id, document_id=document_id, lock=True
         )
@@ -427,14 +424,3 @@ class RequirementDocumentService:
             "approver_id": document.approver_id,
             "version": document.version,
         }
-
-    @staticmethod
-    def _check_objective_write(data) -> None:
-        """停止中は旧フィールドだけの更新を維持する。"""
-        if (
-            not settings.project_objectives_enabled
-            and data.model_fields_set.intersection(
-                {"project_goal", "project_scope", "project_completion_criteria"}
-            )
-        ):
-            raise ForbiddenError()

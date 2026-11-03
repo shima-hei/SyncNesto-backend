@@ -31,7 +31,6 @@ from app.services.fixed_approval import FixedApprovalService
 from app.services.fixed_approval_cursor import decode_cursor, encode_cursor
 from app.services.fixed_approval_notification import emit_fixed_approval
 from app.services.guest_approval_scope import compare_current
-from app.services.guest_fixed_approval import GuestFixedApprovalService
 from app.services.guest_invitation import GuestInvitationService
 from app.services.publication_access_context import retry_publication_operation
 from app.services.shared_publication import SharedPublicationService
@@ -149,7 +148,7 @@ class SharedFixedApprovalService:
             finalized_at=row["finalized_at"],
             decision_reason=reason,
             exception_count=context["exception_count"],
-            can_decide=row["status"] == "requested" and settings_enabled(),
+            can_decide=row["status"] == "requested",
             expires_at=publication["effective_expiry"],
             authorization_revision=revision,
             public_scope_digest=binding["public_scope_digest"],
@@ -282,7 +281,6 @@ class SharedFixedApprovalService:
     @retry_publication_operation
     def preview(self, original, user, publication_id, approval_id):
         """判断準備は保存せず、今回の本人sessionへ確認を束縛する。"""
-        GuestFixedApprovalService.enabled()
         with self.shared.context.transaction(original, user) as (db, actor):
             row, binding, publication, revision = self.get(
                 db, original, actor, publication_id, approval_id
@@ -312,7 +310,6 @@ class SharedFixedApprovalService:
     @retry_publication_operation
     def decide(self, original, user, publication_id, approval_id, data):
         """公開停止と二重判断を直列化し、本人判断と監査を一括commitする。"""
-        GuestFixedApprovalService.enabled()
         with original.get_bind().engine.connect() as connection:
             binding = self.repository.binding(connection, approval_id)
         if binding is None or binding["publication_id"] != publication_id:
@@ -403,10 +400,3 @@ class SharedFixedApprovalService:
             emit_fixed_approval(db, row["id"], status)
             final = self.repository.request(db, approval_id, publication_id)
             return self.read(db, actor, final, binding, publication, revision)
-
-
-def settings_enabled():
-    """停止時には履歴を読めても新たな判断を案内しない。"""
-    from app.core.config import settings
-
-    return settings.guest_fixed_approvals_enabled

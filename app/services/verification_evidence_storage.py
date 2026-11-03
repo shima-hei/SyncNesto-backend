@@ -1,4 +1,4 @@
-"""LOCAL既存SeaweedFSの別bucketへ、予約済みキーだけを保全する。"""
+"""既存Storageの予約済みキーへ証拠を保全し、旧LOCAL版の読取を保持する。"""
 
 import hashlib
 import io
@@ -18,7 +18,7 @@ from app.services.storage import StorageService
 from app.services.test_evidence import TestEvidenceService
 
 
-class EvidenceStorage:
+class VersionedEvidenceStorage:
     """毎回の業務認可はService側。任意bucket/keyを外部入力から受けない。"""
 
     def __init__(self, source=None, destination=None):
@@ -185,15 +185,7 @@ class EvidenceStorage:
                 raise SharedFileUnavailableError()
             url = self.destination.generate_presigned_url(
                 "get_object",
-                Params={
-                    "Bucket": self.bucket,
-                    "Key": key,
-                    "VersionId": version,
-                    "ResponseCacheControl": "private, no-store",
-                    "ResponseContentType": "application/octet-stream",
-                    "ResponseContentDisposition": "attachment; filename*=UTF-8''"
-                    + quote(filename, safe=""),
-                },
+                Params=self.signed_parameters(key, version, filename),
                 ExpiresIn=ttl,
             )
             query = parse_qs(urlsplit(url).query)
@@ -210,3 +202,141 @@ class EvidenceStorage:
                 raise SharedFileUnavailableError()
             return dict(url=url, expires_in=ttl, expires_at=expiry)
         raise SharedFileUnavailableError()
+
+    def signed_parameters(self, key, version, filename):
+        return {
+            "Bucket": self.bucket,
+            "Key": key,
+            "VersionId": version,
+            "ResponseCacheControl": "private, no-store",
+            "ResponseContentType": "application/octet-stream",
+            "ResponseContentDisposition": "attachment; filename*=UTF-8''"
+            + quote(filename, safe=""),
+        }
+
+
+class EvidenceStorage(VersionedEvidenceStorage):
+    """新しい証拠は既存Storageへ追記し、旧VersionIdの読取も維持する。"""
+
+    def __init__(self, source=None, destination=None):
+        self.source = source or StorageService(request_timeout_seconds=5)
+        self.bucket = self.source.bucket_name
+        self.destination = destination or self.source.s3_client
+        self._destination_override = destination
+
+    def legacy(self):
+        return VersionedEvidenceStorage(
+            source=self.source, destination=self._destination_override
+        )
+
+    @staticmethod
+    def require_key(key):
+        if not key.startswith("verification-evidence-v2/"):
+            raise SharedFileUnavailableError()
+
+    def copy(self, file, key):
+        """サーバー予約の一意キーだけへ保存し、既存キーを上書きしない。"""
+        self.require_key(key)
+        if not 0 < file["byte_size"] <= 20 * 1024 * 1024:
+            raise SharedFileUnavailableError()
+        deadline = time.monotonic() + 25
+        try:
+            try:
+                existing = self.destination.get_object(Bucket=self.bucket, Key=key)
+            except ClientError as error:
+                if error.response.get("Error", {}).get("Code") not in {
+                    "NoSuchKey",
+                    "404",
+                    "NotFound",
+                }:
+                    raise
+            else:
+                existing["Body"].close()
+                raise SharedFileUnavailableError()
+            content = self.source.read_uploaded_object(
+                key=file["storage_key"],
+                content_type=file["content_type"],
+                byte_size=file["byte_size"],
+            )
+            if file["kind"] == "test_evidence":
+                TestEvidenceService(storage=self.source)._validate_file(
+                    file["filename"], file["content_type"], content
+                )
+            else:
+                DocumentAttachmentService(storage=self.source).validate_content(
+                    file["filename"], file["content_type"], content
+                )
+            sha = hashlib.sha256(content).hexdigest()
+            self._deadline(deadline)
+            self.destination.put_object(
+                Bucket=self.bucket,
+                Key=key,
+                Body=content,
+                ContentType="application/octet-stream",
+                CacheControl="private, no-store",
+                Metadata={"sha256": sha},
+            )
+            del content
+            version = "sha256:" + sha
+            self.verify(key, version, sha, file["byte_size"], deadline=deadline)
+            return dict(
+                destination_version=version, sha256=sha, byte_size=file["byte_size"]
+            )
+        except (BotoCoreError, ClientError, OSError, BadRequestError):
+            raise SharedFileUnavailableError() from None
+
+    def verify(self, key, version, sha, size, *, deadline=None):
+        deadline = deadline if deadline is not None else time.monotonic() + 25
+        if not version.startswith("sha256:"):
+            return self.legacy().verify(key, version, sha, size, deadline=deadline)
+        self.require_key(key)
+        if version != "sha256:" + sha:
+            raise SharedFileUnavailableError()
+        try:
+            self._deadline(deadline)
+            result = self.destination.get_object(Bucket=self.bucket, Key=key)
+            body = result["Body"]
+            total, hasher = 0, hashlib.sha256()
+            try:
+                if result["ContentLength"] != size:
+                    raise SharedFileUnavailableError()
+                while chunk := body.read(65536):
+                    total += len(chunk)
+                    if total > size:
+                        raise SharedFileUnavailableError()
+                    hasher.update(chunk)
+                    if deadline:
+                        self._deadline(deadline)
+            finally:
+                body.close()
+            if total != size or hasher.hexdigest() != sha:
+                raise SharedFileUnavailableError()
+        except (BotoCoreError, ClientError, OSError):
+            raise SharedFileUnavailableError() from None
+
+    def cleanup(self, key):
+        if not key.startswith("verification-evidence-v2/"):
+            return self.legacy().cleanup(key)
+        self.destination.delete_object(Bucket=self.bucket, Key=key)
+        return True
+
+    def head(self, key, version, sha, size, *, deadline=None):
+        """新方式は実体のハッシュ、旧方式は指定版の存在を確認する。"""
+        if not version.startswith("sha256:"):
+            legacy = self.legacy()
+            return legacy.destination.head_object(
+                Bucket=legacy.bucket, Key=key, VersionId=version
+            )
+        self.verify(key, version, sha, size, deadline=deadline)
+        return {"VersionId": version, "ContentLength": size}
+
+    def sign(self, key, version, filename, deadline, db_now):
+        if not version.startswith("sha256:"):
+            return self.legacy().sign(key, version, filename, deadline, db_now)
+        self.require_key(key)
+        return super().sign(key, version, filename, deadline, db_now)
+
+    def signed_parameters(self, key, version, filename):
+        parameters = super().signed_parameters(key, version, filename)
+        parameters.pop("VersionId")
+        return parameters

@@ -278,9 +278,10 @@ def test_export_requirement_document_returns_formats_and_records_change_log(
     db: Session,
 ) -> None:
     """要件定義書をMarkdown出力でき、変更履歴が記録されることを確認する。"""
-    from app.core.config import settings
 
-    monkeypatch.setattr(settings, "requirement_rich_html_enabled", rich_html)
+    monkeypatch.setenv(
+        "REQUIREMENT_RICH_HTML_ENABLED", "true" if rich_html else "false"
+    )
     user = create_test_user(email="viewer@example.com")
     project = create_test_project(name="Project")
     document = create_test_requirement_document(
@@ -352,6 +353,19 @@ def test_export_requirement_document_returns_formats_and_records_change_log(
     assign_project_role(user=user, project=project, role_key="viewer")
     authorize_as(client, user)
 
+    paragraphs = []
+    if export_format == "pdf":
+        from app.services.requirement_export_rich_pdf import PdfBuilder
+
+        original_paragraph = PdfBuilder.paragraph
+
+        def recorded_paragraph(self, *args, **kwargs):
+            paragraph = original_paragraph(self, *args, **kwargs)
+            paragraphs.append(paragraph.getPlainText())
+            return paragraph
+
+        monkeypatch.setattr(PdfBuilder, "paragraph", recorded_paragraph)
+
     response = client.post(
         f"/projects/{project.id}/requirement-documents/{document.id}/exports",
         json={"format": export_format, "include_comments": True},
@@ -363,12 +377,9 @@ def test_export_requirement_document_returns_formats_and_records_change_log(
     if export_format == "html":
         content = unescape(re.sub(r"<[^>]+>", "", content))
     elif export_format == "pdf":
-        content = "\n".join(
-            bytes.fromhex(value).decode("utf-16-be").lstrip("\ufeff")
-            for value in re.findall(
-                r"<([0-9A-F]+)> Tj", base64.b64decode(content).decode("latin-1")
-            )
-        )
+        pdf = base64.b64decode(content)
+        assert pdf.startswith(b"%PDF-") and b"/ToUnicode" in pdf
+        content = "\n".join(paragraphs)
     assert "Syncnesto 要件定義書" in content
     assert "REQ-020 業務フローを管理できる" in content
     assert content.index("REQ-010") < content.index("REQ-020")
@@ -461,9 +472,8 @@ def test_export_requirement_document_returns_pdf_base64(
     create_test_requirement_document: Callable[..., RequirementDocument],
 ) -> None:
     """要件定義書をPDF出力できることを確認する。"""
-    from app.core.config import settings
 
-    monkeypatch.setattr(settings, "requirement_rich_pdf_enabled", rich_pdf)
+    monkeypatch.setenv("REQUIREMENT_RICH_PDF_ENABLED", "true" if rich_pdf else "false")
     user = create_test_user(email="viewer@example.com")
     project = create_test_project(name="Project")
     document = create_test_requirement_document(project=project, title="PDF Export")
@@ -492,9 +502,8 @@ def test_rich_pdf_missing_character_returns_safe_error_without_export_history(
     db: Session,
 ) -> None:
     """既存400形式で対象を示し、欠字を含むPDFを成功記録しない。"""
-    from app.core.config import settings
 
-    monkeypatch.setattr(settings, "requirement_rich_pdf_enabled", True)
+    monkeypatch.setenv("REQUIREMENT_RICH_PDF_ENABLED", "true")
     user = create_test_user(email="pdf-viewer@example.com")
     project = create_test_project(name="PDF Project")
     document = create_test_requirement_document(project=project, title="秘密😀")

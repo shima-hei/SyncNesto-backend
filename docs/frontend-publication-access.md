@@ -8,13 +8,12 @@ Cookie/session/MFA/CSRF、本人参加資格＋grant＋公開中の現在状態�
 既存schema/permission/role/API応答に変更なし。未知/他人/停止/未採用fileは同じ404、世代違い409、
 配信先/コピー/digest/時計の不整合は503 `SHARED_FILE_UNAVAILABLE`。全応答private,no-store/no-referrer。
 
-Backend flag `SHARED_PUBLICATION_DOWNLOAD_ENABLED`は既定false。
-LOCAL専用の別非公開Storageに、ready保全実体のSHA256検証済み派生コピーを条件PUTする。
+通常機能として提供する。本番は既存Storageの非公開bucketの専用キーへ、ready保全実体のSHA256検証済み派生コピーを保存する。LOCALは従来の別非公開Storageを利用する。
 元S3キー・bucketをURL発行入力に使わせない。コピーの前後で再認可し、外部IO中は資格/Projectロックを持たない。
 最終発行時にはsession行の共有ロックも取得し、JWT/session/資格/grantの期限と両時計で最大60秒に制限する。
 元Storage/SQSの設定や内部DLは変更しない。開始済み転送/保存済みコピーは回収対象外。
 
-Frontendは同名flagの可否のみをServer Componentから渡す。
+Frontendは現在の本人資格と公開状態に応じて操作を表示する。
 URLの新規発行は明示操作だけ。S3 GETはCookie/内部headerなし、no-store/no-referrer、redirect拒否。
 20MiB以内とSHA256を検査し、操作中のメモリだけで保存する。本人変更/logout/mask/取消でabortし、
 古いPOST/GET応答から保存を開始しない。署名URL・bytesを永続cache/通常ログへ残さない。
@@ -90,6 +89,6 @@ User/所有Tenant/Project停止、同所有組織への所属、含まれる元�
 [snapshot規則](https://www.postgresql.org/docs/16/transaction-iso.html#XACT-READ-COMMITTED)に基づく実装で、
 専用並行試験と既存API回帰を併用する。配送済み・保存済み本文の回収は保証しない。
 
-`publication_access_context.PUBLICATION_ACCESS_ENABLED=False`で新公開/共有取得を停止する。
-停止/失効、内部reader、現在状態、DBガード/履歴は残す。証跡ありdowngradeは拒否する。
+障害時は互換性を確認したcommit/deploymentへ戻す。
+停止/失効、内部reader、現在状態、DBガード/履歴は保持し、証跡ありdowngradeは拒否する。
 初期ロール付与はpublish permission1つをproject_admin/managerへ計2割当のみ。

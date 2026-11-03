@@ -1,8 +1,8 @@
 # Syncnesto Frontend Authorization Guide
 
-## 固定要件の最終判断（V2・LOCAL限定）
+## 固定要件の最終判断（V2）
 
-指定本人の`requirement_verification:decide`と既存の分野別readを要求する。自己判定可、代理不可。依頼/未完取消は既存prepareの追加操作。社内所属・現在session/MFAをRCで再検証し、Storage IO後にも確認する。新2表/ガード、12操作、flag、期限・保全・履歴の詳細は[専用契約](requirement-verdicts.md)。旧FixedApprovalの自己承認禁止・公開/MCPの境界は変更しない。
+指定本人の`requirement_verification:decide`と既存の分野別readを要求する。自己判定可、代理不可。依頼/未完取消は既存prepareの追加操作。社内所属・現在session/MFAをRCで再検証し、Storage IO後にも確認する。新2表/ガード、12操作、期限・保全・履歴の詳細は[専用契約](requirement-verdicts.md)。旧FixedApprovalの自己承認禁止・外部共有/MCPの境界は変更しない。
 
 ## Phase 3A 要件の確認表（V1a）
 
@@ -24,7 +24,7 @@ system/tenant role単独・ゲスト・MCP・デモでは利用不可。既存�
 共有の新POSTだけに、3bの本人資格/許可/公開状態の前後検証とsession行共有ロックを加える。
 初回認証で検証したJWTのexpだけをrequest内contextへ渡し、最終発行時の期限に含める。
 既存APIの認可結果・permission/role・Cookie/CSRF仕様は変更しない。
-feature無効403、失効/対象不明404、revision不一致409、実体/配信先障害503。
+失効/対象不明404、revision不一致409、実体/配信先障害503。
 配信先へのGETは短期bearer URLであり、発行後の最大60秒と開始済み転送の扱いは別。
 詳細は`frontend-publication-access.md`の3c節を参照。
 

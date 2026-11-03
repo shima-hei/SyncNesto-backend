@@ -40,7 +40,7 @@ EMAIL = "ux-invitation-recipient@example.com"
 @pytest.fixture(autouse=True)
 def invitation_settings(monkeypatch):
     """外部配送せず、ダミー宛メールをメモリへ捕捉する。"""
-    monkeypatch.setattr(settings, "guest_invitations_enabled", True)
+    monkeypatch.setenv("GUEST_INVITATIONS_ENABLED", "true")
     monkeypatch.setattr(settings, "local_email_capture_recipients", EMAIL)
     messages = []
     monkeypatch.setattr(
@@ -345,27 +345,27 @@ def test_same_organization_member_is_not_guest(
     )
 
 
-def test_new_operations_stop_but_management_reader_remains(
+def test_invitation_works_without_release_switch(
     client, context, invitation_settings, monkeypatch
 ):
-    """flag停止時は新操作を止め、内部履歴は読める。"""
+    """旧設定がfalseでも、許可した本人の確認と招待再送を継続する。"""
     row, token, _ = create(client, context, invitation_settings)
-    monkeypatch.setattr(settings, "guest_invitations_enabled", False)
+    monkeypatch.setenv("GUEST_INVITATIONS_ENABLED", "false")
     assert client.get(base(context)).status_code == 200
     assert client.get(f"{base(context)}/{row['id']}/events").status_code == 200
-    assert (
-        client.post(
-            f"{base(context)}/{row['id']}/resend", json=command(row)
-        ).status_code
-        == 403
-    )
     assert (
         client.post(
             f"/guest-invitations/{row['id']}/inspect",
             json={"token": token},
             headers=ORIGIN,
         ).status_code
-        == 403
+        == 200
+    )
+    assert (
+        client.post(
+            f"{base(context)}/{row['id']}/resend", json=command(row)
+        ).status_code
+        == 200
     )
 
 

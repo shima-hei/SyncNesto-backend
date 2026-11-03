@@ -4,8 +4,8 @@
 
 ## 有効化と保護
 
-- `REQUIREMENT_RICH_HTML_ENABLED`は既定false。`html`形式だけを切り替える。
-- OFFは旧HTML。Markdown/PDFはflagにかかわらず既存rendererを使う。既存の固定版・保存済みファイルを再生成せず、原文も変換保存しない。
+- HTMLは構造化rendererを通常機能として使い、一時リリースフラグは使用しない。
+- Markdownの出力は維持し、PDFは専用の構造化rendererを使う。既存の固定版・保存済みファイルを再生成せず、原文も変換保存しない。
 - 既存API・`requirement:read`認可・章選択・コメント/履歴の指定・結果schemaは変更しない。出力成功後の既存EXPORTED履歴を使い、描画失敗前には記録しない。
 - 取得・絞込・REQコード順は共通のRequirementExportDataに集約し、REQの印刷区間はモデルIDで確定する。本文のh4等で区切りを推測しない。
 - 文書/REQ属性とタイトルは通常文字列としてescapeする。本文・理由・受入条件・章本文・未決事項・コメントはMarkdownとして描画する。
@@ -20,10 +20,10 @@ markdown-it-py 4.2.0とmdurlのみを追加。CommonMark基盤に表を有効化
 
 ## 検証と反映
 
-- 旧commitの同一入力から固定したMarkdown/旧HTML/PDFのSHA、HTML限定flag、構造境界、表/強調/code、raw HTML/画像/未対応構文、選択・任意情報、失敗時の履歴を代表ケースで検証する。
+- Markdownの既存SHA、構造境界、表/強調/code、raw HTML/画像/未対応構文、選択・任意情報、失敗時の履歴を代表ケースで検証する。旧環境変数が残っていても標準描画を停止しない。
 - ChromiumのA4 QAは通常/長い表/横長表/一頁超セルで本文末尾・範囲・改ページを確認する。一時的なサンプル出力と専用一時DBのAPIテストを使い、通常DBに検証用出力履歴を追加しない。
 - 技術結果は`.verify/task100-html/`、ブラウザ生成物は`output/playwright/task100-html/`。LOCAL・CI・本番を区別し、UXのmerge/本番反映は別承認。
 
 ## 切り戻し
 
-出力回帰はflagをfalseにして再起動/再deployする。新依存のimportは有効なHTML経路でだけ行う。依存や起動そのものの障害は直前の検証済みcommit/deploymentへ戻す。DB migration/downgrade、業務データ削除は不要。
+出力回帰は検証済みの互換commit/deploymentへ戻す。描画用依存のimportはHTML経路で行う。DB migration/downgrade、業務データ削除は不要。

@@ -25,8 +25,8 @@ from tests.routers.test_requirement_verifications import (
 
 @pytest.fixture(autouse=True)
 def enabled(monkeypatch):
-    monkeypatch.setattr(settings, "requirement_verification_preparation_enabled", True)
-    monkeypatch.setattr(settings, "requirement_verification_evidence_enabled", True)
+    monkeypatch.setenv("REQUIREMENT_VERIFICATION_PREPARATION_ENABLED", "true")
+    monkeypatch.setenv("REQUIREMENT_VERIFICATION_EVIDENCE_ENABLED", "true")
 
 
 @pytest.fixture
@@ -206,12 +206,12 @@ def test_project_roles(
 def test_flags_and_public_environment(client, evidence, monkeypatch):
     c = evidence
     row, _ = create(client, c)
-    monkeypatch.setattr(settings, "requirement_verification_evidence_enabled", False)
-    assert client.get(c["evidence"]).json()["state"] == "disabled"
-    assert client.get(c["evidence"] + "/" + row["id"]).status_code == 404
-    monkeypatch.setattr(settings, "requirement_verification_evidence_enabled", True)
+    monkeypatch.setenv("REQUIREMENT_VERIFICATION_EVIDENCE_ENABLED", "false")
+    assert client.get(c["evidence"]).json()["state"] == "ready"
+    assert client.get(c["evidence"] + "/" + row["id"]).status_code == 200
+    monkeypatch.setenv("REQUIREMENT_VERIFICATION_EVIDENCE_ENABLED", "true")
     monkeypatch.setattr(settings, "app_env", "production")
-    assert client.get(c["evidence"]).status_code == 403
+    assert client.get(c["evidence"]).status_code == 200
 
 
 def test_unfinished_limit_cancel_and_audit_rollback(client, evidence, db, monkeypatch):
@@ -276,6 +276,72 @@ def test_ready_database_immutable(client, evidence, db, sql):
     row, _ = create(client, evidence)
     with pytest.raises(DBAPIError), db.get_bind().engine.begin() as connection:
         connection.execute(text(sql), {"id": UUID(row["id"])})
+
+
+def test_storage_key_migration_preserves_legacy_and_refuses_lossy_downgrade(
+    client, evidence, db, monkeypatch
+):
+    """旧版の保存内容を変えず、新方式の採用後は制約を巻き戻さない。"""
+    from alembic.config import Config
+    from sqlalchemy import event
+
+    from alembic import command
+    from app.models.verification_evidence import VerificationEvidenceObject as Object
+
+    c = evidence
+    attach(db, c)
+    config = Config("alembic.ini")
+    db.commit()
+    command.downgrade(config, "ab26d41066c1")
+
+    class Storage:
+        def copy(self, file, key):
+            return dict(
+                destination_version="legacy-native-version",
+                sha256="a" * 64,
+                byte_size=file["byte_size"],
+            )
+
+    monkeypatch.setattr(service, "storage_factory", Storage)
+
+    def legacy_key(_mapper, _connection, target):
+        target.storage_key = target.storage_key.replace("-v2/", "-v1/")
+
+    event.listen(Object, "before_insert", legacy_key)
+    try:
+        old, _ = create(client, c)
+        response = client.post(
+            c["evidence"] + "/" + old["id"] + "/advance",
+            json={"version": old["version"]},
+        )
+        assert response.status_code == 200 and response.json()["status"] == "ready", (
+            response.text
+        )
+    finally:
+        event.remove(Object, "before_insert", legacy_key)
+    statement = text(
+        "SELECT row_to_json(o)::text FROM "
+        "requirement_verification_evidence_objects o ORDER BY id"
+    )
+    before = db.execute(statement).scalars().all()
+    assert len(before) == 1 and "verification-evidence-v1/" in before[0]
+    db.commit()
+    command.upgrade(config, "head")
+    assert db.execute(statement).scalars().all() == before
+    db.commit()
+    new, _ = create(client, c)
+    response = client.post(
+        c["evidence"] + "/" + new["id"] + "/advance", json={"version": new["version"]}
+    )
+    assert response.status_code == 200 and response.json()["status"] == "ready", (
+        response.text
+    )
+    assert any(
+        "verification-evidence-v2/" in row for row in db.execute(statement).scalars()
+    )
+    db.commit()
+    with pytest.raises(RuntimeError, match="新方式の証拠"):
+        command.downgrade(config, "ab26d41066c1")
 
 
 def test_copy_reservation_failure_retry_success_and_download(

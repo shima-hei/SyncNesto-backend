@@ -113,7 +113,6 @@ def download_fixture(client, db, context, monkeypatch, create_test_user):
     ctx["url"] = shared_path(ctx, f"/files/{file['id']}/download")
     ctx["request"] = {"expected_authorization_revision": ctx["revision"]}
     for name, value in {
-        "shared_publication_download_enabled": True,
         "shared_file_delivery_endpoint_url": "http://127.0.0.1:18333",
         "shared_file_delivery_bucket_name": "dummy-delivery",
         "shared_file_delivery_access_key_id": "dummy",
@@ -157,7 +156,9 @@ def test_download_selected_fixed_file_and_reuses_private_copy(
 @pytest.mark.parametrize(
     "target", ["other_user", "unknown_file", "csrf", "revision", "flag"]
 )
-def test_download_denied_before_storage(client, download_fixture, monkeypatch, target):
+def test_download_authorization_and_removed_flag(
+    client, download_fixture, monkeypatch, target
+):
     ctx = download_fixture
     if target == "other_user":
         authorize_as(client, ctx["guests"][1][0])
@@ -168,17 +169,20 @@ def test_download_denied_before_storage(client, download_fixture, monkeypatch, t
     elif target == "revision":
         ctx["request"]["expected_authorization_revision"] = "0" * 64
     else:
-        monkeypatch.setattr(settings, "shared_publication_download_enabled", False)
+        monkeypatch.setenv("SHARED_PUBLICATION_DOWNLOAD_ENABLED", "false")
     expected = {
         "other_user": 404,
         "unknown_file": 404,
         "csrf": 403,
         "revision": 409,
-        "flag": 403,
+        "flag": 200,
     }[target]
     response = post(client, ctx)
     assert response.status_code == expected
     assert response.headers["cache-control"] == "private, no-store"
+    if target == "flag":
+        assert ctx["delivery"].objects and ctx["delivery"].signs == 1
+        return
     assert not ctx["delivery"].objects and ctx["delivery"].signs == 0
 
 

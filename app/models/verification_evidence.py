@@ -4,6 +4,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -76,6 +77,10 @@ class VerificationEvidenceObject(Base):
     __tablename__ = "requirement_verification_evidence_objects"
     __table_args__ = (
         UniqueConstraint("storage_key"),
+        CheckConstraint(
+            "storage_key ~ '^verification-evidence-v[12]/[a-f0-9]{32}$'",
+            name="ck_verification_evidence_storage_key",
+        ),
         Index(
             "uq_verification_evidence_selected",
             "set_id",
@@ -85,7 +90,7 @@ class VerificationEvidenceObject(Base):
         ),
         {
             "comment": db_comment(
-                "検証証拠の保全試行", "VersionIdと保全時bytesの同一性を記録する"
+                "検証証拠の保全試行", "保存版の識別子と保全時bytesの同一性を記録する"
             )
         },
     )

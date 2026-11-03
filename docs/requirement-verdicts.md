@@ -1,12 +1,12 @@
 # 固定要件の最終判断（V2）
 
-LOCAL限定。`REQUIREMENT_VERIFICATION_DECISIONS_ENABLED`と既存の確認表/証拠flagがすべてtrueの場合だけ利用する。既定false。旧正式承認、自己承認禁止、通知、テスト実行の保存契約は変更しない。
+通常機能として既存の社内所属・指定本人・権限で認可する。一時リリースフラグは使用しない。旧正式承認、自己承認禁止、通知、テスト実行の保存契約は変更しない。
 
 ## 資格と正本
 
 - 有効な同組織・同Projectの社内所属、現在のsession/MFA、`project:read`・`requirement:read`・`test_plan:read`・`test_case:read`・`requirement_verification:read`を要求する。文書添付を含む構成は`document:read`も必要。
 - `requirement_verification:prepare`で依頼作成/判断待ち取消。割当は既存のまま。
-- `requirement_verification:decide`をproject_admin/manager/memberへ各付与。指定本人だけ確認/判断/撤回でき、自己指定を認める。運営権限、別人、ゲスト、閲覧専用、MCP、demo、公開環境へ流用しない。
+- `requirement_verification:decide`をproject_admin/manager/memberへ各付与。指定本人だけ確認/判断/撤回でき、自己指定を認める。運営権限だけの非参加者、別人、ゲスト、閲覧専用、MCP、demoへ流用しない。
 - 指定時の所属ID/版と権限を固定し、変化後は取消＋再依頼。表示名だけの変更は資格変更にしない。
 - 固定要件と保存確認表版・明示選択したready entry/manifestだけを根拠とする。本文の正本や実行履歴を書き換えない。
 
@@ -55,4 +55,4 @@ S3の確認とDB commitは原子的ではない。証明するのは記録した
 
 `tests/routers/test_verification_verdicts.py`で自己/代理/role・全ケース・対象外・未確認・旧版差分・NG→OK・明示系列・取消/撤回・session/MFA/期限・IO中取消・保全不一致を検証する。既存正式承認、確認表、証拠の全体回帰を維持する。
 
-通常LOCALは保全/復元検証後に追加migrationを適用する。障害時はflag OFF＋API再開で機能を停止し、判断履歴を削除しない。確認表/判断履歴や独自権限割当があるDBのdowngradeは拒否する。旧依存・運営管理差分・Storage設定を維持し、PRマージ/本番反映は別判断。
+既存migrationを適用済みの環境で利用する。PRマージ→CI/CD成功で通常機能として反映する。障害時は新方式の証拠と判断履歴を読める互換commit/deploymentへ戻し、履歴を削除しない。確認表/判断履歴や独自権限割当があるDBのdowngradeは拒否する。

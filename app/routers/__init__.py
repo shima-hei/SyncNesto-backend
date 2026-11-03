@@ -5,6 +5,7 @@ from fastapi import Depends, FastAPI
 from app.core.tenant import get_current_tenant
 from app.routers import (
     account_actions,
+    approval_mail_delivery,
     artifact_preservations,
     artifact_publication_access,
     artifact_publications,
@@ -64,6 +65,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(mcp.router)
     app.include_router(demo.router)
     app.include_router(deleted_data_cleanup.router)
+    app.include_router(approval_mail_delivery.router)
     app.include_router(account_actions.router)
     app.include_router(drafts.router, dependencies=[Depends(get_current_tenant)])
     app.include_router(health.router)

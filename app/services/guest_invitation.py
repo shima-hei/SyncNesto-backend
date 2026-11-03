@@ -73,10 +73,11 @@ class GuestInvitationService:
         self.context = PublicationAccessContext()
         self.email = EmailService()
 
-    @staticmethod
-    def enabled():
-        """停止時は新操作を拒否する。readerは維持する。"""
-        if not settings.guest_invitations_enabled:
+    def require_delivery(self, email):
+        """本番は既存メール設定、LOCALは明示ダミーだけを許す。"""
+        if settings.is_public_environment:
+            self.email.ensure_available()
+        elif not self.email.is_local_capture(email):
             raise ForbiddenError()
 
     @staticmethod
@@ -249,7 +250,6 @@ class GuestInvitationService:
     @retry_publication_operation
     def prepare(self, original, user, project_id, data, identity=None):
         """送信より先に招待を保存し、再送で旧世代を失効する。"""
-        self.enabled()
         table = self.repository.invitations
         with self.management(original, user, project_id, write=True) as (db, actor):
             now = db.execute(select(func.clock_timestamp())).scalar_one()
@@ -270,8 +270,7 @@ class GuestInvitationService:
                         raise DuplicateResourceError()
                     return self.read(previous, now), None
                 email = str(data.email)
-                if not self.email.is_local_capture(email):
-                    raise ForbiddenError()
+                self.require_delivery(email)
                 if data.participation_expires_at <= now:
                     raise BadRequestError(messages.GUEST_INVITATION_FUTURE_EXPIRY)
                 pending = (
@@ -340,8 +339,7 @@ class GuestInvitationService:
                 self.inviter(db, row)
                 if row["created_by"] != actor.id or self.state(row, now) != "pending":
                     raise ConflictError(messages.GUEST_INVITATION_RECREATE)
-                if not self.email.is_local_capture(row["recipient_email"]):
-                    raise ForbiddenError()
+                self.require_delivery(row["recipient_email"])
                 token = secrets.token_urlsafe(32)
                 self.repository.update(
                     db,
@@ -422,7 +420,6 @@ class GuestInvitationService:
     @retry_publication_operation
     def revoke(self, original, user, project_id, identity, data):
         """受諾済み参加と混同せず、pending招待だけを取り消す。"""
-        self.enabled()
         with self.management(original, user, project_id, write=True, remove=True) as (
             db,
             actor,
@@ -636,7 +633,6 @@ class GuestInvitationService:
     @retry_publication_operation
     def inspect(self, original, identity, token):
         """メールtokenは検証後に返さず、別乱数の確認Cookieを発行する。"""
-        self.enabled()
         with self.recipient_transaction(original, identity) as (db, row):
             now = db.execute(select(func.clock_timestamp())).scalar_one()
             if (
@@ -676,7 +672,6 @@ class GuestInvitationService:
     @retry_publication_operation
     def register(self, original, identity, proof, data, user):
         """登録競合でも他のアカウントの認証情報を更新しない。"""
-        self.enabled()
         with self.recipient_transaction(original, identity, user) as (db, row):
             check = self.checked(db, row, proof)
             if check["consumed_at"] or user or not data.name.strip():
@@ -715,7 +710,6 @@ class GuestInvitationService:
     @retry_publication_operation
     def finish(self, original, identity, proof, data, user, *, decline=False):
         """受諾は通常MFA済みの指定本人だけ、辞退はメール確認として記録する。"""
-        self.enabled()
         kind = "declined" if decline else "accepted"
         with self.recipient_transaction(original, identity, user) as (db, row):
             check = self.checked(db, row, proof, terminal=True)

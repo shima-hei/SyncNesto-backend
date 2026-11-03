@@ -34,7 +34,7 @@ from tests.routers.test_publication_access import access_fixture as access_fixtu
 @pytest.fixture(autouse=True)
 def notifications_on(monkeypatch):
     """新処理だけを有効にし、既存MFA設定は保持する。"""
-    monkeypatch.setattr(settings, "fixed_approval_notifications_enabled", True)
+    monkeypatch.setenv("FIXED_APPROVAL_NOTIFICATIONS_ENABLED", "true")
 
 
 def count(db, model: type[Base] = Notification):
@@ -278,22 +278,24 @@ def test_notification_failure_rolls_back_request(
     assert count(db, FixedApprovalEvent) == 0
 
 
-def test_flag_stop_and_no_backfill(client, db, approval_context, monkeypatch):
-    """停止中は業務を維持し、再開時に過去分へ遡及通知しない。"""
-    monkeypatch.setattr(settings, "fixed_approval_notifications_enabled", False)
+def test_notifications_ignore_obsolete_switch_without_duplicate_delivery(
+    client, db, approval_context, monkeypatch
+):
+    """通常通知を保存し、同一操作の再送で遡及・重複通知を作らない。"""
+    monkeypatch.setenv("FIXED_APPROVAL_NOTIFICATIONS_ENABLED", "false")
     ctx = approval_context
     row, body = request(client, ctx)
-    assert count(db) == 0
-    assert client.get("/shared/notifications").status_code == 404
-    assert client.get(f"{ctx['approvals']}/{row['id']}/next-actions").status_code == 404
+    assert count(db) == 1
+    assert client.get("/shared/notifications").status_code == 403
+    assert client.get(f"{ctx['approvals']}/{row['id']}/next-actions").status_code == 200
     assert client.get(f"{ctx['approvals']}/{row['id']}").status_code == 200
-    monkeypatch.setattr(settings, "fixed_approval_notifications_enabled", True)
+    monkeypatch.setenv("FIXED_APPROVAL_NOTIFICATIONS_ENABLED", "true")
     assert client.post(ctx["approvals"], json=body).status_code == 200
-    assert count(db) == 0
+    assert count(db) == 1
     authorize_as(client, ctx["approver"])
     decide(client, ctx, row)
-    assert count(db) == 1
-    monkeypatch.setattr(settings, "fixed_approval_notifications_enabled", False)
+    assert count(db) == 2
+    monkeypatch.setenv("FIXED_APPROVAL_NOTIFICATIONS_ENABLED", "false")
     authorize_as(client, ctx["user"])
     assert client.get("/notifications").json()["total"] == 1
 
