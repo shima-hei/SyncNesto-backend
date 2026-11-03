@@ -148,6 +148,7 @@ class TaskRead(TaskBase):
     id: int
     project_id: int
     version: int
+    task_type_name: str | None = None
     parent_summary: TaskParentSummary | None = None
     has_children: bool = False
     phase_scope: PhaseScope = "unclassified"
@@ -437,6 +438,7 @@ class TaskMoveRequest(BaseModel):
     status: str
     sort_order: int
     version: int
+    change_reason: str | None = None
 
 
 class GanttResponse(BaseModel):

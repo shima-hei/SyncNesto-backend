@@ -91,6 +91,7 @@ from app.models.task import (
     TaskDependency,
 )
 from app.models.task_phase import ProjectPhase, ProjectPhaseEvent
+from app.models.task_type import ProjectTaskType
 from app.models.tenant import Tenant, TenantMember
 from app.models.test_design import (
     ExpectedValue,
@@ -121,6 +122,7 @@ from app.models.verification_evidence import (
 from app.models.verification_verdict import VerificationEvent, VerificationRequest
 
 __all__ = [
+    "ProjectTaskType",
     "VerificationEvent",
     "VerificationRequest",
     "VerificationEvidenceObject",

@@ -223,3 +223,8 @@ REQUIREMENT_DOCUMENT_CREATION_KEY_CONFLICT = (
 REQUIREMENT_DOCUMENT_CREATION_TARGET_DELETED = (
     "作成済みの文書は削除されています。この送信では再作成しません。"
 )
+TASK_TYPE_NOT_FOUND = "タスク種別が見つかりません。"
+TASK_TYPE_UNAVAILABLE = "この種別は選択できません。別の種別を選んでください。"
+TASK_TYPE_NAME_EXISTS = "同じ名前の種別が既にあります。"
+TASK_RETURN_REASON_REQUIRED = "差し戻し理由を入力してください。"
+TASK_RETURN_CREATE_INVALID = "差し戻しは作成済みのタスクに理由を付けて行ってください。"

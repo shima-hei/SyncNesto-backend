@@ -3,6 +3,7 @@
 from datetime import date
 from typing import Any, cast
 
+from app.core.task_types import STANDARD_TASK_TYPES
 from app.models.requirement import Requirement
 from app.models.task import (
     Board,
@@ -474,6 +475,10 @@ class TaskPresenter:
     ) -> TaskRead:
         """関連要件と表示補助値を含むタスクレスポンスを組み立てる。"""
         task_read = TaskRead.model_validate(task)
+        task_read.task_type_name = presentation_data.type_names.get(
+            (task.project_id, task.task_type),
+            STANDARD_TASK_TYPES.get(task.task_type, task.task_type),
+        )
         task_read.is_overdue = (
             task.due_date is not None
             and task.due_date < date.today()

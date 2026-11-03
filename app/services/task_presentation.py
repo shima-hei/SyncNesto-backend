@@ -10,6 +10,7 @@ from app.repositories.task_dependency import TaskDependencyRepository
 from app.repositories.task_item import TaskRepository
 from app.repositories.task_phase import TaskPhaseRepository
 from app.repositories.task_requirement import RequirementTaskRelationRepository
+from app.repositories.task_type import TaskTypeRepository
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,7 @@ class TaskPresentationData:
     phase_fields: dict[int, dict[str, Any]] = field(default_factory=dict)
     parents_by_task_id: dict[int, Task] = field(default_factory=dict)
     task_ids_with_children: set[int] = field(default_factory=set)
+    type_names: dict[tuple[int, str], str] = field(default_factory=dict)
 
 
 class TaskPresentationDataService:
@@ -70,6 +72,12 @@ class TaskPresentationDataService:
             for parent in self.task_repository.list_by_ids(db, parent_ids)
         }
         return TaskPresentationData(
+            type_names={
+                (row.project_id, row.key): row.name
+                for row in TaskTypeRepository().list(
+                    db, sorted({task.project_id for task in tasks})
+                )
+            },
             task_ids_with_children=self.task_repository.list_ids_with_children(
                 db, task_ids
             ),

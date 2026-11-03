@@ -16,6 +16,7 @@ class NotificationType(StrEnum):
 
     ASSIGNED = "assigned"
     MENTIONED = "mentioned"
+    TASK_RETURNED = "task_returned"
     FIXED_APPROVAL_REQUESTED = "fixed_approval_requested"
     FIXED_APPROVAL_DECIDED = "fixed_approval_decided"
     FIXED_APPROVAL_CANCELLED = "fixed_approval_cancelled"

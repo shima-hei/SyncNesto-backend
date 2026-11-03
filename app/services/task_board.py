@@ -314,6 +314,21 @@ class TaskBoardService:
             current=self._build_task_conflict_current(db, task),
         )
         old_values = {"status": task.status, "sort_order": task.sort_order}
+        if move_in.status == "returned" and task.status != "returned":
+            from app.schemas.task import TaskUpdate
+            from app.services.task import TaskService
+
+            return TaskService().update_task(
+                db,
+                task_id=task.id,
+                task_in=TaskUpdate(
+                    version=move_in.version,
+                    status="returned",
+                    sort_order=move_in.sort_order,
+                    change_reason=move_in.change_reason,
+                ),
+                actor_id=actor_id,
+            )
         normalized = self._normalize_task_dates(
             status=move_in.status,
             progress_percent=100 if move_in.status == "done" else task.progress_percent,

@@ -61,3 +61,12 @@ FrontendはBackend OpenAPIからOrvalを生成する。生成コードは手編�
 公開MCPは既存の明示したTask投影項目を使い、`parent_summary` を公開契約へ追加しない。
 
 DB列、migration、role/permission、OAuth/flag、新しい依存は追加しない。
+## 受入改善：差し戻し・案件別の種別（2026-11-04）
+
+- `returned` は独立した「差し戻し」状態。既存の `task:update` を使い、既存Taskを別の状態から差し戻す更新には空白以外の `change_reason` が必要。担当・期限・進捗・実績を自動変更しない。理由を履歴へ保存し、現在の閲覧権限を持つ担当者へアプリ内通知 `task_returned` を一度だけ送る。閲覧者や別Tenantには権限を追加しない。
+- ボード移動APIにも省略可能な `change_reason` を追加し、差し戻し時は通常Task更新と同じ検証・履歴・通知を使用する。新規Taskを差し戻しで直接作成する操作は拒否する。差し戻し中は完了扱いにせず、要件の実装進捗では作業中として集計する。固定版の承認・要件合否とは別の概念。
+- `GET /projects/{id}/task-types` は既存 `task:read` で標準/独自/旧自由文字列の一覧を返す。`source=standard|custom|legacy`、`key`、`name`、`is_active`、独自種別の `version` を持つ。
+- `POST /projects/{id}/task-types`（`name`）と `PATCH /projects/{id}/task-types/{key}`（`version,name,is_active`）は既存 `project:update` で管理する。キーはサーバーが `custom_` + UUID32桁で採番し、改名・非表示でも変えない。名前は前後空白を除き1〜80文字、同一案件内の大文字小文字を区別しない重複と標準名との重複は409。版不一致は従来通り409 `VERSION_CONFLICT/current`。使用中の種別を削除するAPIは設けない。
+- 標準11種の内部キーと既存Task行は移行しない。`other` の表示だけ「タスク（一般）」とする。既に保存された自由文字列は再利用と表示を保持する。未登録の新しいキーをTask作成・変更から持ち込むことはできず、種別管理APIで登録する。管理した非表示種別は新規割当不可、既に割り当てたTaskの編集では同じキーを保持できる。別案件の独自キーは新規割当不可。
+- TaskReadへ省略可能な `task_type_name` を追加。Taskの一覧/詳細/ガントでは表示名を一括取得し、改名・非表示後も同じキーを解決する。検索条件やMCPの更新入力には従来通り `task_type` の安定キーを使う。FrontendはOrvalを再生成する。
+- migration `c71a8d9320ef` は空の `project_task_types` を追加する。既存Task・担当・日程・工数・履歴を更新せず、利用済みの種別を失うdowngradeは拒否する。配布はBackend migration/APIからFrontendの順とし、リリース用フラグ・新しい環境変数・依存は追加しない。
