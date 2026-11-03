@@ -205,7 +205,7 @@ def test_return_requires_reason_preserves_fields_and_notifies_once(
         )
         == 1
     )
-    for status in ["in_progress", "in_review", "done"]:
+    for status in ["in_progress", "resolved", "in_review", "done"]:
         data = {
             "version": current["version"] + (1 if status == "in_progress" else 0),
             "status": status,
@@ -214,7 +214,21 @@ def test_return_requires_reason_preserves_fields_and_notifies_once(
         data["version"] = latest["version"]
         if status == "done":
             data["progress_percent"] = 100
-        assert client.patch(url, json=data).status_code == 200
+        response = client.patch(url, json=data)
+        assert response.status_code == 200
+        if status == "resolved":
+            for field in (
+                "assignee_id",
+                "start_date",
+                "due_date",
+                "progress_percent",
+                "actual_start_date",
+                "actual_end_date",
+                "estimated_minutes",
+                "actual_minutes",
+            ):
+                assert response.json()[field] == latest[field]
+            assert response.json()["status"] == "resolved"
 
 
 def test_board_return_uses_same_reason_and_notification_contract(
@@ -236,6 +250,19 @@ def test_board_return_uses_same_reason_and_notification_contract(
     assert saved.json()["progress_percent"] == 60
     assert saved.json()["actual_start_date"] is None
     assert saved.json()["sort_order"] == 20
+    resolved = client.post(
+        url,
+        json={
+            "version": saved.json()["version"],
+            "status": "resolved",
+            "sort_order": 21,
+        },
+    )
+    assert resolved.status_code == 200
+    assert resolved.json()["status"] == "resolved"
+    assert resolved.json()["progress_percent"] == 60
+    assert resolved.json()["actual_start_date"] is None
+    assert resolved.json()["actual_end_date"] is None
     authorize_as(client, member)
     items = client.get("/notifications").json()["items"]
     assert any(
@@ -254,11 +281,12 @@ def test_return_rejects_viewer_and_nonmember(
     assign_project_role(user=viewer, project=project, role_key="viewer")
     for user in [viewer, create_test_user(email="return-outsider@example.com")]:
         authorize_as(client, user)
-        assert client.patch(
-            f"/tasks/{task.id}",
-            json={
-                "version": task.version,
-                "status": "returned",
-                "change_reason": "禁止",
-            },
-        ).status_code in {403, 404}
+        for status in ("returned", "resolved"):
+            assert client.patch(
+                f"/tasks/{task.id}",
+                json={
+                    "version": task.version,
+                    "status": status,
+                    "change_reason": "禁止",
+                },
+            ).status_code in {403, 404}

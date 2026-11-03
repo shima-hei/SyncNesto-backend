@@ -63,6 +63,7 @@ FrontendはBackend OpenAPIからOrvalを生成する。生成コードは手編�
 DB列、migration、role/permission、OAuth/flag、新しい依存は追加しない。
 ## 受入改善：差し戻し・案件別の種別（2026-11-04）
 
+- `resolved` は独立した「対応済」（担当作業が完了）状態。作業中→対応済→レビュー中（確認中）→完了（確認も終了）を基本順とし、既存 `task:update` で変更する。進捗率・担当・期限・実績日を自動変更せず、通常の履歴を残す。対応済はまだ完了ではなく、要件の実装進捗でも作業中として集計する。
 - `returned` は独立した「差し戻し」状態。既存の `task:update` を使い、既存Taskを別の状態から差し戻す更新には空白以外の `change_reason` が必要。担当・期限・進捗・実績を自動変更しない。理由を履歴へ保存し、現在の閲覧権限を持つ担当者へアプリ内通知 `task_returned` を一度だけ送る。閲覧者や別Tenantには権限を追加しない。
 - ボード移動APIにも省略可能な `change_reason` を追加し、差し戻し時は通常Task更新と同じ検証・履歴・通知を使用する。新規Taskを差し戻しで直接作成する操作は拒否する。差し戻し中は完了扱いにせず、要件の実装進捗では作業中として集計する。固定版の承認・要件合否とは別の概念。
 - `GET /projects/{id}/task-types` は既存 `task:read` で標準/独自/旧自由文字列の一覧を返す。`source=standard|custom|legacy`、`key`、`name`、`is_active`、独自種別の `version` を持つ。

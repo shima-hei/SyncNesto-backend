@@ -10,7 +10,10 @@ from app.services.task import TaskService
 pytestmark = pytest.mark.no_db
 
 
-def test_returned_task_is_in_progress_even_with_previous_100_percent(monkeypatch):
+@pytest.mark.parametrize("status", ["returned", "resolved"])
+def test_unfinished_task_is_in_progress_even_with_previous_100_percent(
+    monkeypatch, status
+):
     """進捗率は保持する一方、業務状態は再対応中として集計する。"""
     service = TaskService()
     for progress in (70, 100):
@@ -18,7 +21,7 @@ def test_returned_task_is_in_progress_even_with_previous_100_percent(monkeypatch
             service,
             "list_requirement_tasks",
             lambda *args, progress=progress: [
-                SimpleNamespace(status="returned", progress_percent=progress)
+                SimpleNamespace(status=status, progress_percent=progress)
             ],
         )
         with Session() as db:

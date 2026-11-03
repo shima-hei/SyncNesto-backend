@@ -117,6 +117,7 @@ TASK_STATUS_LABELS = {
     "backlog": "バックログ",
     "todo": "未着手",
     "in_progress": "作業中",
+    "resolved": "対応済",
     "in_review": "レビュー中",
     "returned": "差し戻し",
     "done": "完了",
@@ -788,7 +789,7 @@ class TaskService:
             status = "cancelled"
         elif statuses <= {"done"}:
             status = "implemented"
-        elif statuses & {"in_progress", "in_review", "returned", "done"}:
+        elif statuses & {"in_progress", "resolved", "in_review", "returned", "done"}:
             status = "in_progress"
         else:
             status = "not_started"
