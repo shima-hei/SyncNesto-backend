@@ -110,6 +110,19 @@ class McpOperationsService:
 
     def catalog(self, db: Session, connection: McpConnection, user: User) -> list[dict]:
         """少なくとも一つの許可Projectで実行できるツールのみ提示する。"""
+        allowed: dict[tuple[str, ...], bool] = {}
+
+        def can_show(permissions: tuple[str, ...]) -> bool:
+            """同じ一覧内の同一権限だけを再利用し、次の要求では再確認する。"""
+            if not permissions:
+                return True
+            if permissions not in allowed:
+                allowed[permissions] = any(
+                    self.allowed(db, connection, user, project_id, permissions)
+                    for project_id in connection.project_ids
+                )
+            return allowed[permissions]
+
         return [
             {
                 "name": name,
@@ -128,11 +141,7 @@ class McpOperationsService:
                 },
             }
             for name, tool in {**TOOLS, **development_tools(connection)}.items()
-            if not tool.permissions
-            or any(
-                self.allowed(db, connection, user, project_id, tool.permissions)
-                for project_id in connection.project_ids
-            )
+            if can_show(tool.permissions)
         ]
 
     def execute(
