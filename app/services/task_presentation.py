@@ -5,7 +5,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.models.task import Task, TaskDependency
+from app.models.task import Task
 from app.repositories.task_dependency import TaskDependencyRepository
 from app.repositories.task_item import TaskRepository
 from app.repositories.task_phase import TaskPhaseRepository
@@ -63,7 +63,7 @@ class TaskPresentationDataService:
                 task_ids,
             )
         )
-        blocked_task_ids = {task.id for task in tasks if self.is_blocked(db, task)}
+        blocked_task_ids = self.dependency_repository.blocked_task_ids(db, task_ids)
         parent_ids = sorted(
             {task.parent_task_id for task in tasks if task.parent_task_id is not None}
         )
@@ -94,26 +94,4 @@ class TaskPresentationDataService:
 
     def is_blocked(self, db: Session, task: Task) -> bool:
         """タスクが依存関係によりブロックされているか判定する。"""
-        dependencies = self.dependency_repository.list_by_task(db, task.id)
-        return any(
-            self._is_unfinished_predecessor(db, task, dependency)
-            for dependency in dependencies
-        )
-
-    def _is_unfinished_predecessor(
-        self,
-        db: Session,
-        task: Task,
-        dependency: TaskDependency,
-    ) -> bool:
-        """依存関係が未完了の先行タスクによるブロックか判定する。"""
-        if (
-            dependency.successor_task_id != task.id
-            or dependency.dependency_type != "finish_to_start"
-        ):
-            return False
-        predecessor = self.task_repository.get_by_id(
-            db,
-            dependency.predecessor_task_id,
-        )
-        return predecessor is not None and predecessor.status != "done"
+        return task.id in self.dependency_repository.blocked_task_ids(db, [task.id])

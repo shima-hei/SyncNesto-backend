@@ -1,6 +1,7 @@
 """要件の追跡を、本人/tenant/分野の読取権限内に制限する。"""
 
 from app.core.exceptions import ForbiddenError, NotFoundError
+from app.db.read_cache import read_cache
 from app.repositories.requirement_trace import EXCERPT_LIMIT, RequirementTraceRepository
 from app.schemas.requirement_trace import (
     RequirementTraceDetail,
@@ -36,6 +37,13 @@ class RequirementTraceService:
         )
 
     def page(self, db, user, project_id, page, page_size, document_id, q, status):
+        """複数分野の読み取り権限を同じ一覧の中だけ再利用する。"""
+        with read_cache(db):
+            return self._page(
+                db, user, project_id, page, page_size, document_id, q, status
+            )
+
+    def _page(self, db, user, project_id, page, page_size, document_id, q, status):
         """全行の本文/履歴や行ごとのAPIを呼ばない。"""
         base = dict(page=page, page_size=page_size)
         if db.info.get("demo_id") or db.info.get("data_realm") == "demo":
@@ -74,6 +82,11 @@ class RequirementTraceService:
         )
 
     def detail(self, db, user, project_id, requirement_id):
+        """詳細の読み取り中だけ案件の権限を共有する。"""
+        with read_cache(db):
+            return self._detail(db, user, project_id, requirement_id)
+
+    def _detail(self, db, user, project_id, requirement_id):
         """1件の正本の抜粋と同案件の関連を返す。"""
         self.access.access(db, user, project_id)
         if not self.access.can(db, user, project_id, "requirement:read"):

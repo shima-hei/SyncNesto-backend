@@ -17,6 +17,8 @@ from app.core.exceptions import (
     NotFoundError,
     VersionConflictError,
 )
+from app.core.schema_cache import model_json_schema
+from app.db.read_cache import read_cache
 from app.models.mcp import McpConnection
 from app.models.user import User
 from app.repositories.mcp import McpRepository
@@ -30,7 +32,7 @@ from app.schemas.task import TaskCreate, TaskUpdate
 from app.schemas.test_design import TestDesignUpdate
 from app.services.audit_log import AuditLogService
 from app.services.mcp_auth import McpAuthService
-from app.services.mcp_catalog import TOOLS
+from app.services.mcp_catalog import TOOLS, McpTool
 from app.services.mcp_development_catalog import DEVELOPMENT_TOOLS, development_tools
 from app.services.requirement_document import RequirementDocumentService
 from app.services.requirement_item import RequirementService
@@ -109,6 +111,13 @@ class McpOperationsService:
         )
 
     def catalog(self, db: Session, connection: McpConnection, user: User) -> list[dict]:
+        """一覧の読み取り内だけ権限を再利用し、次の要求では再取得する。"""
+        with read_cache(db):
+            return self._catalog(db, connection, user)
+
+    def _catalog(
+        self, db: Session, connection: McpConnection, user: User
+    ) -> list[dict]:
         """少なくとも一つの許可Projectで実行できるツールのみ提示する。"""
         allowed: dict[tuple[str, ...], bool] = {}
 
@@ -127,9 +136,9 @@ class McpOperationsService:
             {
                 "name": name,
                 "description": tool.description,
-                "inputSchema": tool.schema.model_json_schema(),
+                "inputSchema": model_json_schema(tool.schema),
                 **(
-                    {"outputSchema": tool.output.model_json_schema()}
+                    {"outputSchema": model_json_schema(tool.output)}
                     if tool.output
                     else {}
                 ),
@@ -155,6 +164,20 @@ class McpOperationsService:
         tool = {**TOOLS, **development_tools(connection)}.get(operation.tool)
         if tool is None:
             raise NotFoundError()
+        if not tool.write:
+            with read_cache(db):
+                return self._execute(db, connection, user, operation, tool)
+        return self._execute(db, connection, user, operation, tool)
+
+    def _execute(
+        self,
+        db: Session,
+        connection: McpConnection,
+        user: User,
+        operation: s.McpOperation,
+        tool: McpTool,
+    ) -> dict:
+        """更新は従来通りロックの前後で再認可し、読み取りだけを再利用する。"""
         if operation.tool == "list_projects":
             if operation.arguments:
                 raise BadRequestError(messages.MCP_INVALID_INPUT)
