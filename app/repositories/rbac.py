@@ -3,14 +3,45 @@
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.models.project import ProjectMember
+from app.models.project import Project, ProjectMember
 from app.models.rbac import Permission, Role, RolePermission, UserRole
 from app.models.review_account import ReviewAccountGrant
+from app.models.tenant import Tenant, TenantMember
 from app.models.user import User
 
 
 class RbacRepository:
     """RBACテーブルへのデータアクセス処理を提供するRepository。"""
+
+    def project_permission_codes(
+        self, db: Session, *, user_id: int, project_id: int, tenant_id: int
+    ) -> frozenset[str]:
+        """有効な組織所属・案件所属・Roleの交差を一度のSQLで確認する。"""
+        return frozenset(
+            code
+            for (code,) in (
+                db.query(Permission.code)
+                .select_from(ProjectMember)
+                .join(Project, Project.id == ProjectMember.project_id)
+                .join(Tenant, Tenant.id == Project.tenant_id)
+                .join(TenantMember, TenantMember.tenant_id == Tenant.id)
+                .join(Role, Role.id == ProjectMember.role_id)
+                .join(RolePermission, RolePermission.role_id == Role.id)
+                .join(Permission, Permission.id == RolePermission.permission_id)
+                .filter(
+                    Tenant.id == tenant_id,
+                    Tenant.status == "active",
+                    TenantMember.user_id == user_id,
+                    TenantMember.status == "active",
+                    Project.id == project_id,
+                    Project.deleted_at.is_(None),
+                    ProjectMember.user_id == user_id,
+                    ProjectMember.deleted_at.is_(None),
+                    Role.scope == "project",
+                )
+                .all()
+            )
+        )
 
     def get_role_by_key_scope(
         self,

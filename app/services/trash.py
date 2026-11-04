@@ -15,6 +15,7 @@ from app.core.exceptions import (
     VersionConflictError,
 )
 from app.db.demo_scope import lock_active_demo
+from app.db.read_cache import read_cache
 from app.models.document import ProjectDocument
 from app.models.user import User
 from app.repositories.document import DocumentRepository
@@ -84,6 +85,20 @@ class TrashService:
         )
 
     def list(
+        self,
+        db: Session,
+        user: User,
+        project_id: int,
+        kind: TrashKind | None,
+        q: str,
+        page: int,
+        page_size: int,
+    ) -> TrashRead:
+        """資源ごとの権限確認を読み取り範囲内で共有する。"""
+        with read_cache(db):
+            return self._list(db, user, project_id, kind, q, page, page_size)
+
+    def _list(
         self,
         db: Session,
         user: User,

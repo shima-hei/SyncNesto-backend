@@ -2,8 +2,7 @@
 
 from sqlalchemy.orm import Session
 
-from app.models.project import Project
-from app.models.tenant import Tenant, TenantMember
+from app.db.read_cache import cached_read
 from app.models.user import User
 from app.repositories.rbac import RbacRepository
 from app.services.review_account import REVIEW_PERMISSIONS, ReviewAccountService
@@ -93,26 +92,12 @@ class AuthorizationService:
             return False
         if tenant_id is None:
             return False
-        if (
-            db.query(TenantMember.id)
-            .join(Tenant)
-            .join(Project, Project.tenant_id == Tenant.id)
-            .filter(
-                Project.id == project_id,
-                Project.deleted_at.is_(None),
-                Tenant.id == tenant_id,
-                Tenant.status == "active",
-                TenantMember.user_id == user.id,
-                TenantMember.status == "active",
-            )
-            .first()
-            is None
-        ):
-            return False
-
-        return self.repository.project_member_has_permission(
+        permissions = cached_read(
             db,
-            user_id=user.id,
-            project_id=project_id,
-            permission_code=permission_code,
+            "project_permissions",
+            (user.id, project_id, tenant_id),
+            lambda: self.repository.project_permission_codes(
+                db, user_id=user.id, project_id=project_id, tenant_id=tenant_id
+            ),
         )
+        return permission_code in permissions

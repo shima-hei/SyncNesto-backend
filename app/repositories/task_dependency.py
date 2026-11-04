@@ -1,6 +1,5 @@
 """タスク管理Repositoryを定義するモジュール。"""
 
-
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -16,6 +15,26 @@ from app.schemas.task import (
 
 class TaskDependencyRepository:
     """TaskDependencyテーブルへのデータアクセス処理を提供する。"""
+
+    def blocked_task_ids(self, db: Session, task_ids: list[int]) -> set[int]:
+        """未削除・未完了の先行Taskを持つ表示対象だけを一括取得する。"""
+        if not task_ids:
+            return set()
+        return {
+            task_id
+            for (task_id,) in (
+                db.query(TaskDependency.successor_task_id)
+                .join(Task, Task.id == TaskDependency.predecessor_task_id)
+                .filter(
+                    TaskDependency.successor_task_id.in_(task_ids),
+                    TaskDependency.dependency_type == "finish_to_start",
+                    Task.deleted_at.is_(None),
+                    Task.status != "done",
+                )
+                .distinct()
+                .all()
+            )
+        }
 
     def create(
         self,
@@ -40,9 +59,7 @@ class TaskDependencyRepository:
     def get_by_id(self, db: Session, dependency_id: int) -> TaskDependency | None:
         """idに一致するタスク依存関係を取得する。"""
         return (
-            db.query(TaskDependency)
-            .filter(TaskDependency.id == dependency_id)
-            .first()
+            db.query(TaskDependency).filter(TaskDependency.id == dependency_id).first()
         )
 
     def list_by_task(self, db: Session, task_id: int) -> list[TaskDependency]:

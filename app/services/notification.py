@@ -196,6 +196,15 @@ class NotificationService:
     def present(
         self, db: Session, user: User, items: list[Notification]
     ) -> list[NotificationRead]:
+        """同じ一覧内の所属・権限をまとめ、要求間では共有しない。"""
+        from app.db.read_cache import read_cache
+
+        with read_cache(db):
+            return self._present(db, user, items)
+
+    def _present(
+        self, db: Session, user: User, items: list[Notification]
+    ) -> list[NotificationRead]:
         """名前変更や対象削除があっても、過去の表示を再現する。"""
         available = self.repository.available_targets(db, items)
         fixed = FixedApprovalNotificationRepository()
