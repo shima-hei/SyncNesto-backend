@@ -10,6 +10,7 @@ from app.db.base import Base
 
 # 所有関係は一箇所で定義する。認証Identityへの参照は所有関係に含めない。
 OWNERS = {
+    "project_task_types": [("project_id", "projects", "id")],
     "project_phases": [("project_id", "projects", "id")],
     "project_phase_events": [
         ("project_id", "projects", "id"),

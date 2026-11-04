@@ -14,7 +14,7 @@ from app.core.exceptions import (
     ForbiddenError,
     NotFoundError,
 )
-from app.models.notification import NotificationTargetType
+from app.models.notification import NotificationTargetType, NotificationType
 from app.models.task import (
     Milestone,
     RequirementTaskRelation,
@@ -58,6 +58,7 @@ from app.services.task_presentation import (
     TaskPresentationData,
     TaskPresentationDataService,
 )
+from app.services.task_type import TaskTypeService
 
 AUTO_TASK_CODE_PREFIX = "TASK"
 AUTO_TASK_CODE_RETRY_LIMIT = 5
@@ -116,7 +117,9 @@ TASK_STATUS_LABELS = {
     "backlog": "バックログ",
     "todo": "未着手",
     "in_progress": "作業中",
+    "resolved": "対応済",
     "in_review": "レビュー中",
+    "returned": "差し戻し",
     "done": "完了",
     "blocked": "ブロック中",
     "cancelled": "中止",
@@ -290,6 +293,9 @@ class TaskService:
         self._ensure_project_exists(db, project_id)
         self._validate_parent_task(db, project_id, task_in.parent_task_id)
         self._validate_task_state(task_in.status, task_in.progress_percent)
+        if task_in.status == "returned":
+            raise BadRequestError(error_messages.TASK_RETURN_CREATE_INVALID)
+        TaskTypeService().validate(db, project_id, task_in.task_type)
         if task_in.requirement_id is not None:
             self._ensure_requirement_in_project(db, project_id, task_in.requirement_id)
         requested_task_code = self._normalize_task_code(task_in.task_code)
@@ -538,6 +544,11 @@ class TaskService:
             raise DuplicateResourceError(error_messages.TASK_CODE_ALREADY_EXISTS)
 
         next_status = task_in.status if task_in.status is not None else task.status
+        returning = next_status == "returned" and task.status != "returned"
+        if returning and not (task_in.change_reason or "").strip():
+            raise BadRequestError(error_messages.TASK_RETURN_REASON_REQUIRED)
+        if task_in.task_type is not None and task_in.task_type != task.task_type:
+            TaskTypeService().validate(db, task.project_id, task_in.task_type)
         next_progress = (
             task_in.progress_percent
             if task_in.progress_percent is not None
@@ -550,7 +561,13 @@ class TaskService:
                 db, task.project_id, task_in.phase_assignment, task.phase_id
             )
         normalized = task_in
-        if not planning_only:
+        if not planning_only and task_in.model_fields_set & {
+            "status",
+            "progress_percent",
+            "actual_start_date",
+            "actual_end_date",
+            "actual_minutes",
+        }:
             normalized = task_in.model_copy(
                 update=self._normalize_task_dates(
                     status=next_status,
@@ -590,6 +607,20 @@ class TaskService:
         candidate_fields = (
             task_in.model_fields_set - {"version", "change_reason"}
         ) & TASK_UPDATABLE_FIELDS
+        if returning and task.assignee_id is not None:
+            NotificationService().emit(
+                db,
+                recipient_ids={task.assignee_id},
+                actor_id=actor_id,
+                project_id=task.project_id,
+                kind=NotificationType.TASK_RETURNED,
+                target_type=NotificationTargetType.TASK,
+                target_id=task.id,
+                version=task.version,
+                target_title=task.title,
+                context={"task_id": task.id},
+                excerpt=task_in.change_reason,
+            )
         NotificationService().assignment_changed(
             db,
             project_id=task.project_id,
@@ -758,7 +789,7 @@ class TaskService:
             status = "cancelled"
         elif statuses <= {"done"}:
             status = "implemented"
-        elif statuses & {"in_progress", "in_review", "done"}:
+        elif statuses & {"in_progress", "resolved", "in_review", "returned", "done"}:
             status = "in_progress"
         else:
             status = "not_started"

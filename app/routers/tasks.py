@@ -10,6 +10,7 @@ from app.routers import (
     task_items,
     task_milestones,
     task_phases,
+    task_types,
 )
 
 router = APIRouter(tags=["tasks"])
@@ -19,4 +20,5 @@ router.include_router(task_comments.router)
 router.include_router(task_dependencies.router)
 router.include_router(task_items.router)
 router.include_router(task_phases.router)
+router.include_router(task_types.router)
 router.include_router(task_milestones.router)
