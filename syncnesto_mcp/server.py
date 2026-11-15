@@ -111,11 +111,7 @@ class SyncnestoMCP(MCPServer):
                 payload={"tool": name, "arguments": arguments},
             )
             return CallToolResult(
-                content=[
-                    TextContent(
-                        type="text", text=json.dumps(result, ensure_ascii=False)
-                    )
-                ],
+                content=[TextContent(type="text", text=self.encode_result(result))],
                 structured_content=result,
             )
         except (httpx.HTTPError, ValueError) as exc:
@@ -156,6 +152,10 @@ class SyncnestoMCP(MCPServer):
                 ],
                 is_error=True,
             )
+
+    def encode_result(self, result: dict) -> str:
+        """text content用JSONを生成する。embedded診断でも出力を維持する。"""
+        return json.dumps(result, ensure_ascii=False)
 
 
 class McpOperationError(ValueError):

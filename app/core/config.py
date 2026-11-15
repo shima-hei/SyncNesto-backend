@@ -180,6 +180,7 @@ class Settings:
     log_file: str | None = os.getenv("LOG_FILE")
     sql_echo: bool = get_bool_env("SQL_ECHO")
     slow_request_threshold_ms: int = get_int_env("SLOW_REQUEST_THRESHOLD_MS", 1000)
+    cpu_diagnostics_enabled: bool = get_bool_env("CPU_DIAGNOSTICS_ENABLED")
     secret_key: str = get_required_env("SECRET_KEY")
     algorithm: str = os.getenv("ALGORITHM", "HS256")
     access_token_expire_minutes: int = get_int_env(

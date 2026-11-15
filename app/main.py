@@ -56,6 +56,12 @@ def create_app() -> FastAPI:
     if mcp_app is not None:
         # 既存APIを先に解決し、SDKは/mcpとresource metadataだけを提供する。
         fastapi_app.mount("/", mcp_app)
+    if settings.cpu_diagnostics_enabled:
+        from app.core.cpu_diagnostics import CpuDiagnosticsMiddleware, install_db_probe
+        from app.db.session import engine
+
+        install_db_probe(engine)
+        fastapi_app.add_middleware(CpuDiagnosticsMiddleware)
     return fastapi_app
 
 
