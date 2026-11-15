@@ -1,10 +1,9 @@
 """認証APIのテスト。"""
 
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from uuid import UUID
 
-import jwt
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -984,37 +983,46 @@ def test_update_me_avatar_requires_login(client: TestClient) -> None:
     }
 
 
-def test_get_me_rejects_expired_token(
+def test_get_me_rejects_old_cookie_without_invalidating_the_replacement(
     client: TestClient,
     create_test_user: Callable[..., User],
     db: Session,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """期限切れtokenで現在ユーザー取得を拒否する。"""
-    user = create_test_user(email="expired@example.com")
-    _, session_id = create_session_token(user)
-    expired_token = jwt.encode(
-        {
-            "sub": "expired@example.com",
-            "sid": str(session_id),
-            "exp": datetime.now(UTC) - timedelta(minutes=1),
-        },
-        settings.secret_key,
-        algorithm=settings.algorithm,
+    """別タブで遅れて届いた旧Cookieを拒否し、再発行済みCookieを保持する。"""
+    user = create_test_user(email="stale-cookie@example.com")
+    session_id = authorize_as(client, user)
+    session = UserSessionRepository().get_by_id(db, session_id)
+    assert session is not None
+    old_expiration = datetime.now(UTC) + timedelta(minutes=1)
+    session.expires_at = old_expiration
+    db.commit()
+    old_token = create_access_token(
+        subject=user.email, session_id=session_id, expires_at=old_expiration
     )
+    cookie_name = settings.auth_cookie_name
+    client.cookies.set(cookie_name, old_token, domain="testserver.local", path="/")
 
-    response = client.get(
-        "/auth/me",
-        headers={"Authorization": f"Bearer {expired_token}"},
-    )
+    refreshed = client.get("/auth/me")
+    assert refreshed.status_code == 200
+    new_token = client.cookies.get(cookie_name)
+    assert new_token and new_token != old_token
 
+    class SessionClock(datetime):
+        @classmethod
+        def now(cls, tz: tzinfo | None = None) -> datetime:
+            later = old_expiration + timedelta(seconds=1)
+            return later.astimezone(tz) if tz else later.replace(tzinfo=None)
+
+    monkeypatch.setattr("app.services.session.datetime", SessionClock)
+    response = client.get("/auth/me", headers={"Cookie": f"{cookie_name}={old_token}"})
     assert response.status_code == 401
-    assert response.json() == {
-        "message": "Token expired",
-        "code": "TOKEN_EXPIRED",
-    }
-    user_session = UserSessionRepository().get_by_id(db, session_id)
-    assert user_session is not None
-    assert user_session.revoked_reason == "expired"
+    assert response.json()["code"] == "STALE_SESSION_TOKEN"
+    assert "set-cookie" not in response.headers
+    assert client.cookies.get(cookie_name) == new_token
+    assert client.get("/auth/me").status_code == 200
+    db.refresh(session)
+    assert session.revoked_at is None
 
 
 def test_get_me_rejects_expired_session_and_revokes_it(
@@ -1069,23 +1077,28 @@ def test_get_me_rejects_absolute_expired_session_and_revokes_it(
     assert user_session.revoked_reason == "absolute_expired"
 
 
-def test_get_me_refreshes_cookie_when_session_is_near_expiration(
+@pytest.mark.parametrize("session_already_extended", [False, True])
+def test_get_me_refreshes_near_expiry_cookie_on_browser_request(
     client: TestClient,
     create_test_user: Callable[..., User],
     db: Session,
+    session_already_extended: bool,
 ) -> None:
-    """セッション期限が閾値以下の場合にCookieを再発行する。"""
+    """SSRは参照だけ行い、ブラウザAPI経由ではJWTの残り時間でも再発行する。"""
     user = create_test_user(email="refresh@example.com")
     session_id = authorize_as(client, user)
     user_session = UserSessionRepository().get_by_id(db, session_id)
     assert user_session is not None
-    previous_expires_at = datetime.now(UTC) + timedelta(minutes=5)
+    token_expires_at = datetime.now(UTC) + timedelta(minutes=5)
+    previous_expires_at = (
+        user_session.expires_at if session_already_extended else token_expires_at
+    )
     user_session.expires_at = previous_expires_at
     db.commit()
     access_token = create_access_token(
         subject=user.email,
         session_id=session_id,
-        expires_at=previous_expires_at,
+        expires_at=token_expires_at,
     )
     client.cookies.set(
         settings.auth_cookie_name,
@@ -1094,12 +1107,18 @@ def test_get_me_refreshes_cookie_when_session_is_near_expiration(
         path="/",
     )
 
-    response = client.get("/auth/me")
+    guard = client.get("/auth/me", headers={"X-Syncnesto-Session-Refresh": "skip"})
+    assert guard.status_code == 200
+    assert "set-cookie" not in guard.headers
+    db.refresh(user_session)
+    assert user_session.expires_at == previous_expires_at
 
+    response = client.get("/auth/me")
     assert response.status_code == 200
     assert settings.auth_cookie_name in response.headers["set-cookie"]
+    assert client.cookies.get(settings.auth_cookie_name) != access_token
     db.refresh(user_session)
-    assert user_session.expires_at > previous_expires_at
+    assert user_session.expires_at > token_expires_at
 
 
 def test_get_me_does_not_refresh_cookie_when_session_has_enough_time(

@@ -264,7 +264,7 @@ idle timeout:
 一定時間操作がない場合に期限切れにする
 
 sliding expiration:
-期限切れが近い状態で認証済みAPIを呼び出した場合、DBセッションとCookieを延長する
+DBセッションまたは現在のJWTの期限が近い状態で、ブラウザから認証済みAPIを呼ぶとDBセッションとCookieを延長する
 
 absolute timeout:
 操作が続いていても、ログインから一定時間を超えたら必ず期限切れにする
@@ -276,6 +276,10 @@ absolute timeout:
 Set-Cookie: access_token=; Max-Age=0; HttpOnly; Path=/; SameSite=Lax
 Set-Cookie: csrf_token=; Max-Age=0; Path=/; SameSite=Lax
 ```
+
+通常Webセッションで、署名が正しくJWTだけが期限切れのとき、DBセッションが有効であれば `401 STALE_SESSION_TOKEN` でその要求を拒否します。DBセッションとブラウザCookieは保持します。フロントエンドはこの応答でログイン画面へ遷移せず、操作の再実行を案内します。デモのJWT期限切れはデモセッションを失効し、回収を試みます。
+
+Next.jsのServer Guardは、ブラウザへ更新Cookieを返せない内部の `GET /auth/me` に `X-Syncnesto-Session-Refresh: skip` を付けます。この要求は通常と同じ認証を行い、期限延長やCookieの再発行を省略します。更新CookieはブラウザからAPIを呼んだ際にBFFが中継します。
 
 システム権限変更時は対象ユーザーの既存セッションを失効します。バックエンドでは `sessions.revoked_reason` に `permission_changed` を保存します。運営者が共通Identityのメール・パスワード・有効状態を変更した場合も、更新と同じトランザクションで全セッションと未使用の本人確認リンクを失効し、理由は `credentials_changed` を保存します。両方を変更した場合のセッション理由は `permission_changed` です。組織・Project所属の変更は次回のAPI認可で即時反映し、他組織のログインを終了しません。
 
