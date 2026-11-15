@@ -1,6 +1,7 @@
 """SQLAlchemy models."""
 
 from app.models.account_action import AccountAction
+from app.models.artifact_release import ArtifactRelease, ArtifactReleaseNode
 from app.models.audit_log import AuditLog
 from app.models.comment_mention import CommentMention
 from app.models.demo import DemoOwnedUser, DemoSession, DemoStartBudget, DemoUpload
@@ -81,6 +82,8 @@ from app.models.test_design import (
 from app.models.user import User
 
 __all__ = [
+    "ArtifactRelease",
+    "ArtifactReleaseNode",
     "Specification",
     "SpecificationComment",
     "SpecificationLink",
