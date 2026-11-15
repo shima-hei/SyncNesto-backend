@@ -55,6 +55,8 @@ from app.services.fixed_approval_scope import MAX_REVIEW_INPUT, requirement_dige
 class FixedApprovalService:
     """既存role割当を広げず、内部の固定版承認だけを提供する。"""
 
+    writes_enabled = False
+
     def __init__(self):
         """既存の固定版・認可と、commitしないRepositoryを使う。"""
         self.releases = ArtifactReleaseService()
@@ -63,6 +65,8 @@ class FixedApprovalService:
     @contextmanager
     def access(self, original, user, project_id, *, write=False):
         """現在のsession・所属を新しいRR transactionで確認する。"""
+        if write and not self.writes_enabled:
+            raise ForbiddenError()
         with self.releases._transaction(original, user, project_id, None) as (
             db,
             actor,
@@ -569,7 +573,7 @@ class FixedApprovalService:
                 "events": events,
                 "requester_name": names.get(row.requester_id),
                 "approver_name": names.get(row.approver_id),
-                "can_decide": row.status == "requested"
+                "can_decide": self.writes_enabled and row.status == "requested"
                 and actor.id == row.approver_id
                 and auth.has_project_permission(
                     db,
@@ -577,7 +581,7 @@ class FixedApprovalService:
                     project_id=project_id,
                     permission_code="requirement:approve",
                 ),
-                "can_cancel": row.status == "requested"
+                "can_cancel": self.writes_enabled and row.status == "requested"
                 and all(
                     auth.has_project_permission(
                         db,
@@ -742,6 +746,8 @@ class FixedApprovalService:
 
     def review(self, db, actor, project_id, row):
         """指定本人が確認する対象と、内容変化を束縛するdigest。"""
+        if not self.writes_enabled:
+            raise ForbiddenError()
         self.releases._permission(db, actor, project_id, "requirement:approve")
         if actor.id != row.approver_id or actor.id == row.requester_id:
             raise ForbiddenError()
