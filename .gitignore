@@ -229,6 +229,7 @@ docker/pgadmin/
 !/docs/frontend-audit-logs-api.md
 !/docs/testing.md
 !/docs/api-performance.md
+!/docs/active-cpu-investigation-20261105.md
 !/docs/deleted-data-cleanup.md
 !/docs/frontend-notifications-api.md
 !/docs/frontend-home-api.md

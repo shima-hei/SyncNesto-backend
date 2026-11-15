@@ -15,6 +15,7 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.core.config import settings
+from app.core.cpu_diagnostics import phase
 from app.core.exception_handlers import get_status_code
 from app.core.exceptions import AppError, NotFoundError
 from app.core.mcp import McpOAuthError, require_mcp_enabled
@@ -39,7 +40,7 @@ class EmbeddedVerifier(TokenVerifier):
         """元のaccessを都度検証し、通常JWTと用途を分けた短命JWTへ交換する。"""
 
         def exchange() -> AccessToken:
-            with contextmanager(get_normal_db)() as db:
+            with phase("mcp_bearer_exchange"), contextmanager(get_normal_db)() as db:
                 value = McpAuthService().exchange(db, token)
                 return AccessToken(
                     token=value["access_token"],
@@ -61,6 +62,11 @@ class EmbeddedVerifier(TokenVerifier):
 class EmbeddedMCP(SyncnestoMCP):
     """共通の28ツールを、自己宛HTTP通信なしで既存Serviceへ渡す。"""
 
+    def encode_result(self, result: dict) -> str:
+        """診断中だけtext contentのJSON変換区間を記録する。"""
+        with phase("mcp_text_serialization"):
+            return super().encode_result(result)
+
     async def request(self, path: str, *, payload: dict | None = None) -> dict:
         """既存の認可・savepoint・監査・再送結果のtransactionを再利用する。"""
         access = get_access_token()
@@ -69,7 +75,10 @@ class EmbeddedMCP(SyncnestoMCP):
 
         def execute() -> dict:
             with contextmanager(get_mcp_db)() as db:
-                connection, user = McpAuthService().authenticate_api(db, access.token)
+                with phase("mcp_api_authentication"):
+                    connection, user = McpAuthService().authenticate_api(
+                        db, access.token
+                    )
                 operations = McpOperationsService()
                 if path == "/integrations/mcp/catalog" and payload is None:
                     return {"tools": operations.catalog(db, connection, user)}
@@ -150,6 +159,10 @@ def create_embedded_mcp() -> Starlette:
         settings.mcp_resource_url,
         token_verifier=EmbeddedVerifier(),
     )
+    if settings.cpu_diagnostics_enabled:
+        from app.core.cpu_diagnostics import mcp_message
+
+        server._lowlevel_server.middleware.append(mcp_message)
     resource = urlsplit(settings.mcp_resource_url)
     sdk_app = server.streamable_http_app(
         stateless_http=True,
