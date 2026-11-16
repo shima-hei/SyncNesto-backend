@@ -12,6 +12,7 @@ from app.models.requirement import Requirement, RequirementDocument
 from app.models.task import Task
 from app.models.task_phase import ProjectPhase, ProjectPhaseEvent
 from app.repositories.task_phase import TaskPhaseRepository, effort_totals
+from app.schemas.gantt_order import GanttOrderMove
 from app.schemas.task_phase import (
     EffortFilters,
     EffortSummary,
@@ -30,6 +31,7 @@ from app.services.conflict import (
     raise_duplicate_after_rollback,
     raise_if_version_conflict,
 )
+from app.services.gantt_order import lock_gantt_project, move_gantt_item
 
 
 class TaskPhaseService:
@@ -154,10 +156,42 @@ class TaskPhaseService:
                 db, error_messages.TASK_PHASE_NAME_EXISTS, exc
             )
         result = PhaseRead.model_validate(phase)
+        self._record_change(db, result, old, actor_id)
+        db.commit()
+        result.task_count = self.repository.counts(db, project_id).get(phase.id, 0)
+        return result
+
+    def reorder(
+        self, db: Session, project_id: int, move: GanttOrderMove, actor_id: int
+    ) -> None:
+        lock_gantt_project(db, project_id)
+        phases = self.repository.list_for_reorder(db, project_id)
+        by_id = {phase.id: phase for phase in phases}
+        ids = list(by_id)
+        reordered = move_gantt_item(ids, move)
+        if reordered == ids:
+            return
+
+        for index, phase_id in enumerate(reordered):
+            phase = by_id[phase_id]
+            if phase.sort_order == index:
+                continue
+            old = PhaseRead.model_validate(phase).model_dump(
+                mode="json", exclude={"task_count"}
+            )
+            phase.sort_order = index
+            phase.updated_by = actor_id
+            phase.version += 1
+            db.flush([phase])
+            self._record_change(db, PhaseRead.model_validate(phase), old, actor_id)
+        db.commit()
+
+    @staticmethod
+    def _record_change(db: Session, result: PhaseRead, old: dict | None, actor_id: int):
         db.add(
             ProjectPhaseEvent(
-                project_id=project_id,
-                phase_id=phase.id,
+                project_id=result.project_id,
+                phase_id=result.id,
                 actor_id=actor_id,
                 old_value=old,
                 new_value=result.model_dump(mode="json", exclude={"task_count"}),
@@ -167,15 +201,12 @@ class TaskPhaseService:
             db,
             event_type="task_phase.updated" if old else "task_phase.created",
             actor_user_id=actor_id,
-            project_id=project_id,
+            project_id=result.project_id,
             resource_type="task_phase",
-            resource_id=phase.id,
+            resource_id=result.id,
             metadata={"old": old, "new": result.model_dump(mode="json")},
             commit=False,
         )
-        db.commit()
-        result.task_count = self.repository.counts(db, project_id).get(phase.id, 0)
-        return result
 
     def summary(self, db: Session, project_id: int, filters: EffortFilters):
         """工程・共通・未分類の和をProject全体と一致させる。"""

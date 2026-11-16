@@ -103,6 +103,7 @@ REQUIREMENT_REVIEW_NOT_FOUND = "Requirement review not found"
 TASK_CODE_ALREADY_EXISTS = "Task code already exists"
 TASK_NOT_FOUND = "Task not found"
 TASK_PHASE_NOT_FOUND = "工程が見つかりません"
+GANTT_ORDER_INVALID_TARGET = "この位置には並べ替えできません"
 TASK_PHASE_ARCHIVED = "アーカイブされた工程へ新しく割り当てることはできません"
 TASK_PHASE_NAME_EXISTS = (
     "同じ名称の工程があります。アーカイブ済みの工程も確認してください"

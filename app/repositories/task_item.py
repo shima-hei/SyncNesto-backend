@@ -3,12 +3,14 @@
 from datetime import UTC, date, datetime
 from typing import Any
 
-from sqlalchemy import or_, select, text
+from sqlalchemy import delete, or_, select, text
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, aliased
 
 from app.models.task import (
     RequirementTaskRelation,
     Task,
+    TaskGanttOrder,
 )
 from app.schemas.task import (
     TaskCreate,
@@ -335,7 +337,52 @@ class TaskRepository:
             query = query.filter(
                 or_(Task.start_date.is_(None), Task.start_date <= end_date)
             )
-        return query.order_by(Task.start_date, Task.due_date, Task.id).all()
+        return (
+            query.outerjoin(TaskGanttOrder, TaskGanttOrder.task_id == Task.id)
+            .order_by(*self._gantt_order_by())
+            .all()
+        )
+
+    @staticmethod
+    def _gantt_order_by():
+        return (
+            TaskGanttOrder.sort_order.asc().nulls_last(),
+            Task.start_date,
+            Task.due_date,
+            Task.id,
+        )
+
+    def gantt_siblings(self, db: Session, task: Task) -> list[int]:
+        """未表示のタスクも含めて、同じ階層の並びと所属を固定する。"""
+        return list(
+            db.scalars(
+                select(Task.id)
+                .outerjoin(TaskGanttOrder, TaskGanttOrder.task_id == Task.id)
+                .where(
+                    Task.project_id == task.project_id,
+                    Task.phase_scope == task.phase_scope,
+                    Task.phase_id == task.phase_id,
+                    Task.parent_task_id == task.parent_task_id,
+                    Task.deleted_at.is_(None),
+                )
+                .order_by(*self._gantt_order_by())
+                .with_for_update(of=Task)
+            )
+        )
+
+    def save_gantt_order(self, db: Session, task_ids: list[int]) -> None:
+        rows = [
+            {"task_id": task_id, "sort_order": index}
+            for index, task_id in enumerate(task_ids)
+        ]
+        stmt = insert(TaskGanttOrder)
+        db.execute(
+            stmt.on_conflict_do_update(
+                index_elements=[TaskGanttOrder.task_id],
+                set_={"sort_order": stmt.excluded.sort_order},
+            ),
+            rows,
+        )
 
     def update(
         self,
@@ -347,6 +394,7 @@ class TaskRepository:
         commit: bool = True,
     ) -> Task:
         """タスクを更新する。"""
+        scope = (task.phase_scope, task.phase_id, task.parent_task_id)
         for field in [
             "parent_task_id",
             "task_code",
@@ -382,6 +430,9 @@ class TaskRepository:
             )
         task.updated_by = actor_id
         task.version += 1
+        if scope != (task.phase_scope, task.phase_id, task.parent_task_id):
+            db.flush([task])
+            db.execute(delete(TaskGanttOrder).where(TaskGanttOrder.task_id == task.id))
         if commit:
             db.commit()
         else:

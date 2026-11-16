@@ -32,6 +32,88 @@ def create_phase(client, project, name="設計"):
     return result.json()
 
 
+def test_gantt_order_persists_with_separate_phase_and_task_permissions(
+    client,
+    phase_context,
+    create_test_user,
+    assign_project_role,
+):
+    _, project = phase_context
+    first_phase = create_phase(client, project, "設計")
+    second_phase = create_phase(client, project, "実装")
+    root = f"/projects/{project.id}"
+
+    def create_task(title, start, phase, parent=None):
+        data = {
+            "title": title,
+            "start_date": start,
+            "parent_task_id": parent,
+            "phase_assignment": {"kind": "phase", "phase_id": phase["id"]},
+        }
+        response = client.post(f"{root}/tasks", json=data)
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    first = create_task("A", "2026-11-16", first_phase)
+    hidden = create_task("Hidden", "2026-11-17", first_phase)
+    last = create_task("B", "2026-11-18", first_phase)
+    child = create_task("Child", "2026-11-19", first_phase, first["id"])
+    elsewhere = create_task("Other", "2026-11-20", second_phase)
+    initial = client.get(f"{root}/gantt").json()
+    assert [task["id"] for task in initial["tasks"]] == [
+        first["id"],
+        hidden["id"],
+        last["id"],
+        child["id"],
+        elsewhere["id"],
+    ]
+    phase_order = f"{root}/gantt/phase-order"
+    task_order = f"{root}/gantt/task-order"
+
+    def move(url, item, anchor):
+        return client.patch(
+            url,
+            json={
+                "item_id": item["id"],
+                "anchor_id": anchor["id"],
+                "placement": "before",
+            },
+        )
+
+    assert move(phase_order, second_phase, first_phase).status_code == 204
+    phases = client.get(f"{root}/phases").json()["items"]
+    assert [phase["id"] for phase in phases] == [second_phase["id"], first_phase["id"]]
+    history = client.get(f"{root}/phases/{first_phase['id']}/events").json()["items"]
+    assert history[0]["old_value"]["sort_order"] == 0
+    assert history[0]["new_value"]["sort_order"] == 1
+
+    member = create_test_user(email="gantt-member@example.com")
+    assign_project_role(user=member, project=project, role_key="member")
+    authorize_as(client, member)
+    assert move(phase_order, first_phase, second_phase).status_code == 403
+    assert move(task_order, child, first).status_code == 400
+    assert move(task_order, elsewhere, first).status_code == 400
+    assert move(task_order, last, first).status_code == 204
+    assert move(task_order, last, first).status_code == 204
+
+    gantt = client.get(f"{root}/gantt").json()
+    siblings = [
+        task["id"]
+        for task in gantt["tasks"]
+        if task["phase_id"] == first_phase["id"] and not task["parent_task_id"]
+    ]
+    assert siblings == [last["id"], first["id"], hidden["id"]]
+    saved = client.get(f"/tasks/{last['id']}").json()
+    assert saved["version"] == last["version"]
+    assert saved["sort_order"] == last["sort_order"]
+    assert saved["start_date"] == last["start_date"]
+
+    viewer = create_test_user(email="gantt-viewer@example.com")
+    assign_project_role(user=viewer, project=project, role_key="viewer")
+    authorize_as(client, viewer)
+    assert move(task_order, first, last).status_code == 403
+
+
 def test_phase_only_edit_does_not_fill_legacy_actual_dates(
     client, phase_context, create_test_task, db
 ):
