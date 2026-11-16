@@ -21,6 +21,15 @@ def upgrade() -> None:
         ),
         sa.Column("sort_order", sa.Integer(), nullable=False),
     )
+    op.execute("""
+    DO $$
+    BEGIN
+        IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'syncnesto_app') THEN
+            GRANT SELECT, INSERT, UPDATE, DELETE ON task_gantt_orders TO syncnesto_app;
+        END IF;
+    END
+    $$;
+    """)
 
 
 def downgrade() -> None:

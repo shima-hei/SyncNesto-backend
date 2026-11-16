@@ -4,7 +4,6 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import delete, or_, select, text
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, aliased
 
 from app.models.task import (
@@ -371,18 +370,18 @@ class TaskRepository:
         )
 
     def save_gantt_order(self, db: Session, task_ids: list[int]) -> None:
-        rows = [
-            {"task_id": task_id, "sort_order": index}
-            for index, task_id in enumerate(task_ids)
-        ]
-        stmt = insert(TaskGanttOrder)
-        db.execute(
-            stmt.on_conflict_do_update(
-                index_elements=[TaskGanttOrder.task_id],
-                set_={"sort_order": stmt.excluded.sort_order},
-            ),
-            rows,
-        )
+        existing = {
+            row.task_id: row
+            for row in db.scalars(
+                select(TaskGanttOrder).where(TaskGanttOrder.task_id.in_(task_ids))
+            )
+        }
+        for index, task_id in enumerate(task_ids):
+            row = existing.get(task_id)
+            if row is None:
+                db.add(TaskGanttOrder(task_id=task_id, sort_order=index))
+            elif row.sort_order != index:
+                row.sort_order = index
 
     def update(
         self,
