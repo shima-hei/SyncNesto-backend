@@ -89,6 +89,13 @@ class TokenExpiredError(UnauthorizedError):
     code = "TOKEN_EXPIRED"
 
 
+class StaleSessionTokenError(UnauthorizedError):
+    """リクエストのJWTは期限切れだが、DBセッションは有効。"""
+
+    message = error_messages.STALE_SESSION_TOKEN
+    code = "STALE_SESSION_TOKEN"
+
+
 class InvalidTokenError(UnauthorizedError):
     """認証トークンが不正な場合の例外。"""
 

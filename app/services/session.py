@@ -9,8 +9,12 @@ from sqlalchemy.orm import Session
 
 from app.core.auth_cookie import set_auth_cookie
 from app.core.config import settings
-from app.core.exceptions import InvalidTokenError, TokenExpiredError
-from app.core.security import create_access_token, decode_access_token
+from app.core.exceptions import (
+    InvalidTokenError,
+    StaleSessionTokenError,
+    TokenExpiredError,
+)
+from app.core.security import DEMO_AUDIENCE, create_access_token, decode_access_token
 from app.models.session import UserSession
 from app.models.user import User
 from app.repositories.session import UserSessionRepository
@@ -110,6 +114,7 @@ class SessionService:
         Raises:
             InvalidTokenError: セッションが存在しない、または失効済みの場合。
             TokenExpiredError: セッション期限が切れている場合。
+            StaleSessionTokenError: JWTだけが期限切れの場合。
         """
         session_id = self.get_session_id(payload)
         user_session = self.repository.get_by_id(db, session_id)
@@ -126,12 +131,9 @@ class SessionService:
 
         now = datetime.now(UTC)
         payload_expires_at = self._get_payload_datetime(payload, "exp")
-        if payload_expires_at is not None and payload_expires_at <= now:
-            self.revoke_expired_session(
-                db,
-                user_session,
-                SESSION_REVOKE_REASON_EXPIRED,
-            )
+        token_expired = payload_expires_at is not None and payload_expires_at <= now
+        if token_expired and payload.get("aud") == DEMO_AUDIENCE:
+            self.revoke_expired_session(db, user_session, SESSION_REVOKE_REASON_EXPIRED)
             raise TokenExpiredError()
 
         if user_session.absolute_expires_at <= now:
@@ -149,6 +151,9 @@ class SessionService:
                 SESSION_REVOKE_REASON_EXPIRED,
             )
             raise TokenExpiredError()
+
+        if token_expired:
+            raise StaleSessionTokenError()
 
         return user_session
 
@@ -175,16 +180,23 @@ class SessionService:
         else:
             self.repository.revoke(db, user_session, reason)
 
-    def should_refresh_session(self, user_session: UserSession) -> bool:
+    def should_refresh_session(
+        self, user_session: UserSession, payload: dict[str, object]
+    ) -> bool:
         """セッションを延長すべきか判定する。
 
         Args:
             user_session: 判定対象セッション。
+            payload: 検証済みJWTのpayload。
 
         Returns:
             延長すべき場合はTrue。
         """
-        remaining = user_session.expires_at - datetime.now(UTC)
+        expires_at = user_session.expires_at
+        token_expires_at = self._get_payload_datetime(payload, "exp")
+        if token_expires_at is not None and payload.get("aud") != DEMO_AUDIENCE:
+            expires_at = min(expires_at, token_expires_at)
+        remaining = expires_at - datetime.now(UTC)
         threshold = timedelta(minutes=settings.session_refresh_threshold_minutes)
         return remaining <= threshold
 

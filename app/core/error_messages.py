@@ -27,6 +27,7 @@ AUDIT_LOG_DATE_RANGE_INVALID = "開始日時は終了日時より前にしてく
 UNAUTHORIZED = "Unauthorized"
 AUTHENTICATION_REQUIRED = "Authentication required"
 TOKEN_EXPIRED = "Token expired"
+STALE_SESSION_TOKEN = "Session token expired while the session is still active"
 INVALID_TOKEN = "Invalid token"
 AUTHENTICATION_CONTEXT_CHANGED = (
     "ログイン状態が変わりました。ページを再読み込みしてください"

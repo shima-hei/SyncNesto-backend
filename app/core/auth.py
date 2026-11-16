@@ -113,9 +113,14 @@ def get_authenticated_user(
         access_token is not None
         and not db.info["password_setup_only"]
         and not (
+            request.method == "GET"
+            and request.url.path == "/auth/me"
+            and request.headers.get("X-Syncnesto-Session-Refresh") == "skip"
+        )
+        and not (
             db.info.get("demo_id") and request.url.path in {"/auth/me", "/demo/status"}
         )
-        and session_service.should_refresh_session(user_session)
+        and session_service.should_refresh_session(user_session, payload)
     ):
         session_service.refresh_session_cookie(db, response, user, user_session)
 
