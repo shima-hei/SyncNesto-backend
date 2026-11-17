@@ -15,6 +15,7 @@ from app.schemas.task import (
     TaskCreate,
     TaskUpdate,
 )
+from app.schemas.task_phase import PhaseScope
 
 
 class TaskRepository:
@@ -179,6 +180,8 @@ class TaskRepository:
         assignee_id: int | None = None,
         requirement_id: int | None = None,
         parent_task_id: int | None = None,
+        phase_scope: PhaseScope | None = None,
+        phase_id: int | None = None,
         root_only: bool | None = None,
         start_date_from: date | None = None,
         due_date_to: date | None = None,
@@ -200,6 +203,10 @@ class TaskRepository:
             ).filter(RequirementTaskRelation.requirement_id == requirement_id)
         if parent_task_id is not None:
             query = query.filter(Task.parent_task_id == parent_task_id)
+        if phase_scope is not None:
+            query = query.filter(Task.phase_scope == phase_scope)
+        if phase_id is not None:
+            query = query.filter(Task.phase_id == phase_id)
         if root_only:
             query = query.filter(Task.parent_task_id.is_(None))
         if status is not None:

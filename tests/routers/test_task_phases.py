@@ -32,6 +32,129 @@ def create_phase(client, project, name="設計"):
     return result.json()
 
 
+def test_phase_details_and_scoped_task_listing(client, phase_context):
+    _, project = phase_context
+    root = f"/projects/{project.id}"
+    phase = create_phase(client, project)
+    url = f"{root}/phases/{phase['id']}"
+    result = client.patch(
+        url,
+        json={"version": phase["version"], "color": "violet", "description": "仕様"},
+    )
+    assert result.status_code == 200
+    assert result.json()["color"] == "violet"
+    assert result.json()["description"] == "仕様"
+    for kind in ("shared", "unclassified", "phase"):
+        assignment = {
+            "kind": kind,
+            "phase_id": phase["id"] if kind == "phase" else None,
+        }
+        assert (
+            client.post(
+                f"{root}/tasks", json={"title": kind, "phase_assignment": assignment}
+            ).status_code
+            == 201
+        )
+    scoped = client.get(f"{root}/tasks", params={"phase_id": phase["id"]}).json()
+    assert [row["title"] for row in scoped["items"]] == ["phase"]
+    shared = client.get(f"{root}/tasks", params={"phase_scope": "shared"}).json()
+    assert [row["title"] for row in shared["items"]] == ["shared"]
+    assert client.get(f"{root}/tasks", params={"phase_id": 999999}).status_code == 404
+    cleared = client.patch(
+        url, json={"version": result.json()["version"], "color": None}
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["color"] is None
+    assert cleared.json()["description"] == "仕様"
+
+
+def test_phase_transfers_preserve_task_details_and_require_fresh_preview(
+    client, phase_context, create_test_user, assign_project_role
+):
+    admin, project = phase_context
+    root = f"/projects/{project.id}"
+    source = create_phase(client, project)
+    target = create_phase(client, project, "実装")
+    source_url = f"{root}/phases/{source['id']}"
+    destination = {"kind": "phase", "phase_id": target["id"]}
+
+    def task_in_source(title):
+        result = client.post(
+            f"{root}/tasks",
+            json={
+                "title": title,
+                "estimated_minutes": 45,
+                "start_date": "2026-11-17",
+                "phase_assignment": {"kind": "phase", "phase_id": source["id"]},
+            },
+        )
+        assert result.status_code == 201
+        return result.json()
+
+    first = task_in_source("移動対象1")
+    second = task_in_source("移動対象2")
+    bulk = f"{root}/phases/transfer-tasks"
+    result = client.post(
+        bulk,
+        json={
+            "tasks": [
+                {"id": first["id"], "version": first["version"]},
+                {"id": second["id"], "version": second["version"] + 1},
+            ],
+            "destination": destination,
+        },
+    )
+    assert result.status_code == 409
+    assert client.get(f"/tasks/{first['id']}").json()["phase_id"] == source["id"]
+
+    preview = client.get(f"{source_url}/archive-preview").json()
+    assert preview["task_count"] == 2
+    result = client.post(
+        bulk,
+        json={
+            "tasks": [
+                {"id": first["id"], "version": first["version"]},
+            ],
+            "destination": destination,
+        },
+    )
+    assert result.status_code == 200 and result.json()["moved_count"] == 1
+    archive = f"{source_url}/archive-with-transfer"
+    assert (
+        client.post(
+            archive, json={"snapshot": preview["snapshot"], "destination": destination}
+        ).status_code
+        == 409
+    )
+    fresh = client.get(f"{source_url}/archive-preview").json()
+    assert fresh["task_count"] == 1
+    viewer = create_test_user()
+    assign_project_role(user=viewer, project=project, role_key="viewer")
+    authorize_as(client, viewer)
+    assert client.get(f"{source_url}/archive-preview").status_code == 403
+    assert (
+        client.post(
+            archive, json={"snapshot": fresh["snapshot"], "destination": destination}
+        ).status_code
+        == 403
+    )
+    authorize_as(client, admin)
+
+    result = client.post(
+        archive, json={"snapshot": fresh["snapshot"], "destination": destination}
+    )
+    assert result.status_code == 200 and result.json()["moved_count"] == 1
+    saved = client.get(f"/tasks/{second['id']}").json()
+    assert saved["phase_id"] == target["id"]
+    assert saved["estimated_minutes"] == 45
+    assert saved["start_date"] == "2026-11-17"
+    assert saved["version"] == second["version"] + 1
+    archived = client.get(f"{root}/phases", params={"include_archived": True}).json()[
+        "items"
+    ][0]
+    assert archived["id"] == source["id"] and archived["archived_at"]
+
+
 def test_phase_list_keeps_the_whole_planned_period_and_empty_phases(
     client,
     phase_context,

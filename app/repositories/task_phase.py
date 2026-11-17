@@ -30,14 +30,13 @@ class TaskPhaseRepository:
     """工程の既存所属を隠さずに取得する。"""
 
     def list_for_reorder(self, db: Session, project_id: int) -> list[ProjectPhase]:
-        return list(
-            db.scalars(
-                select(ProjectPhase)
-                .where(ProjectPhase.project_id == project_id)
-                .order_by(ProjectPhase.sort_order, ProjectPhase.id)
-                .with_for_update()
-            )
+        rows = db.scalars(
+            select(ProjectPhase)
+            .where(ProjectPhase.project_id == project_id)
+            .order_by(ProjectPhase.id)
+            .with_for_update()
         )
+        return sorted(rows, key=lambda phase: (phase.sort_order, phase.id))
 
     def events(self, db: Session, project_id: int, phase_id: int, page: int):
         """所属を確認した工程の履歴をページ取得する。"""

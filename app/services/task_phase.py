@@ -142,7 +142,7 @@ class TaskPhaseService:
                 requested_version=data.version,
                 current=current.model_dump(mode="json"),
             )
-            for field in ("name", "sort_order"):
+            for field in ("name", "sort_order", "color", "description"):
                 if field in data.model_fields_set:
                     setattr(phase, field, getattr(data, field))
             if "archived" in data.model_fields_set:

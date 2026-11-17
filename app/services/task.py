@@ -40,6 +40,7 @@ from app.schemas.task import (
     TaskPlanningUpdate,
     TaskUpdate,
 )
+from app.schemas.task_phase import PhaseScope
 from app.services.audit_log import AuditLogService
 from app.services.authorization import AuthorizationService
 from app.services.change_log_formatter import (
@@ -394,6 +395,8 @@ class TaskService:
         assignee_id: int | None = None,
         requirement_id: int | None = None,
         parent_task_id: int | None = None,
+        phase_scope: PhaseScope | None = None,
+        phase_id: int | None = None,
         root_only: bool | None = None,
         start_date_from: date | None = None,
         due_date_to: date | None = None,
@@ -412,6 +415,10 @@ class TaskService:
             raise BadRequestError(error_messages.TASK_PARENT_FILTER_CONFLICT)
         if parent_task_id is not None:
             self._validate_parent_task(db, project_id, parent_task_id)
+        if phase_id is not None:
+            if phase_scope not in (None, "phase"):
+                raise BadRequestError(error_messages.TASK_PHASE_FILTER_CONFLICT)
+            TaskPhaseService().read(db, project_id, phase_id)
         return self.task_repository.list_paginated(
             db,
             project_id=project_id,
@@ -424,6 +431,8 @@ class TaskService:
             assignee_id=assignee_id,
             requirement_id=requirement_id,
             parent_task_id=parent_task_id,
+            phase_scope=phase_scope,
+            phase_id=phase_id,
             root_only=root_only,
             start_date_from=start_date_from,
             due_date_to=due_date_to,
@@ -489,14 +498,17 @@ class TaskService:
         task_in: TaskUpdate,
         actor_id: int | None,
         planning_only: bool,
+        locked_task: Task | None = None,
     ) -> Task:
         """共通の排他・履歴・通知を同一transactionで更新する。"""
         if db.info.get("demo_id") is not None:
             from app.db.demo_scope import lock_active_demo
 
             lock_active_demo(db)
-        task = self.get_task(db, task_id)
-        db.refresh(task, with_for_update=True)
+        task = locked_task
+        if task is None:
+            task = self.get_task(db, task_id)
+            db.refresh(task, with_for_update=True)
         current = self._build_task_conflict_current(db, task)
         raise_if_version_conflict(
             current_version=task.version,
@@ -655,8 +667,22 @@ class TaskService:
                 resource_id=task.id,
                 metadata={"updated_fields": updated_fields},
             )
-        db.commit()
+        if locked_task is None:
+            db.commit()
         return task
+
+    def move_locked_task_to_phase(
+        self, db: Session, task: Task, data: TaskUpdate, actor_id: int
+    ) -> Task:
+        """既にロックしたタスクの所属を更新し、呼び出し元にcommitを委ねる。"""
+        return self._update_task(
+            db,
+            task_id=task.id,
+            task_in=data,
+            actor_id=actor_id,
+            planning_only=False,
+            locked_task=task,
+        )
 
     def delete_task(self, db: Session, *, task_id: int, actor_id: int | None) -> None:
         """タスクを論理削除する。"""

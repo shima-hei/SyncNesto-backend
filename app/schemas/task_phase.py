@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 EffortBasis = Literal["own", "rollup", "unreviewed"]
 PhaseScope = Literal["unclassified", "shared", "phase"]
+PhaseColor = Literal["blue", "violet", "emerald", "amber", "rose", "slate"]
 
 
 class PhaseAssignment(BaseModel):
@@ -24,6 +25,31 @@ class PhaseAssignment(BaseModel):
                 "工程所属には工程IDを指定し、未分類・共通には指定しないでください"
             )
         return self
+
+
+class PhaseTransferTask(BaseModel):
+    id: int = Field(gt=0)
+    version: int = Field(ge=1)
+
+
+class PhaseTransfer(BaseModel):
+    tasks: list[PhaseTransferTask] = Field(min_length=1, max_length=100)
+    destination: PhaseAssignment
+
+
+class PhaseArchivePreview(BaseModel):
+    phase_id: int
+    task_count: int
+    snapshot: str
+
+
+class PhaseArchiveMove(BaseModel):
+    snapshot: str = Field(min_length=64, max_length=64)
+    destination: PhaseAssignment
+
+
+class PhaseTransferResult(BaseModel):
+    moved_count: int
 
 
 class PhaseCreate(BaseModel):
@@ -46,12 +72,17 @@ class PhaseUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     sort_order: int | None = Field(default=None, ge=0)
     archived: bool | None = None
+    color: PhaseColor | None = None
+    description: str | None = Field(default=None, max_length=2000)
     _strip_name = field_validator("name", mode="before")(PhaseCreate.strip_name)
 
     @model_validator(mode="after")
     def reject_null(self):
         """省略だけを現状保持として扱う。"""
-        if any(getattr(self, key) is None for key in self.model_fields_set):
+        if any(
+            getattr(self, key) is None
+            for key in self.model_fields_set & {"name", "sort_order", "archived"}
+        ):
             raise ValueError("工程の更新値にnullは指定できません")
         return self
 
@@ -66,6 +97,8 @@ class PhaseRead(BaseModel):
     sort_order: int
     version: int
     archived_at: datetime | None
+    color: PhaseColor | None = None
+    description: str | None = None
     task_count: int = 0
 
 

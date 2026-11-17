@@ -16,6 +16,14 @@
 
 POSTはname/sort_order（非負整数、既定0）。PATCHはversionを必須に、name/sort_order/archivedを部分更新する。省略は保持し、nullは422。競合は409 VERSION_CONFLICTと最新current、同名は409 DUPLICATE_RESOURCE。工程の物理削除APIは提供しない。アーカイブでもTask所属・工数・日程・versionは変えない。
 
+PATCHと応答に工程の `color` と `description` を追加。色は `blue` / `violet` / `emerald` / `amber` / `rose` / `slate`、説明は最大2000字。これら2項目は省略で保持、`null` で解除。既存工程は両方未設定から始まり、変更値は工程履歴にも記録する。
+
+## 工程一覧からのタスク移動
+
+- `GET /projects/{project_id}/tasks` は任意の `phase_scope` と `phase_id` に対応。`phase_id` は `phase` 所属の同一案件の工程に限る。共通・未分類は `phase_scope=shared` / `unclassified` で取得する。通常のページングと権限を使う。
+- `POST /projects/{project_id}/phases/transfer-tasks` は `task:update` で、`tasks` に1〜100件の `{id, version}` と `destination` に工程所属を受ける。競合時は全件をロールバックする。
+- `GET /projects/{project_id}/phases/{phase_id}/archive-preview` で対象件数と確認用の `snapshot` を取得し、`POST .../{phase_id}/archive-with-transfer` へ `snapshot` と `destination` を送る。両方に `project:update` と `task:update` が必要。対象や版の変化は409。確認済みの所属変更・アーカイブ・履歴を同じトランザクションで保存する。従来の所属を保持するアーカイブも引き続き利用できる。
+
 ## 既存Task APIへの追加
 
 作成/更新で任意のphase_assignmentを受ける。省略は既存所属を保持（新規は未分類）、nullは未分類へ解除。objectはkind=unclassified/shared/phaseで、phaseだけphase_id必須、他はnull。別Project/不明工程は404、新しいアーカイブ工程への割当は400。同じ工程行のロックでアーカイブとの競合を直列化し、Task更新は従来のversion/409 current/変更履歴/監査を維持する。

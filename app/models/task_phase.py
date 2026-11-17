@@ -45,6 +45,12 @@ class ProjectPhase(Base):
         String(100),
         comment=db_comment("工程名", "同一Project内でアーカイブ分を含め一意"),
     )
+    color: Mapped[str | None] = mapped_column(
+        String(12), comment=db_comment("識別色", "工程の表示に使うプリセット")
+    )
+    description: Mapped[str | None] = mapped_column(
+        String(2000), comment=db_comment("説明", "工程の目的や対象範囲")
+    )
     sort_order: Mapped[int] = mapped_column(
         Integer,
         default=0,

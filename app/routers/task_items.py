@@ -27,6 +27,7 @@ from app.schemas.task import (
     TaskTagListResponse,
     TaskUpdate,
 )
+from app.schemas.task_phase import PhaseScope
 
 router = APIRouter(tags=["tasks"])
 
@@ -46,6 +47,8 @@ def list_tasks(
     assignee_id: int | None = Query(default=None),
     requirement_id: int | None = Query(default=None),
     parent_task_id: int | None = Query(default=None),
+    phase_scope: PhaseScope | None = Query(default=None),
+    phase_id: int | None = Query(default=None, gt=0),
     root_only: bool | None = Query(default=None),
     start_date_from: date | None = Query(default=None),
     due_date_to: date | None = Query(default=None),
@@ -71,6 +74,8 @@ def list_tasks(
         assignee_id=assignee_id,
         requirement_id=requirement_id,
         parent_task_id=parent_task_id,
+        phase_scope=phase_scope,
+        phase_id=phase_id,
         root_only=root_only,
         start_date_from=start_date_from,
         due_date_to=due_date_to,
