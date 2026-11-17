@@ -3,17 +3,22 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import NotFoundError
+from app.core import error_messages
+from app.core.exceptions import BadRequestError, NotFoundError, VersionConflictError
 from app.db.demo_scope import lock_active_demo
 from app.models.task import Task
-from app.models.task_estimate import TaskEstimateRevision
+from app.models.task_estimate import TaskEstimateBaseline, TaskEstimateRevision
 from app.repositories.task_estimate import (
+    build_baseline,
     estimate_history,
+    latest_baseline,
     latest_estimate,
     legacy_estimate,
 )
 from app.schemas.task import TaskUpdate
 from app.schemas.task_estimate import (
+    TaskEstimateBaselineConfirm,
+    TaskEstimateBaselineRead,
     TaskEstimateRead,
     TaskEstimateRevisionRead,
     TaskEstimateUpdate,
@@ -39,9 +44,7 @@ def read_task_estimate(db: Session, task: Task, page: int = 1) -> TaskEstimateRe
     )
 
 
-def save_task_estimate(
-    db: Session, task_id: int, data: TaskEstimateUpdate, actor_id: int
-) -> TaskEstimateRead:
+def _lock_estimate_task(db: Session, task_id: int) -> Task:
     if db.info.get("demo_id") is not None:
         lock_active_demo(db)
     task = db.scalar(
@@ -52,6 +55,13 @@ def save_task_estimate(
     )
     if task is None:
         raise NotFoundError()
+    return task
+
+
+def save_task_estimate(
+    db: Session, task_id: int, data: TaskEstimateUpdate, actor_id: int
+) -> TaskEstimateRead:
+    task = _lock_estimate_task(db, task_id)
     previous = legacy_estimate(task)
     had_revision = latest_estimate(db, task.id) is not None
     minutes = data.calculated_minutes()
@@ -101,3 +111,58 @@ def save_task_estimate(
     )
     db.commit()
     return read_task_estimate(db, task)
+
+
+def confirm_task_baseline(
+    db: Session, task_id: int, data: TaskEstimateBaselineConfirm, actor_id: int
+) -> TaskEstimateBaselineRead:
+    task = _lock_estimate_task(db, task_id)
+    estimate = latest_estimate(db, task.id)
+    estimate_version = estimate.task_version if estimate else task.version
+    current = latest_baseline(db, task.id)
+    if (
+        data.estimate_version == estimate_version
+        and current
+        and current.estimate.task_version == estimate_version
+    ):
+        return current
+    if data.estimate_version != estimate_version or data.expected_baseline_id != (
+        current.id if current else None
+    ):
+        raise VersionConflictError(
+            current={
+                "estimate_version": estimate_version,
+                "baseline": current.model_dump(mode="json") if current else None,
+            }
+        )
+    if task.estimated_minutes is None:
+        raise BadRequestError(error_messages.TASK_ESTIMATE_BASELINE_MISSING)
+    if estimate is None:
+        estimate = TaskEstimateRevision(
+            task_id=task.id,
+            task_version=task.version,
+            method="simple",
+            minutes=task.estimated_minutes,
+        )
+        db.add(estimate)
+        db.flush()
+    baseline = TaskEstimateBaseline(
+        estimate_revision_id=estimate.id,
+        confirmed_by=actor_id,
+        reason=(data.reason or "").strip() or None,
+    )
+    db.add(baseline)
+    db.flush()
+    result = build_baseline(baseline, estimate)
+    AuditLogService().record(
+        db,
+        event_type="task.estimate_baseline_confirmed",
+        actor_user_id=actor_id,
+        project_id=task.project_id,
+        resource_type="task",
+        resource_id=task.id,
+        metadata={"baseline_id": baseline.id, "estimate_version": estimate_version},
+        commit=False,
+    )
+    db.commit()
+    return result

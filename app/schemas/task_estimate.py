@@ -77,3 +77,24 @@ class TaskEstimateRead(BaseModel):
 class TaskEstimateMethodRead(BaseModel):
     task_id: int
     method: EstimateMethod | None
+
+
+class TaskEstimateBaselineConfirm(BaseModel):
+    estimate_version: int = Field(gt=0)
+    expected_baseline_id: int | None = Field(gt=0)
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class TaskEstimateBaselineRead(BaseModel):
+    id: int
+    estimate: TaskEstimateRevisionRead
+    confirmed_by: int | None
+    confirmed_at: datetime
+    reason: str | None
+
+
+class TaskEstimateBaselines(BaseModel):
+    current: TaskEstimateBaselineRead | None
+    items: list[TaskEstimateBaselineRead]
+    total: int
+    page: int

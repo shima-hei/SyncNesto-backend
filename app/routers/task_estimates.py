@@ -6,14 +6,21 @@ from sqlalchemy.orm import Session
 from app.core.auth import get_current_user, require_project_permission
 from app.db.session import get_db
 from app.models.user import User
-from app.repositories.task_estimate import estimate_methods
+from app.repositories.task_estimate import estimate_methods, read_baselines
 from app.routers.tasks_shared import task_service
 from app.schemas.task_estimate import (
+    TaskEstimateBaselineConfirm,
+    TaskEstimateBaselineRead,
+    TaskEstimateBaselines,
     TaskEstimateMethodRead,
     TaskEstimateRead,
     TaskEstimateUpdate,
 )
-from app.services.task_estimate import read_task_estimate, save_task_estimate
+from app.services.task_estimate import (
+    confirm_task_baseline,
+    read_task_estimate,
+    save_task_estimate,
+)
 
 router = APIRouter(tags=["task-estimates"])
 
@@ -57,3 +64,34 @@ def update_task_estimate(
         db, user=user, task=task, permission_code="task:update"
     )
     return save_task_estimate(db, task_id, data, user.id)
+
+
+@router.get("/tasks/{task_id}/estimate/baselines", response_model=TaskEstimateBaselines)
+def get_task_estimate_baselines(
+    task_id: int,
+    page: int = Query(1, ge=1),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    task = task_service.get_task(db, task_id)
+    task_service.ensure_user_can_access_task(
+        db, user=user, task=task, permission_code="task:read"
+    )
+    return read_baselines(db, task_id, page)
+
+
+@router.post(
+    "/tasks/{task_id}/estimate/baselines", response_model=TaskEstimateBaselineRead
+)
+def confirm_task_estimate_baseline(
+    task_id: int,
+    data: TaskEstimateBaselineConfirm,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    task = task_service.get_task(db, task_id)
+    for permission in ("task:update", "project:update"):
+        task_service.ensure_user_can_access_task(
+            db, user=user, task=task, permission_code=permission
+        )
+    return confirm_task_baseline(db, task_id, data, user.id)

@@ -4,10 +4,55 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.task import Task
-from app.models.task_estimate import TaskEstimateRevision
-from app.schemas.task_estimate import TaskEstimateMethodRead, TaskEstimateRevisionRead
+from app.models.task_estimate import TaskEstimateBaseline, TaskEstimateRevision
+from app.schemas.task_estimate import (
+    TaskEstimateBaselineRead,
+    TaskEstimateBaselines,
+    TaskEstimateMethodRead,
+    TaskEstimateRevisionRead,
+)
 
 ESTIMATE_HISTORY_PAGE_SIZE = 20
+
+
+def _baselines(task_id: int):
+    return (
+        select(TaskEstimateBaseline, TaskEstimateRevision)
+        .join(TaskEstimateRevision)
+        .where(TaskEstimateRevision.task_id == task_id)
+    )
+
+
+def build_baseline(baseline: TaskEstimateBaseline, estimate: TaskEstimateRevision):
+    return TaskEstimateBaselineRead(
+        id=baseline.id,
+        estimate=TaskEstimateRevisionRead.model_validate(estimate),
+        confirmed_by=baseline.confirmed_by,
+        confirmed_at=baseline.confirmed_at,
+        reason=baseline.reason,
+    )
+
+
+def latest_baseline(db: Session, task_id: int) -> TaskEstimateBaselineRead | None:
+    result = db.execute(
+        _baselines(task_id).order_by(TaskEstimateBaseline.id.desc()).limit(1)
+    ).first()
+    return build_baseline(*result) if result else None
+
+
+def read_baselines(db: Session, task_id: int, page: int) -> TaskEstimateBaselines:
+    query = _baselines(task_id)
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    items = [
+        build_baseline(baseline, revision)
+        for baseline, revision in db.execute(
+            query.order_by(TaskEstimateBaseline.id.desc())
+            .offset((page - 1) * ESTIMATE_HISTORY_PAGE_SIZE)
+            .limit(ESTIMATE_HISTORY_PAGE_SIZE)
+        )
+    ]
+    current = items[0] if page == 1 and items else latest_baseline(db, task_id)
+    return TaskEstimateBaselines(current=current, items=items, total=total, page=page)
 
 
 def estimate_history(db: Session, task_id: int, page: int):

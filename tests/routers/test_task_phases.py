@@ -32,6 +32,69 @@ def create_phase(client, project, name="設計"):
     return result.json()
 
 
+def test_estimate_baseline_keeps_each_confirmation_and_enforces_authority(
+    client, phase_context, create_test_user, assign_project_role
+):
+    admin, project = phase_context
+    task = client.post(
+        f"/projects/{project.id}/tasks",
+        json={"title": "基準見積", "estimated_minutes": 0, "start_date": "2026-11-17"},
+    ).json()
+    estimate_url = f"/tasks/{task['id']}/estimate"
+    url = f"{estimate_url}/baselines"
+    request = {"estimate_version": task["version"], "expected_baseline_id": None}
+    member = create_test_user()
+    assign_project_role(user=member, project=project, role_key="member")
+    authorize_as(client, member)
+    assert client.get(url).json()["current"] is None
+    assert client.post(url, json=request).status_code == 403
+    authorize_as(client, admin)
+    response = client.post(url, json={**request, "reason": "初回確定"})
+    assert response.status_code == 200, response.text
+    baseline = response.json()
+    assert baseline["estimate"]["minutes"] == 0
+    assert baseline["confirmed_by"] == admin.id
+    assert client.post(url, json=request).json()["id"] == baseline["id"]
+    assert client.get(url).json()["total"] == 1
+    assert client.get(estimate_url).json()["version"] == task["version"]
+
+    saved = client.patch(
+        estimate_url,
+        json={
+            "version": task["version"],
+            "method": "simple",
+            "minutes": 120,
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    assert client.get(url).json()["current"]["estimate"]["minutes"] == 0
+    assert client.post(url, json=request).status_code == 409
+    current_estimate_version = saved.json()["current"]["task_version"]
+    assert (
+        client.post(
+            url,
+            json={
+                "estimate_version": current_estimate_version,
+                "expected_baseline_id": None,
+            },
+        ).status_code
+        == 409
+    )
+    second = client.post(
+        url,
+        json={
+            "estimate_version": current_estimate_version,
+            "expected_baseline_id": baseline["id"],
+            "reason": "見直し",
+        },
+    )
+    assert second.status_code == 200, second.text
+    result = client.get(url).json()
+    assert [row["estimate"]["minutes"] for row in result["items"]] == [120, 0]
+    assert [row["reason"] for row in result["items"]] == ["見直し", "初回確定"]
+    assert client.get(f"/tasks/{task['id']}").json()["start_date"] == "2026-11-17"
+
+
 def test_estimate_workbench_round_trips_and_tracks_legacy_edits(client, phase_context):
     _, project = phase_context
     root = f"/projects/{project.id}"

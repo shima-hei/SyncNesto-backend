@@ -49,4 +49,10 @@ status_groupsは同じ一意集合の状態別内訳。完了・中止を既定�
 - `PATCH /tasks/{task_id}/estimate` は `task:update`。Task版、`simple` / `pert` / `triangular` と手法に応じた分単位の非負整数を受ける。3点は楽観≦最頻≦悲観。計算結果を最寄りの分に丸め、Taskの `estimated_minutes`、見積の入力・前提・変更理由・更新者、既存監査を同一トランザクションで保存する。
 - 詳細見積があるタスクの `estimated_minutes` を従来のタスク編集や計画APIから変更すると、新しい値を単純見積として履歴に追加する。明示した `null` は解除履歴として保持する。見積の変更では日程・実績・工数の集計根拠を補完しない。
 
+### 基準見積
+
+- `GET /tasks/{task_id}/estimate/baselines?page=1` は `task:read`。最新の確定版と確定履歴を20件単位で取得する。確定版は見積の保存内容、確定者、確定日時、任意の理由を返す。
+- `POST /tasks/{task_id}/estimate/baselines` は `task:update` と `project:update` の両方が必要。確認した `estimate_version`、`expected_baseline_id`（初回は `null`）、任意の `reason` を送る。同じ見積版の再送では確定履歴が増えない。確認後に対象の版が進んだ場合は `409 VERSION_CONFLICT` を返す。
+- 確定は既存タスクの見積改訂を参照し、確定履歴を追加する。以前の確定版は引き続き参照できる。数値だけが保存されている旧タスクでは、確定時に単純見積として保存内容を記録する。見積未入力の場合は保存から始める。タスク更新と確定を同じ行のロックで直列化する。
+
 公開MCPはmcp_task_contract.pyで従来のTask入力を固定し、業務APIの新項目を公開しない。通常/デモの新表はtenant_scopeの所有関係に登録し、既存デモの上限・失効・回収を適用する。migration ab26d41066c1は利用済みの所属・根拠・履歴を削除するdowngradeを拒否する。UIの切戻しは追加DBを保持して行う。
