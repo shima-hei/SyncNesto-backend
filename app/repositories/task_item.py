@@ -418,6 +418,8 @@ class TaskRepository:
             "progress_percent",
             "estimated_minutes",
             "actual_minutes",
+            "planned_minutes",
+            "remaining_minutes",
             "estimated_basis",
             "actual_basis",
             "sort_order",

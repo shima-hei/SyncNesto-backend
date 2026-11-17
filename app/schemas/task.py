@@ -82,6 +82,12 @@ class TaskUpdate(BaseModel):
     progress_percent: int | None = Field(default=None, ge=0, le=100)
     estimated_minutes: int | None = Field(default=None, ge=0)
     actual_minutes: int | None = Field(default=None, ge=0)
+    planned_minutes: int | None = Field(
+        default=None, ge=0, le=2_147_483_647, strict=True
+    )
+    remaining_minutes: int | None = Field(
+        default=None, ge=0, le=2_147_483_647, strict=True
+    )
     sort_order: int | None = None
     tags: list[str] | None = None
     change_reason: str | None = None
@@ -109,6 +115,12 @@ class TaskPlanningUpdate(BaseModel):
     estimated_minutes: int | None = Field(
         default=None, ge=0, le=2_147_483_647, strict=True
     )
+    planned_minutes: int | None = Field(
+        default=None, ge=0, le=2_147_483_647, strict=True
+    )
+    remaining_minutes: int | None = Field(
+        default=None, ge=0, le=2_147_483_647, strict=True
+    )
     change_reason: str | None = None
 
     @model_validator(mode="after")
@@ -119,6 +131,8 @@ class TaskPlanningUpdate(BaseModel):
             "start_date",
             "due_date",
             "estimated_minutes",
+            "planned_minutes",
+            "remaining_minutes",
         }:
             raise ValueError("計画の変更対象を1項目以上指定してください")
         return self
@@ -148,6 +162,8 @@ class TaskRead(TaskBase):
     id: int
     project_id: int
     version: int
+    planned_minutes: int | None = None
+    remaining_minutes: int | None = None
     task_type_name: str | None = None
     parent_summary: TaskParentSummary | None = None
     has_children: bool = False

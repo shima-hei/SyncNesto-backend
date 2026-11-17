@@ -32,6 +32,94 @@ def create_phase(client, project, name="設計"):
     return result.json()
 
 
+def test_planned_and_remaining_effort_roll_up_by_assignee(client, phase_context):
+    admin, project = phase_context
+    root = f"/projects/{project.id}"
+    phase = create_phase(client, project)
+    scheduled = client.post(
+        f"{root}/tasks",
+        json={
+            "title": "進行中タスク",
+            "assignee_id": admin.id,
+            "phase_assignment": {"kind": "phase", "phase_id": phase["id"]},
+            "estimated_minutes": 240,
+            "actual_minutes": 30,
+            "start_date": "2026-11-17",
+        },
+    ).json()
+    finished = client.post(
+        f"{root}/tasks",
+        json={
+            "title": "完了タスク",
+            "status": "done",
+            "progress_percent": 100,
+        },
+    ).json()
+    assert (
+        scheduled["planned_minutes"] is None and scheduled["remaining_minutes"] is None
+    )
+    url = f"/tasks/{scheduled['id']}/planning"
+    response = client.patch(
+        url,
+        json={
+            "version": scheduled["version"],
+            "planned_minutes": 180,
+            "remaining_minutes": 45,
+        },
+    )
+    assert response.status_code == 200, response.text
+    saved = response.json()
+    assert (
+        saved["estimated_minutes"],
+        saved["actual_minutes"],
+        saved["start_date"],
+    ) == (240, 30, "2026-11-17")
+    assert (
+        client.patch(
+            url, json={"version": scheduled["version"], "remaining_minutes": 0}
+        ).status_code
+        == 409
+    )
+    assert (
+        client.patch(
+            f"/tasks/{finished['id']}/planning",
+            json={
+                "version": finished["version"],
+                "planned_minutes": 0,
+                "remaining_minutes": 60,
+            },
+        ).status_code
+        == 200
+    )
+
+    summary_url = f"{root}/tasks/effort-summary"
+    summary = client.get(summary_url).json()
+    assert summary["totals"]["planned"]["minutes"] == 180
+    assert summary["totals"]["planned"]["missing_count"] == 0
+    assert summary["totals"]["remaining"]["minutes"] == 45
+    assert summary["totals"]["remaining"]["missing_count"] == 0
+    active, unassigned = summary["assignee_groups"]
+    assert (
+        active["assignee_id"] == admin.id
+        and active["totals"]["remaining"]["minutes"] == 45
+    )
+    assert (
+        unassigned["assignee_id"] is None
+        and unassigned["totals"]["remaining"]["minutes"] == 0
+    )
+    assert summary["groups"][0]["totals"]["planned"]["minutes"] == 180
+
+    cleared = client.patch(
+        url, json={"version": saved["version"], "remaining_minutes": None}
+    )
+    assert (
+        cleared.json()["planned_minutes"] == 180
+        and cleared.json()["remaining_minutes"] is None
+    )
+    remaining = client.get(summary_url).json()["totals"]["remaining"]
+    assert remaining["minutes"] == 0 and remaining["missing_count"] == 1
+
+
 def test_estimate_baseline_keeps_each_confirmation_and_enforces_authority(
     client, phase_context, create_test_user, assign_project_role
 ):

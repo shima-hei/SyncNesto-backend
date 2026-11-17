@@ -156,6 +156,8 @@ class EffortTotals(BaseModel):
     task_count: int = 0
     estimated: EffortMetric = Field(default_factory=EffortMetric)
     actual: EffortMetric = Field(default_factory=EffortMetric)
+    planned: EffortMetric = Field(default_factory=EffortMetric)
+    remaining: EffortMetric = Field(default_factory=EffortMetric)
 
 
 class EffortFilters(BaseModel):
@@ -190,6 +192,11 @@ class StatusEffortGroup(BaseModel):
     totals: EffortTotals
 
 
+class AssigneeEffortGroup(BaseModel):
+    assignee_id: int | None
+    totals: EffortTotals
+
+
 class EffortSummary(BaseModel):
     """描画行や取得ページ数に左右されないProject集計。"""
 
@@ -199,3 +206,4 @@ class EffortSummary(BaseModel):
     totals: EffortTotals
     groups: list[PhaseEffortGroup]
     status_groups: list[StatusEffortGroup]
+    assignee_groups: list[AssigneeEffortGroup] = Field(default_factory=list)

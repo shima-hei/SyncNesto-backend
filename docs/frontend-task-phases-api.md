@@ -34,6 +34,9 @@ TaskReadとガント/ボード/409 currentにはphase_scope/phase_id/phase_name/
 
 ## 集計
 
+- `/tasks/{task_id}/planning` は既存の `task:update` とTaskの版確認で `planned_minutes`・`remaining_minutes` を更新する。非負の整数分を指定し、`null` は解除、省略は保持。既存タスクは未入力から始まり、タスク自身の計画工数と残工数を見積・実績から独立して記録する。
+- `effort-summary` の全体・工程別・状態別・担当者別（`assignee_groups`）に `planned` と `remaining` を追加。担当者別は未割り当ても含み、入力済み残工数の降順。未入力と明示した0を区別する。残工数の合計と未入力件数は完了 `done`・中止 `cancelled` を除いた対象で計算する。完了・中止後も記録を保持し、再開時に集計へ戻す。
+
 effort-summaryは一覧と同じq/status/task_type/priority/assignee_id/requirement_id/parent_task_id/root_only/start_date_from/due_date_to/overdue/tagを受ける。ページ・折り畳みと独立した一意Task集合を先に確定し、ownの分数を1回だけ加算する。同額の別Taskは両方計上。rollupの保存値とunreviewedは加算しない。nullと明示0を区別する。
 
 各metricはminutes/missing_count/unreviewed_count/complete。未入力・未確認があれば確認済み小計として扱う。groupsは工程・共通・未分類へ分け、アーカイブ分も含む和とtotalsを一致させる。filtersとunit=minutesを返す。進捗率・親達成率は更新しない。

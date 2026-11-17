@@ -11,9 +11,14 @@ from app.core.exceptions import BadRequestError, NotFoundError
 from app.models.requirement import Requirement, RequirementDocument
 from app.models.task import Task
 from app.models.task_phase import ProjectPhase, ProjectPhaseEvent
-from app.repositories.task_phase import TaskPhaseRepository, effort_totals
+from app.repositories.task_phase import (
+    EFFORT_METRICS,
+    TaskPhaseRepository,
+    effort_totals,
+)
 from app.schemas.gantt_order import GanttOrderMove
 from app.schemas.task_phase import (
+    AssigneeEffortGroup,
     EffortFilters,
     EffortSummary,
     PhaseAssignment,
@@ -254,27 +259,31 @@ class TaskPhaseService:
         }
         keys = (
             "task_count",
-            "estimated_minutes",
-            "actual_minutes",
-            "estimated_missing",
-            "actual_missing",
-            "estimated_unreviewed",
-            "actual_unreviewed",
+            *(
+                f"{metric}_{field}"
+                for metric in EFFORT_METRICS
+                for field in ("minutes", "missing", "unreviewed")
+            ),
         )
         sums = dict.fromkeys(keys, 0)
         phase_sums = {}
         status_sums = {}
-        # 同一SQLの行から両内訳を作り、同時更新でもProject小計とずらさない。
+        assignee_sums = {}
+        # 同一SQLの行から内訳を作り、同時更新でもProject小計とずらさない。
         for row in rows:
             phase_sum = phase_sums.setdefault(
                 (row["phase_scope"], row["phase_id"]), dict.fromkeys(keys, 0)
             )
             status_sum = status_sums.setdefault(row["status"], dict.fromkeys(keys, 0))
+            assignee_sum = assignee_sums.setdefault(
+                row["assignee_id"], dict.fromkeys(keys, 0)
+            )
             for key in keys:
                 value = int(row[key] or 0)
                 sums[key] += value
                 phase_sum[key] += value
                 status_sum[key] += value
+                assignee_sum[key] += value
         groups = [
             PhaseEffortGroup(
                 kind=kind,
@@ -295,5 +304,18 @@ class TaskPhaseService:
             status_groups=[
                 StatusEffortGroup(status=status, totals=effort_totals(values))
                 for status, values in sorted(status_sums.items())
+            ],
+            assignee_groups=[
+                AssigneeEffortGroup(
+                    assignee_id=assignee_id, totals=effort_totals(values)
+                )
+                for assignee_id, values in sorted(
+                    assignee_sums.items(),
+                    key=lambda item: (
+                        -item[1]["remaining_minutes"],
+                        item[0] is None,
+                        item[0] or 0,
+                    ),
+                )
             ],
         )

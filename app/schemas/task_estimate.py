@@ -68,6 +68,8 @@ class TaskEstimateRevisionRead(BaseModel, from_attributes=True):
 
 class TaskEstimateRead(BaseModel):
     version: int
+    planned_minutes: int | None = None
+    remaining_minutes: int | None = None
     current: TaskEstimateRevisionRead
     history: list[TaskEstimateRevisionRead]
     history_total: int

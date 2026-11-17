@@ -37,6 +37,8 @@ def read_task_estimate(db: Session, task: Task, page: int = 1) -> TaskEstimateRe
     )
     return TaskEstimateRead(
         version=task.version,
+        planned_minutes=task.planned_minutes,
+        remaining_minutes=task.remaining_minutes,
         current=current,
         history=[TaskEstimateRevisionRead.model_validate(row) for row in items],
         history_total=total,

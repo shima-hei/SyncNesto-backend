@@ -185,6 +185,13 @@ class Task(Base):
         nullable=True,
         comment=db_comment("実績分数", "タスクの実績工数"),
     )
+    planned_minutes: Mapped[int | None] = mapped_column(
+        Integer, comment=db_comment("計画分数", "このタスク自身に投入する計画工数")
+    )
+    remaining_minutes: Mapped[int | None] = mapped_column(
+        Integer,
+        comment=db_comment("残工数の分数", "このタスク自身の作業に残る工数予測"),
+    )
     sort_order: Mapped[int] = mapped_column(
         Integer,
         nullable=False,

@@ -1,6 +1,6 @@
 """工程のロックと一意Task集合からの工数集計。"""
 
-from sqlalchemy import case, func, select, text
+from sqlalchemy import func, literal, select, text, true
 from sqlalchemy.orm import Session
 
 from app.models.task import Task
@@ -8,14 +8,16 @@ from app.models.task_phase import ProjectPhase, ProjectPhaseEvent
 from app.repositories.task_item import TaskRepository
 from app.schemas.task_phase import EffortFilters, EffortMetric, EffortTotals
 
+EFFORT_METRICS = ("estimated", "actual", "planned", "remaining")
+
 
 def effort_totals(row) -> EffortTotals:
     """SQL集計の未入力と未確認を保持する。"""
     values = {}
-    for metric in ("estimated", "actual"):
+    for metric in EFFORT_METRICS:
         missing, unreviewed = (
             int(row[f"{metric}_missing"] or 0),
-            int(row[f"{metric}_unreviewed"] or 0),
+            int(row.get(f"{metric}_unreviewed", 0) or 0),
         )
         values[metric] = EffortMetric(
             minutes=int(row[f"{metric}_minutes"] or 0),
@@ -114,8 +116,11 @@ class TaskPhaseRepository:
                 Task.phase_scope,
                 Task.phase_id,
                 Task.status,
+                Task.assignee_id,
                 Task.estimated_minutes,
                 Task.actual_minutes,
+                Task.planned_minutes,
+                Task.remaining_minutes,
                 Task.estimated_basis,
                 Task.actual_basis,
             )
@@ -123,19 +128,26 @@ class TaskPhaseRepository:
             .subquery()
         )
         aggregates = [func.count().label("task_count")]
-        for metric in ("estimated", "actual"):
-            basis, minutes = source.c[f"{metric}_basis"], source.c[f"{metric}_minutes"]
+        for metric in EFFORT_METRICS:
+            basis = source.c.get(f"{metric}_basis")
+            minutes = source.c[f"{metric}_minutes"]
+            eligible = basis == "own" if basis is not None else true()
+            if metric == "remaining":
+                eligible = source.c.status.not_in(("done", "cancelled"))
+            unreviewed = (
+                func.count().filter(basis == "unreviewed")
+                if basis is not None
+                else literal(0)
+            )
             aggregates.extend(
                 [
-                    func.coalesce(
-                        func.sum(case((basis == "own", minutes), else_=0)), 0
-                    ).label(f"{metric}_minutes"),
+                    func.coalesce(func.sum(minutes).filter(eligible), 0).label(
+                        f"{metric}_minutes"
+                    ),
                     func.count()
-                    .filter((basis == "own") & minutes.is_(None))
+                    .filter(eligible & minutes.is_(None))
                     .label(f"{metric}_missing"),
-                    func.count()
-                    .filter(basis == "unreviewed")
-                    .label(f"{metric}_unreviewed"),
+                    unreviewed.label(f"{metric}_unreviewed"),
                 ]
             )
         return (
@@ -144,8 +156,14 @@ class TaskPhaseRepository:
                     source.c.phase_scope,
                     source.c.phase_id,
                     source.c.status,
+                    source.c.assignee_id,
                     *aggregates,
-                ).group_by(source.c.phase_scope, source.c.phase_id, source.c.status)
+                ).group_by(
+                    source.c.phase_scope,
+                    source.c.phase_id,
+                    source.c.status,
+                    source.c.assignee_id,
+                )
             )
             .mappings()
             .all()
@@ -167,6 +185,17 @@ class TaskPhaseRepository:
                     f"AS {metric}_unreviewed",
                 ]
             )
+        aggregates.extend(
+            [
+                "coalesce(sum(t.planned_minutes),0) AS planned_minutes",
+                "count(*) filter(where t.planned_minutes is null) AS planned_missing",
+                "coalesce(sum(t.remaining_minutes) "
+                "filter(where t.status not in ('done','cancelled')),0) "
+                "AS remaining_minutes",
+                "count(*) filter(where t.status not in ('done','cancelled') "
+                "and t.remaining_minutes is null) AS remaining_missing",
+            ]
+        )
         # 削除された中間親を経由しても有効な子を落とさず、UNIONで循環を止める。
         stmt = text(
             """WITH RECURSIVE tree(root_id, project_id, id) AS (
