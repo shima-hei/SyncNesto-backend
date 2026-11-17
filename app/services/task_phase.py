@@ -22,6 +22,7 @@ from app.schemas.task_phase import (
     PhaseEventList,
     PhaseEventRead,
     PhaseList,
+    PhaseListItem,
     PhaseRead,
     PhaseUpdate,
     StatusEffortGroup,
@@ -87,12 +88,16 @@ class TaskPhaseService:
             stmt.order_by(ProjectPhase.sort_order, ProjectPhase.id)
             .offset((page - 1) * page_size)
             .limit(page_size)
+        ).all()
+        summaries = (
+            self.repository.planning_summaries(db, project_id, [row.id for row in rows])
+            if rows
+            else {}
         )
-        counts = self.repository.counts(db, project_id)
         return PhaseList(
             items=[
-                PhaseRead.model_validate(row).model_copy(
-                    update={"task_count": counts.get(row.id, 0)}
+                PhaseListItem.model_validate(row).model_copy(
+                    update=summaries.get(row.id, {})
                 )
                 for row in rows
             ],

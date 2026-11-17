@@ -78,6 +78,30 @@ class TaskPhaseRepository:
             ).all()
         }
 
+    def planning_summaries(self, db: Session, project_id: int, phase_ids: list[int]):
+        """一覧の工程について件数と両端を一括集計する。"""
+        return {
+            phase_id: {
+                "task_count": count,
+                "planned_start_date": start,
+                "planned_end_date": end,
+            }
+            for phase_id, count, start, end in db.execute(
+                select(
+                    Task.phase_id,
+                    func.count(),
+                    func.min(Task.start_date),
+                    func.max(Task.due_date),
+                )
+                .where(
+                    Task.project_id == project_id,
+                    Task.deleted_at.is_(None),
+                    Task.phase_id.in_(phase_ids),
+                )
+                .group_by(Task.phase_id)
+            )
+        }
+
     def summary(self, db: Session, project_id: int, filters: EffortFilters):
         """同額の別Taskを落とさず、関連joinの重複だけを除く。"""
         query = TaskRepository().filtered_query(

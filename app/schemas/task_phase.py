@@ -69,10 +69,17 @@ class PhaseRead(BaseModel):
     task_count: int = 0
 
 
+class PhaseListItem(PhaseRead):
+    """工程に所属する全タスクの予定期間を返す。"""
+
+    planned_start_date: date | None = None
+    planned_end_date: date | None = None
+
+
 class PhaseList(BaseModel):
     """全件と取りこぼしを区別する工程一覧。"""
 
-    items: list[PhaseRead]
+    items: list[PhaseListItem]
     total: int
     page: int
     page_size: int

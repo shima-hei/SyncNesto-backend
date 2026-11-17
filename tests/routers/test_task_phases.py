@@ -32,6 +32,67 @@ def create_phase(client, project, name="設計"):
     return result.json()
 
 
+def test_phase_list_keeps_the_whole_planned_period_and_empty_phases(
+    client,
+    phase_context,
+    db,
+):
+    _, project = phase_context
+    phase = create_phase(client, project)
+    empty = create_phase(client, project, "実装")
+    root = f"/projects/{project.id}"
+    assignment = {"kind": "phase", "phase_id": phase["id"]}
+    parent = client.post(
+        f"{root}/tasks",
+        json={
+            "title": "親",
+            "phase_assignment": assignment,
+            "start_date": "2026-11-16",
+        },
+    )
+    assert parent.status_code == 201
+    child = client.post(
+        f"{root}/tasks",
+        json={
+            "title": "子",
+            "phase_assignment": assignment,
+            "due_date": "2026-12-03",
+            "parent_task_id": parent.json()["id"],
+        },
+    )
+    assert child.status_code == 201
+    unscheduled = client.post(
+        f"{root}/tasks",
+        json={
+            "title": "未日程",
+            "phase_assignment": assignment,
+        },
+    )
+    assert unscheduled.status_code == 201
+    outdated = client.post(
+        f"{root}/tasks",
+        json={
+            "title": "削除済み",
+            "phase_assignment": assignment,
+            "start_date": "2026-11-01",
+            "due_date": "2026-12-31",
+        },
+    )
+    assert outdated.status_code == 201
+    row = db.get(Task, outdated.json()["id"])
+    row.deleted_at = datetime.now(UTC)
+    db.commit()
+
+    response = client.get(f"{root}/phases")
+    assert response.status_code == 200
+    by_id = {item["id"]: item for item in response.json()["items"]}
+    assert by_id[phase["id"]]["task_count"] == 3
+    assert by_id[phase["id"]]["planned_start_date"] == "2026-11-16"
+    assert by_id[phase["id"]]["planned_end_date"] == "2026-12-03"
+    assert by_id[empty["id"]]["planned_start_date"] is None
+    assert by_id[empty["id"]]["planned_end_date"] is None
+
+
 def test_gantt_order_persists_with_separate_phase_and_task_permissions(
     client,
     phase_context,
