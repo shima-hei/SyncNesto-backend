@@ -28,6 +28,7 @@ from app.repositories.project import ProjectMemberRepository, ProjectRepository
 from app.repositories.task_change_log import TaskChangeLogRepository
 from app.repositories.task_comment import TaskCommentRepository
 from app.repositories.task_dependency import TaskDependencyRepository
+from app.repositories.task_estimate import append_legacy_estimate
 from app.repositories.task_item import TaskRepository
 from app.repositories.task_milestone import MilestoneRepository
 from app.repositories.task_requirement import (
@@ -668,19 +669,27 @@ class TaskService:
                 metadata={"updated_fields": updated_fields},
             )
         if locked_task is None:
+            if "estimated_minutes" in updated_fields:
+                append_legacy_estimate(db, task, actor_id, task_in.change_reason)
             db.commit()
         return task
 
-    def move_locked_task_to_phase(
-        self, db: Session, task: Task, data: TaskUpdate, actor_id: int
+    def update_locked_task(
+        self,
+        db: Session,
+        task: Task,
+        data: TaskUpdate,
+        actor_id: int,
+        *,
+        planning_only: bool = False,
     ) -> Task:
-        """既にロックしたタスクの所属を更新し、呼び出し元にcommitを委ねる。"""
+        """既にロックしたタスクを更新し、履歴の追加とcommitを呼び出し元に委ねる。"""
         return self._update_task(
             db,
             task_id=task.id,
             task_in=data,
             actor_id=actor_id,
-            planning_only=False,
+            planning_only=planning_only,
             locked_task=task,
         )
 

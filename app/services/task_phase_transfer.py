@@ -94,7 +94,7 @@ class PhaseTransferService:
                 destination.phase_id,
             ):
                 continue
-            self.tasks.move_locked_task_to_phase(
+            self.tasks.update_locked_task(
                 db,
                 task,
                 TaskUpdate(version=versions[task.id], phase_assignment=destination),
@@ -145,7 +145,8 @@ class PhaseTransferService:
         ):
             raise ConflictError(error_messages.TASK_PHASE_TRANSFER_STALE)
         self.phases.validate_assignment(db, project_id, destination)
-        moved = self._move(db, rows, dict(current), destination, actor_id)
+        versions = {task_id: version for task_id, version in current}
+        moved = self._move(db, rows, versions, destination, actor_id)
         self.phases.save(
             db,
             project_id,

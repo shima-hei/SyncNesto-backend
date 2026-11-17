@@ -40,4 +40,13 @@ effort-summaryは一覧と同じq/status/task_type/priority/assignee_id/requirem
 
 status_groupsは同じ一意集合の状態別内訳。完了・中止を既定で除外せず、各内訳の和はtotalsと一致する。工程別と状態別を同じSQL結果から作り、同時更新で両者の対象をずらさない。
 
+工程一覧の `completed_task_count` は未削除の `done` を数える。分母の `task_count` は中止を含む全所属タスク。ガントの期間やフィルターとは独立する。
+
+## 工数見積
+
+- `GET /tasks/{task_id}/estimate?page=1` は `task:read`。現在値、Taskの `version`、改訂履歴のページを返す。従来の見積値は初回の改訂まで単純見積として表示する。
+- `GET /projects/{project_id}/task-estimate-methods?task_ids=1&task_ids=2` は `task:read`。同じ案件の未削除タスクに絞った手法を取得する。
+- `PATCH /tasks/{task_id}/estimate` は `task:update`。Task版、`simple` / `pert` / `triangular` と手法に応じた分単位の非負整数を受ける。3点は楽観≦最頻≦悲観。計算結果を最寄りの分に丸め、Taskの `estimated_minutes`、見積の入力・前提・変更理由・更新者、既存監査を同一トランザクションで保存する。
+- 詳細見積があるタスクの `estimated_minutes` を従来のタスク編集や計画APIから変更すると、新しい値を単純見積として履歴に追加する。明示した `null` は解除履歴として保持する。見積の変更では日程・実績・工数の集計根拠を補完しない。
+
 公開MCPはmcp_task_contract.pyで従来のTask入力を固定し、業務APIの新項目を公開しない。通常/デモの新表はtenant_scopeの所有関係に登録し、既存デモの上限・失効・回収を適用する。migration ab26d41066c1は利用済みの所属・根拠・履歴を削除するdowngradeを拒否する。UIの切戻しは追加DBを保持して行う。

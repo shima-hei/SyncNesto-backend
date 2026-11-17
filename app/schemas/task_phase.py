@@ -107,6 +107,7 @@ class PhaseListItem(PhaseRead):
 
     planned_start_date: date | None = None
     planned_end_date: date | None = None
+    completed_task_count: int = 0
 
 
 class PhaseList(BaseModel):

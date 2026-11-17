@@ -32,6 +32,91 @@ def create_phase(client, project, name="設計"):
     return result.json()
 
 
+def test_estimate_workbench_round_trips_and_tracks_legacy_edits(client, phase_context):
+    _, project = phase_context
+    root = f"/projects/{project.id}"
+    task = client.post(
+        f"{root}/tasks",
+        json={
+            "title": "工数見積",
+            "estimated_minutes": 60,
+            "actual_minutes": 15,
+            "start_date": "2026-11-17",
+            "estimated_basis": "own",
+        },
+    ).json()
+    url = f"/tasks/{task['id']}/estimate"
+    old = client.get(url).json()
+    assert old["current"]["method"] == "simple"
+    assert old["current"]["minutes"] == 60
+    inputs = {
+        "optimistic_minutes": 480,
+        "likely_minutes": 720,
+        "pessimistic_minutes": 1440,
+    }
+    invalid = client.patch(
+        url,
+        json={
+            "version": task["version"],
+            "method": "pert",
+            **inputs,
+            "optimistic_minutes": 800,
+        },
+    )
+    assert invalid.status_code == 422
+    result = client.patch(
+        url,
+        json={
+            "version": task["version"],
+            "method": "pert",
+            **inputs,
+            "assumptions": "API仕様確定後",
+        },
+    )
+    assert result.status_code == 200, result.text
+    estimate = result.json()
+    assert estimate["history_total"] == 2
+    assert estimate["current"]["minutes"] == 800
+    assert estimate["current"]["assumptions"] == "API仕様確定後"
+    assert (
+        client.patch(
+            url, json={"version": task["version"], "method": "triangular", **inputs}
+        ).status_code
+        == 409
+    )
+    triangle = client.patch(
+        url, json={"version": estimate["version"], "method": "triangular", **inputs}
+    )
+    assert triangle.status_code == 200 and triangle.json()["current"]["minutes"] == 880
+    methods = client.get(
+        f"{root}/task-estimate-methods", params={"task_ids": task["id"]}
+    )
+    assert methods.json() == [{"task_id": task["id"], "method": "triangular"}]
+    legacy = client.patch(
+        f"/tasks/{task['id']}/planning",
+        json={"version": triangle.json()["version"], "estimated_minutes": 0},
+    )
+    assert legacy.status_code == 200
+    assert legacy.json()["estimated_minutes"] == 0
+    assert legacy.json()["actual_minutes"] == 15
+    assert legacy.json()["start_date"] == "2026-11-17"
+    latest = client.get(url).json()
+    assert latest["current"]["method"] == "simple"
+    assert latest["current"]["minutes"] == 0
+    assert [row["method"] for row in latest["history"]] == [
+        "simple",
+        "triangular",
+        "pert",
+        "simple",
+    ]
+    assert (
+        client.get(f"{root}/tasks/effort-summary").json()["totals"]["estimated"][
+            "minutes"
+        ]
+        == 0
+    )
+
+
 def test_phase_details_and_scoped_task_listing(client, phase_context):
     _, project = phase_context
     root = f"/projects/{project.id}"

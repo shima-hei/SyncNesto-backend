@@ -90,6 +90,7 @@ from app.models.task import (
     TaskComment,
     TaskDependency,
 )
+from app.models.task_estimate import TaskEstimateRevision
 from app.models.task_phase import ProjectPhase, ProjectPhaseEvent
 from app.models.task_type import ProjectTaskType
 from app.models.tenant import Tenant, TenantMember
@@ -205,6 +206,7 @@ __all__ = [
     "Project",
     "ProjectPhase",
     "ProjectPhaseEvent",
+    "TaskEstimateRevision",
     "ProjectMember",
     "ProjectGoalSourceEvent",
     "Requirement",

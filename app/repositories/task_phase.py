@@ -84,13 +84,15 @@ class TaskPhaseRepository:
                 "task_count": count,
                 "planned_start_date": start,
                 "planned_end_date": end,
+                "completed_task_count": completed,
             }
-            for phase_id, count, start, end in db.execute(
+            for phase_id, count, start, end, completed in db.execute(
                 select(
                     Task.phase_id,
                     func.count(),
                     func.min(Task.start_date),
                     func.max(Task.due_date),
+                    func.count().filter(Task.status == "done"),
                 )
                 .where(
                     Task.project_id == project_id,
