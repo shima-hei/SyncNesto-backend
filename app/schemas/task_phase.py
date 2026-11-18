@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 EffortBasis = Literal["own", "rollup", "unreviewed"]
 PhaseScope = Literal["unclassified", "shared", "phase"]
+PhaseColor = Literal["blue", "violet", "emerald", "amber", "rose", "slate"]
 
 
 class PhaseAssignment(BaseModel):
@@ -24,6 +25,31 @@ class PhaseAssignment(BaseModel):
                 "工程所属には工程IDを指定し、未分類・共通には指定しないでください"
             )
         return self
+
+
+class PhaseTransferTask(BaseModel):
+    id: int = Field(gt=0)
+    version: int = Field(ge=1)
+
+
+class PhaseTransfer(BaseModel):
+    tasks: list[PhaseTransferTask] = Field(min_length=1, max_length=100)
+    destination: PhaseAssignment
+
+
+class PhaseArchivePreview(BaseModel):
+    phase_id: int
+    task_count: int
+    snapshot: str
+
+
+class PhaseArchiveMove(BaseModel):
+    snapshot: str = Field(min_length=64, max_length=64)
+    destination: PhaseAssignment
+
+
+class PhaseTransferResult(BaseModel):
+    moved_count: int
 
 
 class PhaseCreate(BaseModel):
@@ -46,12 +72,18 @@ class PhaseUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     sort_order: int | None = Field(default=None, ge=0)
     archived: bool | None = None
+    color: PhaseColor | None = None
+    description: str | None = Field(default=None, max_length=2000)
+    reserve_minutes: int | None = Field(default=None, strict=True, ge=0, le=2147483647)
     _strip_name = field_validator("name", mode="before")(PhaseCreate.strip_name)
 
     @model_validator(mode="after")
     def reject_null(self):
         """省略だけを現状保持として扱う。"""
-        if any(getattr(self, key) is None for key in self.model_fields_set):
+        if any(
+            getattr(self, key) is None
+            for key in self.model_fields_set & {"name", "sort_order", "archived"}
+        ):
             raise ValueError("工程の更新値にnullは指定できません")
         return self
 
@@ -66,13 +98,24 @@ class PhaseRead(BaseModel):
     sort_order: int
     version: int
     archived_at: datetime | None
+    color: PhaseColor | None = None
+    description: str | None = None
+    reserve_minutes: int | None = None
     task_count: int = 0
+
+
+class PhaseListItem(PhaseRead):
+    """工程に所属する全タスクの予定期間を返す。"""
+
+    planned_start_date: date | None = None
+    planned_end_date: date | None = None
+    completed_task_count: int = 0
 
 
 class PhaseList(BaseModel):
     """全件と取りこぼしを区別する工程一覧。"""
 
-    items: list[PhaseRead]
+    items: list[PhaseListItem]
     total: int
     page: int
     page_size: int
@@ -115,6 +158,8 @@ class EffortTotals(BaseModel):
     task_count: int = 0
     estimated: EffortMetric = Field(default_factory=EffortMetric)
     actual: EffortMetric = Field(default_factory=EffortMetric)
+    planned: EffortMetric = Field(default_factory=EffortMetric)
+    remaining: EffortMetric = Field(default_factory=EffortMetric)
 
 
 class EffortFilters(BaseModel):
@@ -149,6 +194,11 @@ class StatusEffortGroup(BaseModel):
     totals: EffortTotals
 
 
+class AssigneeEffortGroup(BaseModel):
+    assignee_id: int | None
+    totals: EffortTotals
+
+
 class EffortSummary(BaseModel):
     """描画行や取得ページ数に左右されないProject集計。"""
 
@@ -158,3 +208,4 @@ class EffortSummary(BaseModel):
     totals: EffortTotals
     groups: list[PhaseEffortGroup]
     status_groups: list[StatusEffortGroup]
+    assignee_groups: list[AssigneeEffortGroup] = Field(default_factory=list)

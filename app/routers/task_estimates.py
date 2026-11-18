@@ -1,0 +1,154 @@
+"""Read and revise the estimates of authorized project tasks."""
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
+
+from app.core.auth import get_current_user, require_project_permission
+from app.db.session import get_db
+from app.models.user import User
+from app.repositories.task_estimate import (
+    estimate_methods,
+    read_baselines,
+    worksheet_rows,
+)
+from app.routers.tasks_shared import task_service
+from app.schemas.task_estimate import (
+    EstimateWorksheetRow,
+    EstimateWorksheetSave,
+    ProjectEstimateStandard,
+    TaskEstimateBaselineConfirm,
+    TaskEstimateBaselineRead,
+    TaskEstimateBaselines,
+    TaskEstimateMethodRead,
+    TaskEstimateRead,
+    TaskEstimateUpdate,
+)
+from app.services.estimate_worksheet import project_standard, save_worksheet
+from app.services.task_estimate import (
+    confirm_task_baseline,
+    read_task_estimate,
+    save_task_estimate,
+)
+
+router = APIRouter(tags=["task-estimates"])
+
+
+@router.get(
+    "/projects/{project_id}/task-estimate-methods",
+    response_model=list[TaskEstimateMethodRead],
+)
+def list_task_estimate_methods(
+    project_id: int,
+    task_ids: list[int] = Query(min_length=1, max_length=100),
+    _: User = Depends(require_project_permission("task:read")),
+    db: Session = Depends(get_db),
+):
+    return estimate_methods(db, project_id, task_ids)
+
+
+@router.get("/tasks/{task_id}/estimate", response_model=TaskEstimateRead)
+def get_task_estimate(
+    task_id: int,
+    page: int = Query(1, ge=1),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    task = task_service.get_task(db, task_id)
+    task_service.ensure_user_can_access_task(
+        db, user=user, task=task, permission_code="task:read"
+    )
+    return read_task_estimate(db, task, page)
+
+
+@router.patch("/tasks/{task_id}/estimate", response_model=TaskEstimateRead)
+def update_task_estimate(
+    task_id: int,
+    data: TaskEstimateUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    task = task_service.get_task(db, task_id)
+    task_service.ensure_user_can_access_task(
+        db, user=user, task=task, permission_code="task:update"
+    )
+    return save_task_estimate(db, task_id, data, user.id)
+
+
+@router.get("/tasks/{task_id}/estimate/baselines", response_model=TaskEstimateBaselines)
+def get_task_estimate_baselines(
+    task_id: int,
+    page: int = Query(1, ge=1),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    task = task_service.get_task(db, task_id)
+    task_service.ensure_user_can_access_task(
+        db, user=user, task=task, permission_code="task:read"
+    )
+    return read_baselines(db, task_id, page)
+
+
+@router.post(
+    "/tasks/{task_id}/estimate/baselines", response_model=TaskEstimateBaselineRead
+)
+def confirm_task_estimate_baseline(
+    task_id: int,
+    data: TaskEstimateBaselineConfirm,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    task = task_service.get_task(db, task_id)
+    for permission in ("task:update", "project:update"):
+        task_service.ensure_user_can_access_task(
+            db, user=user, task=task, permission_code=permission
+        )
+    return confirm_task_baseline(db, task_id, data, user.id)
+
+
+@router.get(
+    "/projects/{project_id}/estimate-standard", response_model=ProjectEstimateStandard
+)
+def get_estimate_standard(
+    project_id: int,
+    _: User = Depends(require_project_permission("task:read")),
+    db: Session = Depends(get_db),
+):
+    return project_standard(db, project_id)
+
+
+@router.patch(
+    "/projects/{project_id}/estimate-standard", response_model=ProjectEstimateStandard
+)
+def update_estimate_standard(
+    project_id: int,
+    data: ProjectEstimateStandard,
+    user: User = Depends(require_project_permission("project:update")),
+    db: Session = Depends(get_db),
+):
+    return project_standard(db, project_id, data, user.id)
+
+
+@router.get(
+    "/projects/{project_id}/estimate-worksheet",
+    response_model=list[EstimateWorksheetRow],
+)
+def get_estimate_worksheet(
+    project_id: int,
+    task_ids: list[int] = Query(min_length=1, max_length=100),
+    _: User = Depends(require_project_permission("task:read")),
+    db: Session = Depends(get_db),
+):
+    return worksheet_rows(db, project_id, task_ids)
+
+
+@router.patch(
+    "/projects/{project_id}/estimate-worksheet",
+    response_model=list[EstimateWorksheetRow],
+)
+def update_estimate_worksheet(
+    project_id: int,
+    data: EstimateWorksheetSave,
+    user: User = Depends(require_project_permission("task:update")),
+    db: Session = Depends(get_db),
+):
+    return save_worksheet(db, project_id, data, user.id)

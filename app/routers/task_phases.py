@@ -9,16 +9,23 @@ from app.models.user import User
 from app.schemas.task_phase import (
     EffortFilters,
     EffortSummary,
+    PhaseArchiveMove,
+    PhaseArchivePreview,
     PhaseCreate,
     PhaseEventList,
     PhaseList,
     PhaseRead,
+    PhaseTransfer,
+    PhaseTransferResult,
     PhaseUpdate,
 )
 from app.services.task_phase import TaskPhaseService
+from app.services.task_phase_transfer import PhaseTransferService
 
 router = APIRouter(tags=["task-phases"])
+transfer_router = APIRouter(tags=["phase-transfers"])
 service = TaskPhaseService()
+transfers = PhaseTransferService()
 
 
 @router.get("/projects/{project_id}/phases", response_model=PhaseList)
@@ -55,6 +62,47 @@ def update_phase(
 ):
     """改名・並び順・アーカイブをversion付きで保存する。"""
     return service.save(db, project_id, data, user.id, phase_id)
+
+
+@transfer_router.post(
+    "/projects/{project_id}/phases/transfer-tasks", response_model=PhaseTransferResult
+)
+def transfer_phase_tasks(
+    project_id: int,
+    data: PhaseTransfer,
+    user: User = Depends(require_project_permission("task:update")),
+    db: Session = Depends(get_db),
+):
+    return transfers.transfer(db, project_id, data, user.id)
+
+
+@transfer_router.get(
+    "/projects/{project_id}/phases/{phase_id}/archive-preview",
+    response_model=PhaseArchivePreview,
+    dependencies=[Depends(require_project_permission("task:update"))],
+)
+def preview_phase_archive(
+    project_id: int,
+    phase_id: int,
+    user: User = Depends(require_project_permission("project:update")),
+    db: Session = Depends(get_db),
+):
+    return transfers.preview(db, project_id, phase_id)
+
+
+@transfer_router.post(
+    "/projects/{project_id}/phases/{phase_id}/archive-with-transfer",
+    response_model=PhaseTransferResult,
+    dependencies=[Depends(require_project_permission("task:update"))],
+)
+def archive_phase_with_transfer(
+    project_id: int,
+    phase_id: int,
+    data: PhaseArchiveMove,
+    user: User = Depends(require_project_permission("project:update")),
+    db: Session = Depends(get_db),
+):
+    return transfers.archive(db, project_id, phase_id, data, user.id)
 
 
 @router.get(

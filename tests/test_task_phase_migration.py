@@ -8,7 +8,8 @@ from alembic import command
 
 
 def test_legacy_parent_values_are_not_assumed_to_be_own_effort(db, create_test_project):
-    project = create_test_project()
+    # Keep the scalar ID before the test switches to the historical schema.
+    project_id = create_test_project().id
     db.commit()
     config = Config("alembic.ini")
     command.downgrade(config, "fa14c7d2e658")
@@ -17,14 +18,14 @@ def test_legacy_parent_values_are_not_assumed_to_be_own_effort(db, create_test_p
       priority,progress_percent,estimated_minutes,actual_minutes,sort_order,version)
       VALUES(:project,'LEGACY-P','親','other','backlog','medium',20,300,30,4,7)
       RETURNING id"""),
-        {"project": project.id},
+        {"project": project_id},
     ).scalar_one()
     db.execute(
         text("""INSERT INTO tasks(project_id,parent_task_id,task_code,title,
       task_type,status,priority,progress_percent,estimated_minutes,
       sort_order,version,deleted_at)
       VALUES(:project,:parent,'LEGACY-C','削除済み子','other','backlog','medium',0,100,0,3,now())"""),
-        {"project": project.id, "parent": parent},
+        {"project": project_id, "parent": parent},
     )
     db.commit()
     command.upgrade(config, "head")
@@ -40,6 +41,12 @@ def test_legacy_parent_values_are_not_assumed_to_be_own_effort(db, create_test_p
         row["sort_order"],
         row["progress_percent"],
     ) == (300, 30, 7, 4, 20)
+    assert db.execute(
+        text(
+            "SELECT estimate_method, estimate_method_version FROM projects WHERE id=:id"
+        ),
+        {"id": project_id},
+    ).one() == ("simple", 1)
     assert row["estimated_basis"] == row["actual_basis"] == "unreviewed"
     assert row["phase_scope"] == "unclassified" and row["phase_id"] is None
     db.commit()

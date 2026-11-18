@@ -16,6 +16,16 @@
 
 POSTはname/sort_order（非負整数、既定0）。PATCHはversionを必須に、name/sort_order/archivedを部分更新する。省略は保持し、nullは422。競合は409 VERSION_CONFLICTと最新current、同名は409 DUPLICATE_RESOURCE。工程の物理削除APIは提供しない。アーカイブでもTask所属・工数・日程・versionは変えない。
 
+工程の `reserve_minutes` は設定用PATCHと取得応答で扱う。省略で保持、nullで解除、0は明示した予備0分。タスクの見積・計画・実績・残工数、担当別・期間別の集計から独立し、工程の版と履歴に含む。
+
+PATCHと応答に工程の `color` と `description` を追加。色は `blue` / `violet` / `emerald` / `amber` / `rose` / `slate`、説明は最大2000字。これら2項目は省略で保持、`null` で解除。既存工程は両方未設定から始まり、変更値は工程履歴にも記録する。
+
+## 工程一覧からのタスク移動
+
+- `GET /projects/{project_id}/tasks` は任意の `phase_scope` と `phase_id` に対応。`phase_id` は `phase` 所属の同一案件の工程に限る。共通・未分類は `phase_scope=shared` / `unclassified` で取得する。通常のページングと権限を使う。
+- `POST /projects/{project_id}/phases/transfer-tasks` は `task:update` で、`tasks` に1〜100件の `{id, version}` と `destination` に工程所属を受ける。競合時は全件をロールバックする。
+- `GET /projects/{project_id}/phases/{phase_id}/archive-preview` で対象件数と確認用の `snapshot` を取得し、`POST .../{phase_id}/archive-with-transfer` へ `snapshot` と `destination` を送る。両方に `project:update` と `task:update` が必要。対象や版の変化は409。確認済みの所属変更・アーカイブ・履歴を同じトランザクションで保存する。従来の所属を保持するアーカイブも引き続き利用できる。
+
 ## 既存Task APIへの追加
 
 作成/更新で任意のphase_assignmentを受ける。省略は既存所属を保持（新規は未分類）、nullは未分類へ解除。objectはkind=unclassified/shared/phaseで、phaseだけphase_id必須、他はnull。別Project/不明工程は404、新しいアーカイブ工程への割当は400。同じ工程行のロックでアーカイブとの競合を直列化し、Task更新は従来のversion/409 current/変更履歴/監査を維持する。
@@ -26,10 +36,42 @@ TaskReadとガント/ボード/409 currentにはphase_scope/phase_id/phase_name/
 
 ## 集計
 
+- `/tasks/{task_id}/planning` は既存の `task:update` とTaskの版確認で `planned_minutes`・`remaining_minutes` を更新する。非負の整数分を指定し、`null` は解除、省略は保持。既存タスクは未入力から始まり、タスク自身の計画工数と残工数を見積・実績から独立して記録する。
+- `effort-summary` の全体・工程別・状態別・担当者別（`assignee_groups`）に `planned` と `remaining` を追加。担当者別は未割り当ても含み、入力済み残工数の降順。未入力と明示した0を区別する。残工数の合計と未入力件数は完了 `done`・中止 `cancelled` を除いた対象で計算する。完了・中止後も記録を保持し、再開時に集計へ戻す。
+
 effort-summaryは一覧と同じq/status/task_type/priority/assignee_id/requirement_id/parent_task_id/root_only/start_date_from/due_date_to/overdue/tagを受ける。ページ・折り畳みと独立した一意Task集合を先に確定し、ownの分数を1回だけ加算する。同額の別Taskは両方計上。rollupの保存値とunreviewedは加算しない。nullと明示0を区別する。
 
 各metricはminutes/missing_count/unreviewed_count/complete。未入力・未確認があれば確認済み小計として扱う。groupsは工程・共通・未分類へ分け、アーカイブ分も含む和とtotalsを一致させる。filtersとunit=minutesを返す。進捗率・親達成率は更新しない。
 
 status_groupsは同じ一意集合の状態別内訳。完了・中止を既定で除外せず、各内訳の和はtotalsと一致する。工程別と状態別を同じSQL結果から作り、同時更新で両者の対象をずらさない。
 
+工程一覧の `completed_task_count` は未削除の `done` を数える。分母の `task_count` は中止を含む全所属タスク。ガントの期間やフィルターとは独立する。
+
+## 工数見積
+
+- `GET /tasks/{task_id}/estimate?page=1` は `task:read`。現在値、Taskの `version`、改訂履歴のページを返す。従来の見積値は初回の改訂まで単純見積として表示する。
+- `GET /projects/{project_id}/task-estimate-methods?task_ids=1&task_ids=2` は `task:read`。同じ案件の未削除タスクに絞った手法を取得する。
+- `PATCH /tasks/{task_id}/estimate` は `task:update`。Task版と選択した手法の入力を受ける。単純・3点の工数は分単位の非負整数。3点は楽観≦最頻≦悲観。計算結果を最寄りの分に丸め、Taskの `estimated_minutes`、見積の入力・前提・変更理由・更新者、既存監査を同一トランザクションで保存する。
+- `parametric` は数量 `quantity` × 単位工数（時間）`unit_hours` × 60、`analogous` は類似作業名 `reference_work`、参照分数 `reference_minutes` × 補正係数 `factor`。数量・単位工数・係数は整数部8桁、小数部4桁まで。0を許容し、結果を最後に1分単位へ四捨五入する。改訂・基準の読み取りでは十進数を文字列で返す。選択手法以外の計算入力や分数の上限超過は422。
+- 詳細見積があるタスクの `estimated_minutes` を従来のタスク編集や計画APIから変更すると、新しい値を単純見積として履歴に追加する。明示した `null` は解除履歴として保持する。見積の変更では日程・実績・工数の集計根拠を補完しない。
+
+### 基準見積
+
+- `GET /tasks/{task_id}/estimate/baselines?page=1` は `task:read`。最新の確定版と確定履歴を20件単位で取得する。確定版は見積の保存内容、確定者、確定日時、任意の理由を返す。
+- `POST /tasks/{task_id}/estimate/baselines` は `task:update` と `project:update` の両方が必要。確認した `estimate_version`、`expected_baseline_id`（初回は `null`）、任意の `reason` を送る。同じ見積版の再送では確定履歴が増えない。確認後に対象の版が進んだ場合は `409 VERSION_CONFLICT` を返す。
+- 確定は既存タスクの見積改訂を参照し、確定履歴を追加する。以前の確定版は引き続き参照できる。数値だけが保存されている旧タスクでは、確定時に単純見積として保存内容を記録する。見積未入力の場合は保存から始める。タスク更新と確定を同じ行のロックで直列化する。
+
 公開MCPはmcp_task_contract.pyで従来のTask入力を固定し、業務APIの新項目を公開しない。通常/デモの新表はtenant_scopeの所有関係に登録し、既存デモの上限・失効・回収を適用する。migration ab26d41066c1は利用済みの所属・根拠・履歴を削除するdowngradeを拒否する。UIの切戻しは追加DBを保持して行う。
+
+## 案件の標準方式と見積表
+
+| 操作 | 権限 | 保存対象 |
+| --- | --- | --- |
+| GET /projects/{id}/estimate-standard | task:read | 案件の標準方式と設定版を取得 |
+| PATCH /projects/{id}/estimate-standard | project:update | 方式と設定版を指定。変更前後を監査記録に保存 |
+| GET /projects/{id}/estimate-worksheet | task:read | 繰り返し指定した task_ids の現行入力とタスク版を一括取得 |
+| PATCH /projects/{id}/estimate-worksheet | task:update | 1〜100行の見積を一つのトランザクションで保存 |
+
+既存案件には単純見積を初期設定する。標準変更は新規入力と画面の初期表示に使う。既存タスクの改訂・基準見積・計画・日付は更新しない。別方式の既存見積を再入力するときは対象行を明示して新しい改訂を作る。画面上の表示方式は閲覧者ごとの一時選択。
+
+各行は task_id・version と、個別の見積更新と同じ方式・入力を持つ。自身の見積を集計するタスクのみ一括更新できる。競合は409、案件外または削除済みタスクへの書き込みは404、重複行と形式不正は422。全行を検査し、1件でも失敗すれば全件をロールバックする。保存に成功すると既存の個別改訂・監査と同じ経路を通る。計画への反映と基準の確定は従来の明示操作を使用する。

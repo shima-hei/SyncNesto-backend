@@ -74,6 +74,11 @@ OWNERS = {
     "project_members": [("project_id", "projects", "id")],
     "requirement_documents": [("project_id", "projects", "id")],
     "tasks": [("project_id", "projects", "id")],
+    "task_gantt_orders": [("task_id", "tasks", "id")],
+    "task_estimate_revisions": [("task_id", "tasks", "id")],
+    "task_estimate_baselines": [
+        ("estimate_revision_id", "task_estimate_revisions", "id")
+    ],
     "boards": [("project_id", "projects", "id")],
     "milestones": [("project_id", "projects", "id")],
     "task_change_logs": [("project_id", "projects", "id")],

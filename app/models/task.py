@@ -24,6 +24,17 @@ from app.models.comment_mention import MentionedComment
 from app.models.comments import db_comment
 
 
+class TaskGanttOrder(Base):
+    """プロジェクトのガント内でのタスク表示順。"""
+
+    __tablename__ = "task_gantt_orders"
+
+    task_id: Mapped[int] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class Task(Base):
     """プロジェクト内のタスクを管理するモデル。"""
 
@@ -173,6 +184,13 @@ class Task(Base):
         Integer,
         nullable=True,
         comment=db_comment("実績分数", "タスクの実績工数"),
+    )
+    planned_minutes: Mapped[int | None] = mapped_column(
+        Integer, comment=db_comment("計画分数", "このタスク自身に投入する計画工数")
+    )
+    remaining_minutes: Mapped[int | None] = mapped_column(
+        Integer,
+        comment=db_comment("残工数の分数", "このタスク自身の作業に残る工数予測"),
     )
     sort_order: Mapped[int] = mapped_column(
         Integer,

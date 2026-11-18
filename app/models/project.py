@@ -25,11 +25,27 @@ class Project(Base):
     __table_args__ = (
         UniqueConstraint("tenant_id", "project_code", name="uq_projects_tenant_code"),
         CheckConstraint("goal_source_version > 0", name="ck_project_goal_version"),
+        CheckConstraint(
+            "estimate_method IN ('simple','pert','triangular',"
+            "'parametric','analogous')",
+            name="ck_project_estimate_method",
+        ),
         # 同案件の参照FKはmigrationで管理し、ORMの所有関係はtenantに保つ。
         {"comment": db_comment("プロジェクト", "プロジェクト情報を管理するテーブル")},
     )
 
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), index=True)
+    estimate_method: Mapped[str] = mapped_column(
+        String(16),
+        server_default="simple",
+        default="simple",
+        comment=db_comment("標準見積方式", "新規の見積入力で使用する方式"),
+    )
+    estimate_method_version: Mapped[int] = mapped_column(
+        default=1,
+        server_default="1",
+        comment=db_comment("標準見積方式の版", "方式設定の排他制御版"),
+    )
     goal_document_id: Mapped[int | None] = mapped_column(
         Integer, comment=db_comment("目標参照文書", "概要に参照する同案件の要件定義書")
     )
