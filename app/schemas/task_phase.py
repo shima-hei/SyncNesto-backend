@@ -74,6 +74,7 @@ class PhaseUpdate(BaseModel):
     archived: bool | None = None
     color: PhaseColor | None = None
     description: str | None = Field(default=None, max_length=2000)
+    reserve_minutes: int | None = Field(default=None, strict=True, ge=0, le=2147483647)
     _strip_name = field_validator("name", mode="before")(PhaseCreate.strip_name)
 
     @model_validator(mode="after")
@@ -99,6 +100,7 @@ class PhaseRead(BaseModel):
     archived_at: datetime | None
     color: PhaseColor | None = None
     description: str | None = None
+    reserve_minutes: int | None = None
     task_count: int = 0
 
 

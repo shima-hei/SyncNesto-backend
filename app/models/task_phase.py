@@ -51,6 +51,9 @@ class ProjectPhase(Base):
     description: Mapped[str | None] = mapped_column(
         String(2000), comment=db_comment("説明", "工程の目的や対象範囲")
     )
+    reserve_minutes: Mapped[int | None] = mapped_column(
+        Integer, comment=db_comment("工程予備工数", "タスク工数と別枠で確保する分数")
+    )
     sort_order: Mapped[int] = mapped_column(
         Integer,
         default=0,

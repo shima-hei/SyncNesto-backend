@@ -896,3 +896,95 @@ def test_effort_counts_ids_once_and_keeps_missing_and_metric_bases_separate(
         ]["minutes"]
         == 150
     )
+
+
+def test_product_estimates_keep_inputs_in_revisions_and_baselines(
+    client, phase_context
+):
+    _, project = phase_context
+    task = client.post(f"/projects/{project.id}/tasks", json={"title": "積算"}).json()
+    url = f"/tasks/{task['id']}/estimate"
+    payload = {
+        "method": "parametric",
+        "quantity": "2.5",
+        "unit_hours": "0.03",
+        "version": task["version"],
+    }
+    for invalid in (
+        {"minutes": 5},
+        {"unit_hours": "0.00001"},
+        {"quantity": -1},
+        {"unit_hours": None},
+        {"quantity": "99999999", "unit_hours": "99999999"},
+    ):
+        assert client.patch(url, json={**payload, **invalid}).status_code == 422
+    saved = client.patch(url, json=payload).json()
+    first = saved["current"]
+    assert (first["minutes"], first["quantity"], first["unit_hours"]) == (
+        5,
+        "2.5000",
+        "0.0300",
+    )
+    baseline = client.post(
+        f"{url}/baselines",
+        json={"estimate_version": first["task_version"], "expected_baseline_id": None},
+    )
+    assert baseline.status_code == 200, baseline.text
+    analog = {
+        "method": "analogous",
+        "reference_work": " 初回調査 ",
+        "reference_minutes": 15,
+        "factor": "1.1",
+    }
+    assert (
+        client.patch(url, json={**analog, "version": task["version"]}).status_code
+        == 409
+    )
+    assert (
+        client.patch(
+            url, json={**analog, "reference_work": " ", "version": saved["version"]}
+        ).status_code
+        == 422
+    )
+    second = client.patch(url, json={**analog, "version": saved["version"]}).json()
+    assert (
+        second["current"]["minutes"] == 17
+        and second["current"]["reference_work"] == "初回調査"
+    )
+    assert second["current"]["quantity"] is None
+    zero = client.patch(url, json={**analog, "factor": 0, "version": second["version"]})
+    assert zero.status_code == 200, zero.text
+    assert [r["minutes"] for r in client.get(url).json()["history"]] == [0, 17, 5]
+    assert client.get(f"{url}/baselines").json()["current"]["estimate"] == first
+
+
+def test_phase_reserve_is_versioned_and_excluded_from_task_estimates(
+    client, phase_context
+):
+    _, project = phase_context
+    phase = create_phase(client, project)
+    url = f"/projects/{project.id}/phases/{phase['id']}"
+    assert phase["reserve_minutes"] is None
+
+    def save(version, **changes):
+        return client.patch(url, json={"version": version, **changes})
+
+    reserved = save(phase["version"], reserve_minutes=120).json()
+    assert reserved["reserve_minutes"] == 120
+    assert save(phase["version"], reserve_minutes=0).status_code == 409
+    assert save(reserved["version"], reserve_minutes=-1).status_code == 422
+    renamed = save(reserved["version"], name="試験").json()
+    assert renamed["reserve_minutes"] == 120
+    summary = client.get(f"/projects/{project.id}/tasks/effort-summary").json()
+    assert (
+        summary["totals"]["task_count"] == 0
+        and summary["totals"]["estimated"]["minutes"] == 0
+    )
+    zero = save(renamed["version"], reserve_minutes=0).json()
+    assert zero["reserve_minutes"] == 0
+    assert save(zero["version"], reserve_minutes=None).json()["reserve_minutes"] is None
+    event = client.get(f"{url}/events").json()["items"][0]
+    assert (
+        event["old_value"]["reserve_minutes"] == 0
+        and event["new_value"]["reserve_minutes"] is None
+    )

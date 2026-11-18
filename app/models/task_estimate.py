@@ -1,8 +1,17 @@
 """工数見積の再計算に必要な入力と改訂履歴。"""
 
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -24,6 +33,21 @@ class TaskEstimateRevision(Base):
     optimistic_minutes: Mapped[int | None] = mapped_column(Integer)
     likely_minutes: Mapped[int | None] = mapped_column(Integer)
     pessimistic_minutes: Mapped[int | None] = mapped_column(Integer)
+    quantity: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 4), comment=db_comment("数量", "見積対象の数量")
+    )
+    unit_hours: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 4), comment=db_comment("単位工数", "数量1単位あたりの時間")
+    )
+    reference_work: Mapped[str | None] = mapped_column(
+        String(200), comment=db_comment("類似作業", "参照した作業の名称")
+    )
+    reference_minutes: Mapped[int | None] = mapped_column(
+        Integer, comment=db_comment("参照分数", "類似作業の工数")
+    )
+    factor: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 4), comment=db_comment("補正係数", "参照工数に掛ける倍率")
+    )
     assumptions: Mapped[str | None] = mapped_column(String(2000))
     change_reason: Mapped[str | None] = mapped_column(String(500))
     actor_id: Mapped[int | None] = mapped_column(

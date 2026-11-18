@@ -16,6 +16,8 @@
 
 POSTはname/sort_order（非負整数、既定0）。PATCHはversionを必須に、name/sort_order/archivedを部分更新する。省略は保持し、nullは422。競合は409 VERSION_CONFLICTと最新current、同名は409 DUPLICATE_RESOURCE。工程の物理削除APIは提供しない。アーカイブでもTask所属・工数・日程・versionは変えない。
 
+工程の `reserve_minutes` は設定用PATCHと取得応答で扱う。省略で保持、nullで解除、0は明示した予備0分。タスクの見積・計画・実績・残工数、担当別・期間別の集計から独立し、工程の版と履歴に含む。
+
 PATCHと応答に工程の `color` と `description` を追加。色は `blue` / `violet` / `emerald` / `amber` / `rose` / `slate`、説明は最大2000字。これら2項目は省略で保持、`null` で解除。既存工程は両方未設定から始まり、変更値は工程履歴にも記録する。
 
 ## 工程一覧からのタスク移動
@@ -49,7 +51,8 @@ status_groupsは同じ一意集合の状態別内訳。完了・中止を既定�
 
 - `GET /tasks/{task_id}/estimate?page=1` は `task:read`。現在値、Taskの `version`、改訂履歴のページを返す。従来の見積値は初回の改訂まで単純見積として表示する。
 - `GET /projects/{project_id}/task-estimate-methods?task_ids=1&task_ids=2` は `task:read`。同じ案件の未削除タスクに絞った手法を取得する。
-- `PATCH /tasks/{task_id}/estimate` は `task:update`。Task版、`simple` / `pert` / `triangular` と手法に応じた分単位の非負整数を受ける。3点は楽観≦最頻≦悲観。計算結果を最寄りの分に丸め、Taskの `estimated_minutes`、見積の入力・前提・変更理由・更新者、既存監査を同一トランザクションで保存する。
+- `PATCH /tasks/{task_id}/estimate` は `task:update`。Task版と選択した手法の入力を受ける。単純・3点の工数は分単位の非負整数。3点は楽観≦最頻≦悲観。計算結果を最寄りの分に丸め、Taskの `estimated_minutes`、見積の入力・前提・変更理由・更新者、既存監査を同一トランザクションで保存する。
+- `parametric` は数量 `quantity` × 単位工数（時間）`unit_hours` × 60、`analogous` は類似作業名 `reference_work`、参照分数 `reference_minutes` × 補正係数 `factor`。数量・単位工数・係数は整数部8桁、小数部4桁まで。0を許容し、結果を最後に1分単位へ四捨五入する。改訂・基準の読み取りでは十進数を文字列で返す。選択手法以外の計算入力や分数の上限超過は422。
 - 詳細見積があるタスクの `estimated_minutes` を従来のタスク編集や計画APIから変更すると、新しい値を単純見積として履歴に追加する。明示した `null` は解除履歴として保持する。見積の変更では日程・実績・工数の集計根拠を補完しない。
 
 ### 基準見積
