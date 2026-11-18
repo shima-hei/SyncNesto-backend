@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.models.task import Task
 from app.models.task_estimate import TaskEstimateBaseline, TaskEstimateRevision
 from app.schemas.task_estimate import (
+    EstimateWorksheetRow,
     TaskEstimateBaselineRead,
     TaskEstimateBaselines,
     TaskEstimateMethodRead,
@@ -126,4 +127,37 @@ def estimate_methods(
             method=method or ("simple" if minutes is not None else None),
         )
         for task_id, minutes, method in rows
+    ]
+
+
+def worksheet_rows(
+    db: Session, project_id: int, task_ids: list[int]
+) -> list[EstimateWorksheetRow]:
+    latest_id = (
+        select(TaskEstimateRevision.id)
+        .where(TaskEstimateRevision.task_id == Task.id)
+        .order_by(TaskEstimateRevision.task_version.desc())
+        .limit(1)
+        .correlate(Task)
+        .scalar_subquery()
+    )
+    rows = db.execute(
+        select(Task, TaskEstimateRevision)
+        .outerjoin(TaskEstimateRevision, TaskEstimateRevision.id == latest_id)
+        .where(
+            Task.project_id == project_id,
+            Task.id.in_(task_ids),
+            Task.deleted_at.is_(None),
+        )
+        .order_by(Task.id)
+    )
+    return [
+        EstimateWorksheetRow(
+            task_id=task.id,
+            version=task.version,
+            current=TaskEstimateRevisionRead.model_validate(revision)
+            if revision
+            else legacy_estimate(task),
+        )
+        for task, revision in rows
     ]

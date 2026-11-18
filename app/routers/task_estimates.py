@@ -6,9 +6,16 @@ from sqlalchemy.orm import Session
 from app.core.auth import get_current_user, require_project_permission
 from app.db.session import get_db
 from app.models.user import User
-from app.repositories.task_estimate import estimate_methods, read_baselines
+from app.repositories.task_estimate import (
+    estimate_methods,
+    read_baselines,
+    worksheet_rows,
+)
 from app.routers.tasks_shared import task_service
 from app.schemas.task_estimate import (
+    EstimateWorksheetRow,
+    EstimateWorksheetSave,
+    ProjectEstimateStandard,
     TaskEstimateBaselineConfirm,
     TaskEstimateBaselineRead,
     TaskEstimateBaselines,
@@ -16,6 +23,7 @@ from app.schemas.task_estimate import (
     TaskEstimateRead,
     TaskEstimateUpdate,
 )
+from app.services.estimate_worksheet import project_standard, save_worksheet
 from app.services.task_estimate import (
     confirm_task_baseline,
     read_task_estimate,
@@ -95,3 +103,52 @@ def confirm_task_estimate_baseline(
             db, user=user, task=task, permission_code=permission
         )
     return confirm_task_baseline(db, task_id, data, user.id)
+
+
+@router.get(
+    "/projects/{project_id}/estimate-standard", response_model=ProjectEstimateStandard
+)
+def get_estimate_standard(
+    project_id: int,
+    _: User = Depends(require_project_permission("task:read")),
+    db: Session = Depends(get_db),
+):
+    return project_standard(db, project_id)
+
+
+@router.patch(
+    "/projects/{project_id}/estimate-standard", response_model=ProjectEstimateStandard
+)
+def update_estimate_standard(
+    project_id: int,
+    data: ProjectEstimateStandard,
+    user: User = Depends(require_project_permission("project:update")),
+    db: Session = Depends(get_db),
+):
+    return project_standard(db, project_id, data, user.id)
+
+
+@router.get(
+    "/projects/{project_id}/estimate-worksheet",
+    response_model=list[EstimateWorksheetRow],
+)
+def get_estimate_worksheet(
+    project_id: int,
+    task_ids: list[int] = Query(min_length=1, max_length=100),
+    _: User = Depends(require_project_permission("task:read")),
+    db: Session = Depends(get_db),
+):
+    return worksheet_rows(db, project_id, task_ids)
+
+
+@router.patch(
+    "/projects/{project_id}/estimate-worksheet",
+    response_model=list[EstimateWorksheetRow],
+)
+def update_estimate_worksheet(
+    project_id: int,
+    data: EstimateWorksheetSave,
+    user: User = Depends(require_project_permission("task:update")),
+    db: Session = Depends(get_db),
+):
+    return save_worksheet(db, project_id, data, user.id)

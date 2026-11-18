@@ -64,6 +64,15 @@ def save_task_estimate(
     db: Session, task_id: int, data: TaskEstimateUpdate, actor_id: int
 ) -> TaskEstimateRead:
     task = _lock_estimate_task(db, task_id)
+    revise_locked_estimate(db, task, data, actor_id)
+    db.commit()
+    return read_task_estimate(db, task)
+
+
+def revise_locked_estimate(
+    db: Session, task: Task, data: TaskEstimateUpdate, actor_id: int
+) -> None:
+    """ロック済みの行に改訂・監査を追加する。コミットは保存単位ごとに呼び出し元が行う。"""
     previous = legacy_estimate(task)
     had_revision = latest_estimate(db, task.id) is not None
     minutes = data.calculated_minutes()
@@ -116,8 +125,6 @@ def save_task_estimate(
         metadata={"method": data.method, "minutes": minutes},
         commit=False,
     )
-    db.commit()
-    return read_task_estimate(db, task)
 
 
 def confirm_task_baseline(

@@ -141,3 +141,28 @@ class TaskEstimateBaselines(BaseModel):
     items: list[TaskEstimateBaselineRead]
     total: int
     page: int
+
+
+class ProjectEstimateStandard(BaseModel):
+    method: EstimateMethod
+    version: int = Field(ge=1)
+
+
+class EstimateWorksheetRow(BaseModel):
+    task_id: int
+    version: int
+    current: TaskEstimateRevisionRead
+
+
+class EstimateWorksheetChange(TaskEstimateUpdate):
+    task_id: int = Field(gt=0)
+
+
+class EstimateWorksheetSave(BaseModel):
+    rows: list[EstimateWorksheetChange] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def distinct_tasks(self):
+        if len({row.task_id for row in self.rows}) != len(self.rows):
+            raise ValueError("同一のタスクが複数含まれています")
+        return self
