@@ -8,9 +8,10 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-import pyotp
 import qrcode
 from cryptography.fernet import InvalidToken
+from pyotp import random_base32
+from pyotp.totp import TOTP
 from sqlalchemy.orm import Session
 from webauthn import (
     generate_authentication_options,
@@ -182,7 +183,7 @@ class MfaService:
     ) -> MfaTotpSetup:
         """登録用の秘密は限定状態内だけに暗号化保存する。"""
         self.require_enrollment(db, flow, user)
-        secret = pyotp.random_base32()
+        secret = random_base32()
         flow.payload = {
             "fingerprint": fingerprint(user),
             **{
@@ -194,9 +195,7 @@ class MfaService:
             "name": name,
             "secret": cipher().encrypt(secret.encode()).decode(),
         }
-        uri = pyotp.TOTP(secret).provisioning_uri(
-            name=user.email, issuer_name="Syncnesto"
-        )
+        uri = TOTP(secret).provisioning_uri(name=user.email, issuer_name="Syncnesto")
         image = qrcode.make(uri)
         buffer = io.BytesIO()
         image.save(buffer, kind="PNG")
@@ -224,7 +223,7 @@ class MfaService:
         if len(code) != 6 or not code.isascii() or not code.isdigit():
             return None
         current = int(datetime.now(UTC).timestamp()) // 30
-        totp = pyotp.TOTP(secret)
+        totp = TOTP(secret)
         for step in (current, current - 1, current + 1):
             if step > last_step and hmac.compare_digest(totp.at(step * 30), code):
                 return step

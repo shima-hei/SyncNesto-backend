@@ -8,12 +8,12 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
 
 import cbor2
-import pyotp
 import pytest
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi.testclient import TestClient
+from pyotp.totp import TOTP
 from webauthn.helpers import bytes_to_base64url as b64
 
 from app.core.config import settings
@@ -70,7 +70,7 @@ def enroll_totp(client, user, *, already_started=False):
     assert response.headers["cache-control"] == "no-store"
     assert response.json()["qr_data_url"].startswith("data:image/png;base64,")
     secret = parse_qs(urlsplit(response.json()["provisioning_uri"]).query)["secret"][0]
-    result = post(client, "/auth/mfa/verify-code", {"code": pyotp.TOTP(secret).now()})
+    result = post(client, "/auth/mfa/verify-code", {"code": TOTP(secret).now()})
     assert result.status_code == 200, result.text
     assert result.json()["next_step"] == "recovery_codes"
     codes = result.json()["recovery_codes"]
@@ -195,7 +195,7 @@ def test_totp_replay_failure_limit_and_csrf(client, create_test_user, db):
         post(
             client,
             "/auth/mfa/verify-code",
-            {"code": pyotp.TOTP(secret).at(registered_step * 30)},
+            {"code": TOTP(secret).at(registered_step * 30)},
         ).status_code
         == 400
     )
@@ -429,9 +429,9 @@ def test_reauthentication_backups_codes_and_recent_window(client, create_test_us
     backup = parse_qs(urlsplit(response.json()["provisioning_uri"]).query)["secret"][0]
     assert backup != first_secret
     assert (
-        post(
-            client, "/auth/mfa/verify-code", {"code": pyotp.TOTP(backup).now()}
-        ).json()["next_step"]
+        post(client, "/auth/mfa/verify-code", {"code": TOTP(backup).now()}).json()[
+            "next_step"
+        ]
         == "authenticated"
     )
     session = (
@@ -453,9 +453,7 @@ def test_reauthentication_backups_codes_and_recent_window(client, create_test_us
         == 400
     )
     assert (
-        post(
-            client, "/auth/mfa/verify-code", {"code": pyotp.TOTP(backup).now()}
-        ).status_code
+        post(client, "/auth/mfa/verify-code", {"code": TOTP(backup).now()}).status_code
         == 200
     )
     response = post(client, "/auth/mfa/recovery-codes")
@@ -672,13 +670,11 @@ def test_audit_failure_cannot_commit_factor_or_normal_session(
 
     monkeypatch.setattr(AuditLogService, "record", failed)
     with pytest.raises(RuntimeError, match="synthetic audit failure"):
-        post(client, "/auth/mfa/verify-code", {"code": pyotp.TOTP(secret).now()})
+        post(client, "/auth/mfa/verify-code", {"code": TOTP(secret).now()})
     assert db.query(MfaFactor).count() == 0 and db.query(UserSession).count() == 0
     monkeypatch.setattr(AuditLogService, "record", original)
     assert (
-        post(
-            client, "/auth/mfa/verify-code", {"code": pyotp.TOTP(secret).now()}
-        ).status_code
+        post(client, "/auth/mfa/verify-code", {"code": TOTP(secret).now()}).status_code
         == 200
     )
 
@@ -697,9 +693,7 @@ def test_preparation_mode_allows_enrollment_before_enforcement(
     response = post(client, "/auth/mfa/totp/setup", {"name": "Operator app"})
     secret = parse_qs(urlsplit(response.json()["provisioning_uri"]).query)["secret"][0]
     assert (
-        post(
-            client, "/auth/mfa/verify-code", {"code": pyotp.TOTP(secret).now()}
-        ).status_code
+        post(client, "/auth/mfa/verify-code", {"code": TOTP(secret).now()}).status_code
         == 200
     )
     if revoke_before_finish:
