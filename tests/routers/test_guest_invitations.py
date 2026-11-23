@@ -6,10 +6,10 @@ from http.cookies import SimpleCookie
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
-import pyotp
 import pytest
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
+from pyotp.totp import TOTP
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import DBAPIError
 
@@ -654,7 +654,7 @@ def test_local_optional_mfa_still_requires_verified_invitation_session(
     )
     setup = post("/auth/mfa/totp/setup", {"name": "LOCAL本人"})
     secret = parse_qs(urlsplit(setup["provisioning_uri"]).query)["secret"][0]
-    codes = post("/auth/mfa/verify-code", {"code": pyotp.TOTP(secret).now()})[
+    codes = post("/auth/mfa/verify-code", {"code": TOTP(secret).now()})[
         "recovery_codes"
     ]
     post("/auth/mfa/finish")
@@ -670,7 +670,7 @@ def test_local_optional_mfa_still_requires_verified_invitation_session(
     assert len(codes) == 10
     post(
         "/auth/mfa/verify-code",
-        {"code": pyotp.TOTP(secret).at(datetime.now(UTC) + timedelta(seconds=30))},
+        {"code": TOTP(secret).at(datetime.now(UTC) + timedelta(seconds=30))},
     )
     assert client.get(path).json()["next_step"] == "accept"
     post(path + "/accept", command(row))

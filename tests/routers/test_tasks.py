@@ -1,16 +1,21 @@
 """タスク管理APIのテスト。"""
 
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
+from threading import Barrier
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.db.session import session_local
 from app.models.audit_log import AuditLog
 from app.models.project import Project, ProjectMember
 from app.models.requirement import Requirement, RequirementDocument
 from app.models.task import Board, Task, TaskChangeLog, TaskDependency
 from app.models.user import User
+from app.schemas.task import TaskCreate
+from app.services.task import TaskService
 from tests.helpers.auth import authorize_as
 
 
@@ -105,11 +110,12 @@ def test_create_task_generates_task_code_when_omitted(
     )
 
     assert first_response.status_code == 201
-    assert first_response.json()["task_code"] == "TASK-001"
+    assert first_response.json()["task_code"] == "TASK-1"
+    assert first_response.json()["task_type_name"] == "タスク"
     assert second_response.status_code == 201
-    assert second_response.json()["task_code"] == "TASK-002"
+    assert second_response.json()["task_code"] == "TASK-2"
     assert blank_response.status_code == 201
-    assert blank_response.json()["task_code"] == "TASK-003"
+    assert blank_response.json()["task_code"] == "TASK-3"
 
 
 def test_create_task_generates_task_code_per_project(
@@ -138,9 +144,36 @@ def test_create_task_generates_task_code_per_project(
     )
 
     assert first_response.status_code == 201
-    assert first_response.json()["task_code"] == "TASK-010"
+    assert first_response.json()["task_code"] == "TASK-10"
     assert second_response.status_code == 201
-    assert second_response.json()["task_code"] == "TASK-001"
+    assert second_response.json()["task_code"] == "TASK-1"
+
+
+def test_concurrent_task_code_allocation(
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+) -> None:
+    """同じ案件・接頭辞への同時起票で採番が重複しない。"""
+    user_id = create_test_user().id
+    project_id = create_test_project().id
+    workers = 8
+    ready = Barrier(workers, timeout=15)
+
+    def create_review(index: int) -> str:
+        with session_local() as session:
+            ready.wait()
+            task = TaskService().create_task(
+                session,
+                project_id=project_id,
+                actor_id=user_id,
+                task_in=TaskCreate(title=f"Review {index}", task_type="review"),
+            )
+            return task.task_code
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        codes = set(executor.map(create_review, range(workers)))
+
+    assert codes == {f"REVIEW-{number}" for number in range(1, workers + 1)}
 
 
 def test_list_tasks_filters_by_requirement_and_overdue(
@@ -179,8 +212,7 @@ def test_list_tasks_filters_by_requirement_and_overdue(
     )
 
     response = client.get(
-        f"/projects/{project.id}/tasks"
-        f"?requirement_id={requirement.id}&overdue=true"
+        f"/projects/{project.id}/tasks?requirement_id={requirement.id}&overdue=true"
     )
 
     assert response.status_code == 200
@@ -695,9 +727,7 @@ def test_task_change_logs_return_field_values(
     assert response.status_code == 200
     body = response.json()
     assert body["total"] == 1
-    status_log = next(
-        item for item in body["items"] if item["field_name"] == "status"
-    )
+    status_log = next(item for item in body["items"] if item["field_name"] == "status")
     assert status_log["action"] == "status_changed"
     assert status_log["old_value"] == {"code": "backlog", "label": "バックログ"}
     assert status_log["new_value"] == {
@@ -745,9 +775,7 @@ def test_task_change_logs_create_single_dedicated_log_for_single_field_changes(
         assert response.status_code == 200
         body = response.json()
         assert body["total"] == 2
-        update_logs = [
-            item for item in body["items"] if item["action"] != "created"
-        ]
+        update_logs = [item for item in body["items"] if item["action"] != "created"]
         assert len(update_logs) == 1
         assert update_logs[0]["action"] == expected_action
         assert update_logs[0]["field_name"] == field_name

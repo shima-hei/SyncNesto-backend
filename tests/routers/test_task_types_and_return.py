@@ -1,5 +1,7 @@
 """種別管理と理由付き差し戻しの業務/API境界。"""
 
+from datetime import UTC, datetime
+
 import pytest
 from sqlalchemy import select
 
@@ -20,6 +22,48 @@ def context(client, create_test_user, create_test_project, assign_project_role):
     return admin, member, project
 
 
+def test_standard_types_have_separate_code_series(
+    client, context, create_test_task, db
+):
+    """標準種別ごとの採番、旧形式の継続、登録後のID保持を確認する。"""
+    _, _, project = context
+    path = f"/projects/{project.id}/tasks"
+    catalog = client.get(f"/projects/{project.id}/task-types").json()["items"]
+    assert next(row for row in catalog if row["key"] == "other")["name"] == "タスク"
+
+    existing = create_test_task(project=project, task_code="TEST-004")
+    existing.deleted_at = datetime.now(UTC)
+    db.commit()
+    cases = {
+        "other": "TASK-1",
+        "bug": "ISSUE-1",
+        "frontend": "FE-1",
+        "backend": "BE-1",
+        "database": "DB-1",
+        "infrastructure": "INFRA-1",
+        "security": "SEC-1",
+        "test": "TEST-5",
+        "review": "REVIEW-1",
+        "investigation": "INV-1",
+        "documentation": "DOC-1",
+    }
+    for task_type, code in cases.items():
+        response = client.post(path, json={"title": task_type, "task_type": task_type})
+        assert response.status_code == 201, response.text
+        assert response.json()["task_code"] == code
+    response = client.post(path, json={"title": "Review", "task_type": "review"})
+    assert response.status_code == 201, response.text
+    review = response.json()
+    assert review["task_code"] == "REVIEW-2"
+    updated = client.patch(
+        f"/tasks/{review['id']}",
+        json={"version": review["version"], "task_type": "test"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["task_type"] == "test"
+    assert updated.json()["task_code"] == "REVIEW-2"
+
+
 def test_custom_type_rename_hide_and_task_history(client, context):
     """名前を変更/非表示にしても同じTaskとキーを表示し、再選択は拒否する。"""
     _, _, project = context
@@ -32,6 +76,7 @@ def test_custom_type_rename_hide_and_task_history(client, context):
         json={"title": "確認", "task_type": kind["key"]},
     ).json()
     assert task["task_type_name"] == "顧客調整"
+    assert task["task_code"] == "TASK-1"
     saved = client.patch(
         f"{path}/{kind['key']}",
         json={"version": 1, "name": "顧客への確認", "is_active": False},
@@ -91,7 +136,7 @@ def test_type_conflicts_duplicates_foreign_key_and_legacy(
     admin, _, project = context
     path = f"/projects/{project.id}/task-types"
     kind = client.post(path, json={"name": "Coordination"}).json()
-    for name in ["coordination", "タスク（一般）"]:
+    for name in ["coordination", "タスク"]:
         assert client.post(path, json={"name": name}).status_code == 409
     assert client.post(path, json={"name": "   "}).status_code == 422
     conflict = client.patch(

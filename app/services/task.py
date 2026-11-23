@@ -14,6 +14,7 @@ from app.core.exceptions import (
     ForbiddenError,
     NotFoundError,
 )
+from app.core.task_types import DEFAULT_TASK_CODE_PREFIX, TASK_CODE_PREFIX_BY_TYPE
 from app.models.notification import NotificationTargetType, NotificationType
 from app.models.task import (
     Milestone,
@@ -62,7 +63,6 @@ from app.services.task_presentation import (
 )
 from app.services.task_type import TaskTypeService
 
-AUTO_TASK_CODE_PREFIX = "TASK"
 AUTO_TASK_CODE_RETRY_LIMIT = 5
 TASK_UPDATABLE_FIELDS = {
     "phase_assignment",
@@ -323,7 +323,9 @@ class TaskService:
             TaskPhaseService().validate_assignment(
                 db, project_id, task_in.phase_assignment
             )
-            task_code = requested_task_code or self._generate_task_code(db, project_id)
+            task_code = requested_task_code or self._generate_task_code(
+                db, project_id, task_in.task_type
+            )
             normalized = task_in.model_copy(
                 update={
                     **normalized_dates,
@@ -1084,18 +1086,13 @@ class TaskService:
         stripped = task_code.strip()
         return stripped or None
 
-    def _generate_task_code(self, db: Session, project_id: int) -> str:
-        """プロジェクト単位のタスクコードを採番する。
-
-        Args:
-            db: DBセッション。
-            project_id: 採番対象プロジェクトID。
-
-        Returns:
-            `TASK-001` 形式のタスクコード。
-        """
-        next_number = self.task_repository.get_max_auto_task_number(db, project_id) + 1
-        return f"{AUTO_TASK_CODE_PREFIX}-{next_number:03d}"
+    def _generate_task_code(self, db: Session, project_id: int, task_type: str) -> str:
+        """起票時の種別で接頭辞を選び、案件内の連番を割り当てる。"""
+        prefix = TASK_CODE_PREFIX_BY_TYPE.get(task_type, DEFAULT_TASK_CODE_PREFIX)
+        next_number = self.task_repository.get_next_auto_task_number(
+            db, project_id, prefix
+        )
+        return f"{prefix}-{next_number}"
 
     def _validate_task_state(self, status: str, progress_percent: int) -> None:
         """タスク状態と進捗率の整合性を検証する。"""
