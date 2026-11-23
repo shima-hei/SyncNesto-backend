@@ -1094,3 +1094,98 @@ def test_remove_project_member_allows_readding_same_user(
     assert delete_response.status_code == 204
     assert create_response.status_code == 201
     assert create_response.json()["role"] == {"key": "member", "name": "メンバー"}
+
+
+def test_project_navigation_settings_are_scoped_and_versioned(
+    client: TestClient,
+    create_test_user: Callable[..., User],
+    create_test_project: Callable[..., Project],
+    assign_project_role: Callable[..., ProjectMember],
+    db: Session,
+) -> None:
+    """案件設定だけを変更し、閲覧・別テナント・競合・不正メニューを区別する。"""
+    from app.models.tenant import Tenant
+
+    admin = create_test_user(email="navigation-admin@example.com")
+    viewer = create_test_user(email="navigation-viewer@example.com")
+    project = create_test_project()
+    foreign = create_test_project()
+    tenant = Tenant(name="Other navigation tenant", slug="other-navigation-tenant")
+    db.add(tenant)
+    db.flush()
+    foreign.tenant_id = tenant.id
+    db.commit()
+
+    assign_project_role(user=admin, project=project, role_key="project_admin")
+    assign_project_role(user=viewer, project=project, role_key="viewer")
+    authorize_as(client, admin)
+    path = f"/projects/{project.id}"
+    start = client.get(path).json()
+    assert start["navigation"] is None
+    keys = [
+        "overview",
+        "requirements",
+        "design",
+        "planning",
+        "tasks",
+        "tests",
+        "documents",
+    ]
+    items = [
+        {
+            "key": key,
+            "placement": {"tasks": "hidden", "tests": "overflow"}.get(key, "primary"),
+        }
+        for key in keys
+    ]
+    settings = {
+        "items": items,
+        "requirements_view": "fixed-approvals",
+        "tests_view": "test-cases",
+    }
+    saved = client.patch(
+        path, json={"version": start["version"], "navigation": settings}
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["navigation"] == settings
+    assert client.get(path).json()["navigation"] == settings
+    assert (
+        client.patch(
+            path, json={"version": start["version"], "navigation": None}
+        ).status_code
+        == 409
+    )
+    assert (
+        client.patch(
+            f"/projects/{foreign.id}",
+            json={"version": foreign.version, "navigation": settings},
+        ).status_code
+        == 403
+    )
+
+    version = saved.json()["version"]
+    for invalid_items in (
+        [{**items[0], "placement": "hidden"}, *items[1:]],
+        [items[1], items[0], *items[2:]],
+        [*items[:-1], items[-2]],
+        [*items[:-1], {"key": "unknown", "placement": "primary"}],
+    ):
+        result = client.patch(
+            path,
+            json={
+                "version": version,
+                "navigation": {**settings, "items": invalid_items},
+            },
+        )
+        assert result.status_code == 422, result.text
+
+    authorize_as(client, viewer)
+    assert client.get(path).json()["navigation"] == settings
+    assert client.get(f"{path}/tasks").status_code == 200
+    assert (
+        client.patch(path, json={"version": version, "navigation": None}).status_code
+        == 403
+    )
+    authorize_as(client, admin)
+    reset = client.patch(path, json={"version": version, "navigation": None})
+    assert reset.status_code == 200 and reset.json()["navigation"] is None
