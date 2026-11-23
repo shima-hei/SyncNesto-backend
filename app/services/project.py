@@ -31,6 +31,7 @@ from app.services.conflict import (
 )
 
 PROJECT_CONFLICT_CURRENT_FIELDS = (
+    "navigation",
     "project_code",
     "name",
     "description",
@@ -202,7 +203,9 @@ class ProjectService:
         Raises:
             VersionConflictError: リクエストのversionが最新ではない場合。
         """
-        project = self.get_project(db, project_id)
+        project = self.repository.get_by_id(db, project_id, lock=True)
+        if project is None:
+            raise NotFoundError(error_messages.PROJECT_NOT_FOUND)
         raise_if_version_conflict(
             current_version=project.version,
             requested_version=project_in.version,
