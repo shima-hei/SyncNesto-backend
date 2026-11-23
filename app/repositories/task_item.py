@@ -142,31 +142,29 @@ class TaskRepository:
             .first()
         )
 
-    def get_max_auto_task_number(self, db: Session, project_id: int) -> int:
-        """プロジェクト内の自動採番タスクコード最大番号を取得する。
-
-        Args:
-            db: DBセッション。
-            project_id: プロジェクトID。
-
-        Returns:
-            `TASK-001` 形式の最大番号。存在しない場合は0。
-        """
-        result = db.execute(
+    def get_next_auto_task_number(
+        self, db: Session, project_id: int, prefix: str
+    ) -> int:
+        """案件内の自動採番を直列化し、接頭辞ごとに次の番号を取得する。"""
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(1398362937, :project_id)"),
+            {"project_id": project_id},
+        )
+        # 旧形式のゼロ埋めと、論理削除済みのコードも連番に含める。
+        maximum = db.execute(
             text(
                 """
                 SELECT COALESCE(
-                    MAX(CAST(substring(task_code from '^TASK-(\\d+)$') AS INTEGER)),
+                    MAX(CAST(substring(task_code from :pattern) AS NUMERIC)),
                     0
                 )
                 FROM tasks
                 WHERE project_id = :project_id
-                  AND task_code ~ '^TASK-[0-9]+$'
                 """
             ),
-            {"project_id": project_id},
+            {"project_id": project_id, "pattern": f"^{prefix}-([0-9]+)$"},
         ).scalar_one()
-        return int(result)
+        return int(maximum) + 1
 
     def filtered_query(
         self,
