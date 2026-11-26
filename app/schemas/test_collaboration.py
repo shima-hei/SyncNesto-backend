@@ -42,7 +42,7 @@ class RequirementCoverageRead(BaseModel):
     has_tests: bool
 
 
-class TestDesignCommentCreate(CommentImageCreateFields):
+class TestDesignCommentTextCreate(BaseModel):
     """対象を指定した設計コメント投稿。"""
 
     mentions: list[CommentMentionOccurrence] = Field(
@@ -62,6 +62,10 @@ class TestDesignCommentCreate(CommentImageCreateFields):
     field: str | None = Field(default=None, max_length=100)
     parent_comment_id: int | None = None
     body: str = Field(min_length=1, max_length=20000)
+
+
+class TestDesignCommentCreate(TestDesignCommentTextCreate, CommentImageCreateFields):
+    """対象を指定した設計コメント投稿。"""
 
 
 class TestDesignCommentUpdate(BaseModel):

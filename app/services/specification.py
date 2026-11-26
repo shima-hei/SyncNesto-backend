@@ -22,6 +22,7 @@ from app.models.specification import (
     SpecificationLink,
 )
 from app.models.user import User
+from app.presenters.user import build_comment_author_avatar_url
 from app.repositories.specification import TARGETS, SpecificationRepository
 from app.schemas.specification import (
     SpecificationCommentCreate,
@@ -264,11 +265,9 @@ class SpecificationService:
                     "author_name": authors[comment.author_id].name
                     if comment.author_id in authors
                     else "メンバー",
-                    "author_avatar_url": storage.generate_presigned_url(
-                        authors[comment.author_id].avatar_key
-                    )
-                    if comment.author_id in authors
-                    else None,
+                    "author_avatar_url": build_comment_author_avatar_url(
+                        authors.get(comment.author_id), storage
+                    ),
                 }
             )
             for comment in comments

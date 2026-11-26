@@ -17,7 +17,11 @@ from app.models.requirement import (
     RequirementTargetComment,
 )
 from app.models.user import User
-from app.presenters.user import build_user_summary, get_user_type
+from app.presenters.user import (
+    build_comment_author_avatar_url,
+    build_user_summary,
+    get_user_type,
+)
 from app.schemas.change_log import (
     ChangeLogUserRead,
     ChangeLogValue,
@@ -752,5 +756,5 @@ def _build_change_log_user_response(
         id=user.id,
         name=user.name,
         email=user.email,
-        avatar_url=storage.generate_presigned_url(user.avatar_key) if storage else None,
+        avatar_url=build_comment_author_avatar_url(user, storage),
     )

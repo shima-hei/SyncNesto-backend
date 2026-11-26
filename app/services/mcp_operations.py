@@ -29,6 +29,7 @@ from app.schemas.requirement import (
     RequirementTargetCommentCreate,
 )
 from app.schemas.task import TaskCreate, TaskUpdate
+from app.schemas.test_collaboration import TestDesignCommentCreate
 from app.schemas.test_design import TestDesignUpdate
 from app.services.audit_log import AuditLogService
 from app.services.mcp_auth import McpAuthService
@@ -43,6 +44,8 @@ from app.services.task_dependency import TaskDependencyService
 from app.services.task_milestone import TaskMilestoneService
 from app.services.test_collaboration import TestCollaborationService
 from app.services.test_design import TestDesignService
+
+WEB_COMMENT_FIELDS = {"images", "author_avatar_url"}
 
 
 def request_digest(value: dict) -> str:
@@ -341,9 +344,14 @@ class McpOperationsService:
                     )
                 ]
             start = (data.page - 1) * data.page_size
+            exclude = (
+                WEB_COMMENT_FIELDS
+                if name in {"list_requirement_comments", "list_test_design_comments"}
+                else None
+            )
             return {
                 "items": [
-                    row.model_dump(mode="json")
+                    row.model_dump(mode="json", exclude=exclude)
                     if isinstance(row, BaseModel)
                     else summary(row)
                     for row in rows[start : start + data.page_size]
@@ -621,8 +629,14 @@ class McpOperationsService:
                 raise BadRequestError(messages.MCP_INVALID_ANCHOR)
             return (
                 TestCollaborationService()
-                .create_comment(db, project_id, design.id, data.data, actor_id)
-                .model_dump(mode="json")
+                .create_comment(
+                    db,
+                    project_id,
+                    design.id,
+                    TestDesignCommentCreate.model_validate(data.data.model_dump()),
+                    actor_id,
+                )
+                .model_dump(mode="json", exclude=WEB_COMMENT_FIELDS)
             )
         if name == "link_requirement_test_item":
             return (

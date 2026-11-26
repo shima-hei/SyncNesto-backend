@@ -29,6 +29,7 @@ from app.models.test_design import (
     TestPatternValue,
 )
 from app.models.user import User
+from app.presenters.user import build_comment_author_avatar_url
 from app.repositories.test_collaboration import TestCollaborationRepository
 from app.repositories.user import UserRepository
 from app.schemas.comment_image import CommentImageRead
@@ -390,9 +391,7 @@ class TestCollaborationService:
             ],
             author_id=comment.author_id,
             author_name=author.name if author else None,
-            author_avatar_url=storage.generate_presigned_url(author.avatar_key)
-            if author
-            else None,
+            author_avatar_url=build_comment_author_avatar_url(author, storage),
             is_resolved=comment.is_resolved,
             version=comment.version,
             created_at=comment.created_at,

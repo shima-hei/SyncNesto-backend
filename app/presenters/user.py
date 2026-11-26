@@ -1,5 +1,6 @@
 """ユーザー関連レスポンスのPresenterを定義するモジュール。"""
 
+from app.core.config import settings
 from app.models.rbac import Role
 from app.models.user import User, UserType
 from app.schemas.user import (
@@ -11,6 +12,19 @@ from app.schemas.user import (
     UserSummary,
 )
 from app.services.storage import StorageService
+
+
+def build_comment_author_avatar_url(
+    user: User | None, storage: StorageService | None
+) -> str | None:
+    """既定画像の利用者はコメント欄で名前の頭文字を表示する。"""
+    if (
+        user is None
+        or storage is None
+        or user.avatar_key == settings.default_avatar_key
+    ):
+        return None
+    return storage.generate_presigned_url(user.avatar_key)
 
 
 def get_user_type(user: User) -> UserType:

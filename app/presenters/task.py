@@ -16,6 +16,7 @@ from app.models.task import (
     TaskDependency,
 )
 from app.models.user import User
+from app.presenters.user import build_comment_author_avatar_url
 from app.schemas.change_log import (
     ChangeLogUserRead,
     ChangeLogValue,
@@ -522,9 +523,7 @@ class TaskPresenter:
             id=user.id,
             name=user.name,
             email=user.email,
-            avatar_url=storage.generate_presigned_url(user.avatar_key)
-            if storage
-            else None,
+            avatar_url=build_comment_author_avatar_url(user, storage),
         )
 
     def _with_legacy_created_comment_body(
