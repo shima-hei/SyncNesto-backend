@@ -13,6 +13,7 @@ from app.models.artifact_publication_access import (
 )
 from app.models.artifact_release import ArtifactRelease, ArtifactReleaseNode
 from app.models.audit_log import AuditLog
+from app.models.comment_image import CommentImage
 from app.models.comment_mention import CommentMention
 from app.models.demo import DemoOwnedUser, DemoSession, DemoStartBudget, DemoUpload
 from app.models.document import (
@@ -180,6 +181,7 @@ __all__ = [
     "Tenant",
     "TenantMember",
     "RequestLimit",
+    "CommentImage",
     "CommentMention",
     "Factor",
     "FactorLevel",

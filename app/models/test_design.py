@@ -21,6 +21,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.models.comment_image import CommentImage, comment_images
 from app.models.comment_mention import MentionedComment
 from app.models.comments import db_comment
 
@@ -275,6 +276,7 @@ class TestDesignComment(MentionedComment, Base):
     """安定IDの設計対象に紐づくスレッドコメント。"""
 
     __tablename__ = "test_design_comments"
+    images: Mapped[list[CommentImage]] = comment_images(CommentImage.test_comment_id)
     id: Mapped[int] = mapped_column(primary_key=True)
     design_id: Mapped[int] = mapped_column(ForeignKey("test_designs.id"), index=True)
     target_type: Mapped[str] = mapped_column(String(40), index=True)

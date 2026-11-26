@@ -796,6 +796,17 @@ def test_design_append_preserves_execution_and_exact_matrix_cell(client, db, con
     )
     assert comment.status_code == 200, comment.text
     assert comment.json()["target_snapshot"]["label"].endswith(" · 1")
+    assert {"images", "author_avatar_url"}.isdisjoint(comment.json())
+    listed = operate(
+        direct,
+        headers,
+        "list_test_design_comments",
+        project.id,
+        key=False,
+        design_id=design["id"],
+    )
+    assert listed.status_code == 200, listed.text
+    assert {"images", "author_avatar_url"}.isdisjoint(listed.json()["items"][0])
     assert (
         operate(
             direct,

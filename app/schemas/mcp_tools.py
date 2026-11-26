@@ -16,7 +16,7 @@ from app.schemas.task import (
 )
 from app.schemas.test_collaboration import (
     RequirementTestItemCreate,
-    TestDesignCommentCreate,
+    TestDesignCommentTextCreate,
 )
 from app.schemas.test_design import (
     ExpectedValueInput,
@@ -169,6 +169,10 @@ class DesignAppendInput(WriteInput):
         default_factory=list, max_length=100
     )
     links: list[TestItemPatternInput] = Field(default_factory=list, max_length=100)
+
+
+class TestDesignCommentCreate(TestDesignCommentTextCreate):
+    """対象を指定した設計コメント投稿。"""
 
 
 class DesignCommentInput(WriteInput):

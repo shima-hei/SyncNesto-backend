@@ -16,6 +16,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.models.comment_image import CommentImage, comment_images
 from app.models.comments import db_comment
 
 
@@ -69,6 +70,9 @@ class SpecificationComment(Base):
     """表示行番号ではなく、フィールドと項目UUIDへ指摘を紐づける。"""
 
     __tablename__ = "specification_comments"
+    images: Mapped[list[CommentImage]] = comment_images(
+        CommentImage.specification_comment_id
+    )
     __table_args__ = {
         "comment": db_comment("設計書指摘", "項目UUID・版を指定するレビュー指摘")
     }

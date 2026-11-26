@@ -25,6 +25,7 @@ from app.schemas.requirement import (
     RequirementTargetCommentStateUpdate,
     RequirementTargetCommentUpdate,
 )
+from app.services.comment_image import bind_comment_images
 from app.services.comment_mention import CommentMentionService
 from app.services.conflict import build_conflict_current, raise_if_version_conflict
 from app.services.notification import NotificationService
@@ -146,6 +147,14 @@ class RequirementTargetCommentService:
             author_id=author_id,
             mention_targets=mention_service.targets(prepared),
             commit=False,
+        )
+        bind_comment_images(
+            db,
+            project_id=project_id,
+            kind="requirement",
+            images=comment.images,
+            actor_id=author_id,
+            image_ids=comment_in.image_ids,
         )
         NotificationService().mentions_changed(
             db,

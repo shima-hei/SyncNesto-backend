@@ -18,6 +18,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.models.comment_image import CommentImage, comment_images
 from app.models.comment_mention import MentionedComment
 from app.models.comments import db_comment
 
@@ -651,6 +652,9 @@ class RequirementTargetComment(MentionedComment, Base):
     """要件定義内の任意対象へのコメントを管理するモデル。"""
 
     __tablename__ = "requirement_target_comments"
+    images: Mapped[list[CommentImage]] = comment_images(
+        CommentImage.requirement_comment_id
+    )
     __table_args__ = {
         "comment": db_comment(
             "要件定義対象コメント",

@@ -6,6 +6,7 @@ from app.core.exceptions import NotFoundError
 from app.models.user import User
 from app.presenters.task import TaskPresenter
 from app.schemas import mcp_development as s
+from app.schemas.task import TaskCommentCreate
 from app.services.review_account import ReviewAccountService
 from app.services.task import TaskService
 from app.services.task_comment import TaskCommentService
@@ -85,7 +86,10 @@ class McpTaskCommentService:
         self.normal_user(db, user)
         self.task(db, data.project_id, data.task_id)
         row = self.comments.create_comment(
-            db, task_id=data.task_id, comment_in=data.data, actor_id=user.id
+            db,
+            task_id=data.task_id,
+            comment_in=TaskCommentCreate.model_validate(data.data.model_dump()),
+            actor_id=user.id,
         )
         return s.TaskCommentCreatedRead.model_validate(
             row, from_attributes=True

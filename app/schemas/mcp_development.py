@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.schemas.document import DocumentCreate, DocumentLinkCreate, DocumentUpdate
 from app.schemas.mcp_tools import PageInput, ToolInput, WriteInput
 from app.schemas.project_objective import ObjectiveFields
-from app.schemas.task import TaskCommentCreate, TaskCommentRead
+from app.schemas.task import TaskCommentTextCreate, TaskCommentTextRead
 
 
 class TaskCommentListInput(PageInput):
@@ -18,7 +18,7 @@ class TaskCommentListInput(PageInput):
     page_size: int = Field(default=20, ge=1, le=50)
 
 
-class DevelopmentTaskCommentCreate(TaskCommentCreate):
+class DevelopmentTaskCommentCreate(TaskCommentTextCreate):
     """既存コメント入力に、開発用MCPだけの上限を設ける。"""
 
     model_config = ConfigDict(extra="forbid")
@@ -41,7 +41,7 @@ class TaskCommentCreateInput(WriteInput):
     data: DevelopmentTaskCommentCreate
 
 
-class DevelopmentTaskCommentRead(TaskCommentRead):
+class DevelopmentTaskCommentRead(TaskCommentTextRead):
     """旧APIの長い本文は切詰めの有無と原文長を明示する。"""
 
     body_length: int = Field(description="切詰め前の本文のUnicode code point数")

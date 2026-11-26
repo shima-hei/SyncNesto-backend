@@ -13,8 +13,10 @@ from app.repositories.user import UserRepository
 from app.schemas.task import (
     TaskCommentCreate,
     TaskCommentStateUpdate,
+    TaskCommentTextCreate,
     TaskCommentUpdate,
 )
+from app.services.comment_image import bind_comment_images
 from app.services.comment_mention import CommentMentionService
 from app.services.conflict import build_conflict_current, raise_if_version_conflict
 from app.services.notification import NotificationService
@@ -80,6 +82,14 @@ class TaskCommentService:
             mention_targets=mention_service.targets(prepared),
             commit=False,
         )
+        bind_comment_images(
+            db,
+            project_id=task.project_id,
+            kind="task",
+            images=comment.images,
+            actor_id=actor_id,
+            image_ids=comment_in.image_ids,
+        )
         NotificationService().mentions_changed(
             db,
             project_id=task.project_id,
@@ -101,7 +111,7 @@ class TaskCommentService:
         return comment
 
     def validate_create(
-        self, db: Session, task_id: int, comment_in: TaskCommentCreate
+        self, db: Session, task_id: int, comment_in: TaskCommentTextCreate
     ) -> tuple[Task, dict[int, list[dict]]]:
         """再送時も同じ親コメント・メンションの現在の有効性を確認する。"""
         task = self._get_task(db, task_id)

@@ -16,6 +16,7 @@ from app.models.task import (
     TaskDependency,
 )
 from app.models.user import User
+from app.presenters.user import build_comment_author_avatar_url
 from app.schemas.change_log import (
     ChangeLogUserRead,
     ChangeLogValue,
@@ -39,6 +40,7 @@ from app.schemas.task import (
     TaskRequirementSummary,
     TaskTagListResponse,
 )
+from app.services.storage import StorageService
 from app.services.task import (
     TASK_CHANGE_LOG_FORMATTER,
     TaskChangeLogAction,
@@ -155,6 +157,7 @@ class TaskPresenter:
         comment: TaskComment,
         *,
         user: User | None = None,
+        storage: StorageService | None = None,
     ) -> TaskCommentRead:
         """タスクコメントレスポンスを組み立てる。
 
@@ -168,7 +171,9 @@ class TaskPresenter:
         return TaskCommentRead.model_validate(comment).model_copy(
             update={
                 "created_by_user": (
-                    self._build_change_log_user(user) if user is not None else None
+                    self._build_change_log_user(user, storage)
+                    if user is not None
+                    else None
                 ),
             },
         )
@@ -178,6 +183,7 @@ class TaskPresenter:
         comments: list[TaskComment],
         *,
         users_by_id: dict[int, User],
+        storage: StorageService | None = None,
     ) -> list[TaskCommentRead]:
         """タスクコメントレスポンス一覧を組み立てる。
 
@@ -191,6 +197,7 @@ class TaskPresenter:
         return [
             self.build_task_comment_response(
                 comment,
+                storage=storage,
                 user=(
                     users_by_id.get(comment.created_by)
                     if comment.created_by is not None
@@ -508,13 +515,15 @@ class TaskPresenter:
             }
         )
 
-    def _build_change_log_user(self, user: User) -> ChangeLogUserRead:
+    def _build_change_log_user(
+        self, user: User, storage: StorageService | None = None
+    ) -> ChangeLogUserRead:
         """変更履歴の変更者として返す軽量ユーザー情報を組み立てる。"""
         return ChangeLogUserRead(
             id=user.id,
             name=user.name,
             email=user.email,
-            avatar_url=None,
+            avatar_url=build_comment_author_avatar_url(user, storage),
         )
 
     def _with_legacy_created_comment_body(

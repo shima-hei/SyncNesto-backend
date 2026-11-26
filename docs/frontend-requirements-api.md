@@ -198,6 +198,15 @@ requirement_task     関連タスク。relation_id または task_id が対象�
 存在しないID、別要件のID、未紐づきのタスクIDを指定した場合は
 `404 NOT_FOUND / Requirement comment target not found` を返します。
 
+汎用コメントの作成時に `image_ids` で最大4枚の画像を添付できます。画像は
+`POST /projects/{project_id}/comment-images/requirement/upload-plan` で予約し、返された方式に応じて
+`.../requirement/upload-complete` または `.../requirement/upload` で登録します。
+PNG・JPEG・WebPを1枚3 MiBまで受け付けます。投稿に使える画像は同じ案件・種別で本人が登録した未使用のものです。
+
+コメントのレスポンスの `images` には `id`、`project_id`、`filename`、`content_type`、`byte_size` が入ります。
+本文の編集では添付を保持します。`GET /projects/{project_id}/comment-images/{image_id}` は投稿済みの画像を案件と親コメントの閲覧権限で認可して返します。
+同じパスへの `DELETE` は本人の未投稿画像を破棄します。
+
 要件レビュー:
 
 ```text

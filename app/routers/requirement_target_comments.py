@@ -18,6 +18,7 @@ from app.schemas.requirement import (
     RequirementTargetCommentUpdate,
 )
 from app.services.authorization import AuthorizationService
+from app.services.storage import StorageService
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["requirements"])
 authorization_service = AuthorizationService()
@@ -63,6 +64,7 @@ def create_target_comment(
     return build_requirement_target_comment_response(
         comment,
         user=_get_target_comment_author(db, comment.author_id),
+        storage=StorageService().for_demo(db),
     )
 
 
@@ -98,6 +100,7 @@ def list_target_comments(
     return build_requirement_target_comment_responses(
         comments,
         users_by_id=shared.get_requirement_target_comment_users_by_id(db, comments),
+        storage=StorageService().for_demo(db),
     )
 
 
@@ -139,6 +142,7 @@ def update_target_comment(
     return build_requirement_target_comment_response(
         comment,
         user=_get_target_comment_author(db, comment.author_id),
+        storage=StorageService().for_demo(db),
     )
 
 
@@ -206,6 +210,7 @@ def resolve_target_comment(
     return build_requirement_target_comment_response(
         comment,
         user=_get_target_comment_author(db, comment.author_id),
+        storage=StorageService().for_demo(db),
     )
 
 
@@ -242,4 +247,5 @@ def reopen_target_comment(
     return build_requirement_target_comment_response(
         comment,
         user=_get_target_comment_author(db, comment.author_id),
+        storage=StorageService().for_demo(db),
     )
