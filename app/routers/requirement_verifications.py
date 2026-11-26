@@ -13,7 +13,9 @@ from app.schemas.requirement_verification import (
     VerificationCreate,
     VerificationDetail,
     VerificationList,
+    VerificationPreparation,
     VerificationRevisionPage,
+    VerificationStart,
     VerificationUpdate,
 )
 from app.services.requirement_verification import RequirementVerificationService
@@ -54,6 +56,29 @@ def create_verification_plan(
     user: User = Depends(actor),
 ):
     result, created = service.create(db, user, project_id, data)
+    response.status_code = 201 if created else 200
+    return result
+
+
+@router.get("/preparation/{requirement_id}", response_model=VerificationPreparation)
+def prepare_verification_start(
+    project_id: int,
+    requirement_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(actor),
+):
+    return service.preparation(db, user, project_id, requirement_id)
+
+
+@router.post("/start", response_model=VerificationDetail, status_code=201)
+def start_verification_plan(
+    project_id: int,
+    data: VerificationStart,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(actor),
+):
+    result, created = service.start(db, user, project_id, data)
     response.status_code = 201 if created else 200
     return result
 

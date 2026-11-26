@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from app.core.exceptions import BadRequestError
 from app.main import create_app
 from app.models.artifact_release import ArtifactRelease
+from app.models.project import Project
 from app.models.requirement import Requirement, RequirementDetail, RequirementOpenIssue
 from app.models.requirement_workflow import RequirementWorkflowRequest
 from app.models.user import User
@@ -71,6 +72,82 @@ def _prepare(client, review_case, *, count=1, participant_ids=None):
         "request_key": str(uuid4()),
         "expected_digest": preview.json()["confirmation_digest"],
     }
+
+
+def test_list_review_history_by_fixed_requirement_scope(
+    client,
+    db,
+    review_case,
+    create_test_requirement_section,
+    create_test_user,
+    assign_project_role,
+):
+    """章を移した要件でも依頼時の範囲と閲覧権限で絞り込める。"""
+    project_url, document, original_section, requirement, reviewer = review_case
+    review_url, first_payload = _prepare(client, review_case)
+    first = client.post(review_url, json=first_payload)
+    assert first.status_code == 201, first.text
+    first_id = first.json()["id"]
+
+    new_section = create_test_requirement_section(document=document, content="移動先")
+    requirement.section_id = new_section.id
+    added = Requirement(
+        document_id=document.id,
+        section_id=original_section.id,
+        requirement_code="REV-002",
+        requirement_type="functional",
+        title="レビュー後に追加した要件",
+    )
+    db.add(added)
+    db.commit()
+
+    def request(scope, source_id=None):
+        payload = {
+            "document_version": document.version,
+            "scope_kind": scope,
+            "scope_id": source_id,
+            "participant_ids": [reviewer.id],
+        }
+        preview = client.post(review_url + "/preview", json=payload)
+        assert preview.status_code == 200, preview.text
+        created = client.post(
+            review_url,
+            json={
+                **payload,
+                "request_key": str(uuid4()),
+                "expected_digest": preview.json()["confirmation_digest"],
+            },
+        )
+        assert created.status_code == 201, created.text
+        return created.json()["id"]
+
+    whole_id = request("requirement_document")
+    direct_id = request("requirement", requirement.id)
+    other_id = request("requirement", added.id)
+    inbox = f"{project_url}/requirement-workflow"
+    filters = {"document_id": document.id, "kind": "review"}
+
+    def history(requirement_id, **extra):
+        found = client.get(
+            inbox, params={**filters, "requirement_id": requirement_id, **extra}
+        )
+        assert found.status_code == 200, found.text
+        data = found.json()
+        return [row["id"] for row in data["items"]], data["total"]
+
+    assert history(requirement.id) == ([direct_id, whole_id, first_id], 3)
+    assert history(requirement.id, page=2, page_size=2) == ([first_id], 3)
+    assert history(added.id) == ([other_id, whole_id], 2)
+
+    authorize_as(client, reviewer)
+    assert history(requirement.id) == ([direct_id, whole_id, first_id], 3)
+    unassigned = create_test_user(email="unassigned-review-history@example.com")
+    project = db.get(Project, document.project_id)
+    assert project is not None
+    assign_project_role(user=unassigned, project=project, role_key="member")
+    authorize_as(client, unassigned)
+    assert client.get(inbox, params=filters).json()["total"] == 4
+    assert history(requirement.id) == ([], 0)
 
 
 def test_create_review_and_find_assigned_request(client, db, review_case):
@@ -796,6 +873,39 @@ def test_formal_approval_requires_matching_review_and_all_approvers(
     assert fixed.status_code == 200, fixed.text
     titles = [item["payload"].get("title") for item in fixed.json()["items"]]
     assert "固定内容を読める" in titles and "承認後に編集した要件" not in titles
+
+    authorize_as(client, issuer)
+    verification = f"{project_url}/requirement-verification-plans"
+    preparation = client.get(f"{verification}/preparation/{requirement.id}")
+    assert preparation.status_code == 200, preparation.text
+    approved_target, current_target = preparation.json()["targets"]
+    assert approved_target["approval_id"] == request["id"]
+    assert approved_target["title"] == "固定内容を読める"
+    assert current_target["title"] == "承認後に編集した要件"
+    release_count = db.scalar(select(func.count()).select_from(ArtifactRelease))
+    saved = client.post(
+        verification + "/start",
+        json={
+            "source_requirement_id": requirement.id,
+            "approval_id": approved_target["approval_id"],
+            "expected_subject_digest": approved_target["subject_digest"],
+            "request_id": str(uuid4()),
+            "checklist": {
+                "rows": [
+                    {
+                        "id": str(uuid4()),
+                        "description": "固定内容を読めることを確認",
+                        "method": "manual",
+                        "manual_plan": "承認対象として保存された本文と照合",
+                    }
+                ],
+            },
+        },
+    )
+    assert saved.status_code == 201, saved.text
+    assert saved.json()["comparison"] == "changed"
+    assert saved.json()["fixed_subject"]["payload"]["title"] == approved_target["title"]
+    assert db.scalar(select(func.count()).select_from(ArtifactRelease)) == release_count
 
     with pytest.raises(DBAPIError):
         db.execute(

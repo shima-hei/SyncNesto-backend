@@ -222,6 +222,9 @@ def list_requirement_workflow(
     kind: WorkflowKind | None = None,
     status: WorkflowStatus | None = None,
     q: str | None = Query(default=None, max_length=100),
+    requirement_id: int | None = Query(
+        default=None, gt=0, description="依頼時の対象版に含まれる個別要件ID"
+    ),
 ):
     """案件または定義書の依頼を、担当・発行者で絞って取得する。"""
     return service.list(
@@ -235,6 +238,7 @@ def list_requirement_workflow(
         kind=kind,
         status=status,
         search=q.strip() if q else None,
+        requirement_id=requirement_id,
     )
 
 

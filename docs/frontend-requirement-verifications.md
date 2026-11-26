@@ -5,13 +5,15 @@
 
 ## API
 
-`/projects/{project_id}/requirement-verification-plans` を基点とする4 URL/6操作。
+`/projects/{project_id}/requirement-verification-plans` を基点とする。
 
 | 操作 | 契約 |
 | --- | --- |
 | GET 基点 | requirement_id任意、page_size既定20/最大50、cursor。enabled/state/can_prepare/items/next_cursor |
-| POST 基点 | source_requirement_id/release_id/target_node_id/expected_release_digest/request_id。新規201、同一再送200 |
-| GET `/{plan_id}` | 選んだ固定要件/詳細、現在の確認表、現在本文とのsame/changed/unavailable、can_prepare |
+| POST 基点 | 既存の対象版指定による作成。source_requirement_id/release_id/target_node_id/expected_release_digest/request_id。新規201、同一再送200 |
+| GET `/preparation/{requirement_id}` | 保存内容と、閲覧できる最新の正式承認版に含まれる当該要件。受け入れ条件の原文、対象のdigest、選択できる関連テストを返す |
+| POST `/start` | source_requirement_id/approval_id/expected_subject_digest/checklist/request_id。確認済みの対象と初回確認表を同時に保存。新規201、同一再送200 |
+| GET `/{plan_id}` | 選んだ固定要件/詳細、現在の確認表、現在本文とのsame/changed/unavailable、can_prepare。承認済みの対象版を使った場合はtarget_version_labelを返す |
 | PUT `/{plan_id}` | version/operation_id/checklist/confirm_coverage。追記保存。同一操作は保存した版を返す |
 | GET `/{plan_id}/revisions` | 不変の保存履歴。page_size既定20/最大50、版に結び付いたcursor |
 | GET `/{plan_id}/execution-candidates` | row_id任意。省略は有効な関連項目の選択肢だけ。page_size既定20/最大50。直近実行を限定取得 |
@@ -24,10 +26,12 @@ cursorはProject/確認表版/行/参照設計版/選択モードへ結び付け
 
 ## 入力・原子性
 
-空の確認表から開始できる。最大100行、256KiB、対象参照計1000件。
+従来のPOST基点は空の確認表を保存できる。UIの検証開始は、設定済みの確認項目を1件以上必要とする。最大100行、256KiB、対象参照計1000件。
 引用位置はUnicode code point。全文/本文引用/受け入れ条件引用、test/manual/not_applicableを使う。
 不完全な下書きは保存可。対応の明示確認は、0行/未設定の方法/未入力の確認内容/不正引用を拒否。
 coverageの対象digest/行digest/本人/日時はサーバーが保存する。編集後は自動継承しない。
+
+検証開始は既存の準備・要件更新・版の作成/閲覧権限を要求する。正式承認済み版はその版に含まれる全成果物を閲覧できる場合に候補とし、既存の要件ノードを再利用する。現在の保存内容を選んだ場合は、対象要件の版と初回確認表を同じトランザクションで保存する。対象digestが変わった場合は409で再確認を求める。失敗時は対象版と確認表の保存を一緒に取り消す。検証開始は合否や正式承認の記録を更新しない。この追加に伴うマイグレーションはない。
 
 封印nodeを再利用し、対象の再割当と既存revisionのUPDATE/DELETEをDBで禁止する。
 行lock/版確認/追記/ヘッダー更新/監査を同じREPEATABLE READ transactionで保存。

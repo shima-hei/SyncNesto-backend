@@ -1,6 +1,6 @@
 """一覧・詳細の個別要件に対応する現在値と依頼時の証跡を取得する。"""
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import aliased
 
 from app.models.artifact_release import ArtifactRelease, ArtifactReleaseNode
@@ -16,6 +16,7 @@ from app.models.requirement_workflow import (
     RequirementWorkflowParticipant,
     RequirementWorkflowRequest,
 )
+from app.repositories.requirement_workflow import includes_requirement_node
 
 
 class RequirementItemWorkflowRepository:
@@ -56,7 +57,7 @@ class RequirementItemWorkflowRepository:
             db.execute(
                 select(request, node, ArtifactRelease.source_kinds, parent.source_id)
                 .select_from(request)
-                .join(node, node.release_id == request.release_id)
+                .join(node, includes_requirement_node())
                 .join(ArtifactRelease, ArtifactRelease.id == request.release_id)
                 .outerjoin(
                     parent,
@@ -66,19 +67,7 @@ class RequirementItemWorkflowRepository:
                     request.project_id == project_id,
                     request.kind == "review",
                     request.status != "cancelled",
-                    node.node_kind == "requirement",
                     node.source_id.in_(ids),
-                    or_(
-                        request.scope_kind == "requirement_document",
-                        and_(
-                            request.scope_kind == "section",
-                            request.target_node_id == node.parent_id,
-                        ),
-                        and_(
-                            request.scope_kind == "requirement",
-                            request.target_node_id == node.id,
-                        ),
-                    ),
                 )
                 .distinct(node.source_id)
                 .order_by(node.source_id, request.display_number.desc())

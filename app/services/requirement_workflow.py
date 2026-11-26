@@ -658,10 +658,33 @@ class RequirementWorkflowService:
         kind: WorkflowKind | None = None,
         status: WorkflowStatus | None = None,
         search: str | None = None,
+        requirement_id: int | None = None,
     ) -> RequirementWorkflowList:
         """案件内または定義書内の依頼をページ取得する。"""
         with self.releases._transaction(db, user, project_id, None) as (work, actor):
             self.releases._permission(work, actor, project_id, "requirement:read")
+            visible_releases = None
+            can_read_releases = False
+            if requirement_id is not None:
+                authorization = self.releases.authorization
+                permissions = {
+                    prefix: authorization.has_project_permission(
+                        work,
+                        user=actor,
+                        project_id=project_id,
+                        permission_code=f"{prefix}:read",
+                    )
+                    for prefix in {*SOURCE_PERMISSIONS.values(), "artifact_release"}
+                }
+                visible_releases = self.releases.repository.visible(
+                    project_id,
+                    [
+                        source
+                        for source, prefix in SOURCE_PERMISSIONS.items()
+                        if permissions[prefix]
+                    ],
+                ).with_only_columns(ArtifactRelease.id)
+                can_read_releases = permissions["artifact_release"]
             entries, total = self.repository.page(
                 work,
                 project_id,
@@ -673,6 +696,9 @@ class RequirementWorkflowService:
                 kind=kind,
                 status=status,
                 search=search,
+                requirement_id=requirement_id,
+                visible_releases=visible_releases,
+                can_read_releases=can_read_releases,
             )
             return RequirementWorkflowList(
                 items=self._reads(work, entries),

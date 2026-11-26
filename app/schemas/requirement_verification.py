@@ -60,6 +60,36 @@ class VerificationCreate(StrictInput):
     request_id: UUID
 
 
+class VerificationPreparationTarget(BaseModel):
+    kind: Literal["current", "approved"]
+    version: int
+    label: str
+    title: str
+    description: str
+    acceptance_criteria: str
+    subject_digest: str
+    approval_id: UUID | None = None
+
+
+class VerificationTargetOption(BaseModel):
+    item_id: UUID
+    code: str
+    title: str
+
+
+class VerificationPreparation(BaseModel):
+    targets: list[VerificationPreparationTarget]
+    test_items: list[VerificationTargetOption]
+
+
+class VerificationStart(StrictInput):
+    source_requirement_id: int = Field(gt=0)
+    approval_id: UUID | None = None
+    expected_subject_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    checklist: VerificationChecklist
+    request_id: UUID
+
+
 class VerificationUpdate(StrictInput):
     version: int = Field(gt=0)
     operation_id: UUID
@@ -105,6 +135,7 @@ class VerificationRevisionRead(BaseModel):
 
 class VerificationDetail(VerificationSummary):
     subject_digest: str
+    target_version_label: str | None = None
     fixed_subject: dict[str, Any]
     comparison: Literal["same", "changed", "unavailable"]
     can_prepare: bool

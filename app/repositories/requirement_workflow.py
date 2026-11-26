@@ -17,6 +17,26 @@ from app.models.requirement_workflow import (
 from app.models.user import User, UserType
 
 
+def includes_requirement_node():
+    """固定した文書・章・個別要件の範囲に要件ノードが含まれる条件。"""
+    request, node = RequirementWorkflowRequest, ArtifactReleaseNode
+    return and_(
+        node.release_id == request.release_id,
+        node.node_kind == "requirement",
+        or_(
+            request.scope_kind == "requirement_document",
+            and_(
+                request.scope_kind == "section",
+                request.target_node_id == node.parent_id,
+            ),
+            and_(
+                request.scope_kind == "requirement",
+                request.target_node_id == node.id,
+            ),
+        ),
+    )
+
+
 def release_descendants(release_id: UUID, roots: Select[tuple[UUID]], name: str):
     """指定した固定版内の根と、その子孫を一つのCTEで得る。"""
     columns = ArtifactReleaseNode.__table__.c
@@ -336,12 +356,30 @@ class RequirementWorkflowRepository:
         kind: str | None = None,
         status: str | None = None,
         search: str | None = None,
+        requirement_id: int | None = None,
+        visible_releases: Select | None = None,
+        can_read_releases: bool = False,
     ):
         """閲覧条件を件数とページに共通して適用する。"""
         row = RequirementWorkflowRequest
         query = select(row).where(row.project_id == project_id)
+        assigned = exists().where(
+            RequirementWorkflowParticipant.request_id == row.id,
+            RequirementWorkflowParticipant.user_id == actor_id,
+        )
         if document_id is not None:
             query = query.where(row.document_id == document_id)
+        if requirement_id is not None:
+            assert visible_releases is not None
+            query = query.where(
+                row.release_id.in_(visible_releases),
+                exists().where(
+                    includes_requirement_node(),
+                    ArtifactReleaseNode.source_id == requirement_id,
+                ),
+            )
+            if not can_read_releases:
+                query = query.where(or_(row.requester_id == actor_id, assigned))
         if kind is not None:
             query = query.where(row.kind == kind)
         if status is not None:
@@ -381,12 +419,7 @@ class RequirementWorkflowRepository:
         if view == "requested":
             query = query.where(row.requester_id == actor_id)
         if view == "assigned":
-            query = query.where(
-                exists().where(
-                    RequirementWorkflowParticipant.request_id == row.id,
-                    RequirementWorkflowParticipant.user_id == actor_id,
-                )
-            )
+            query = query.where(assigned)
         count = db.scalar(select(func.count()).select_from(query.subquery())) or 0
         entries = list(
             db.scalars(
