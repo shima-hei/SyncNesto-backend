@@ -20,6 +20,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.models.comment_image import CommentImage, comment_images
 from app.models.comment_mention import MentionedComment
 from app.models.comments import db_comment
 
@@ -243,6 +244,7 @@ class TaskComment(MentionedComment, Base):
     """タスクコメントを管理するモデル。"""
 
     __tablename__ = "task_comments"
+    images: Mapped[list[CommentImage]] = comment_images(CommentImage.task_comment_id)
     __table_args__ = (
         {
             "comment": db_comment(

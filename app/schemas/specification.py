@@ -7,6 +7,8 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
+from app.schemas.comment_image import CommentImageCreateFields, CommentImageReadFields
+
 
 class SpecificationField(BaseModel):
     """順番を変えても指摘先が変わらない入出力項目。"""
@@ -150,7 +152,7 @@ class SpecificationStatusUpdate(BaseModel):
     status: SpecificationStatus
 
 
-class SpecificationCommentCreate(BaseModel):
+class SpecificationCommentCreate(CommentImageCreateFields):
     specification_version: int = Field(ge=1)
     field_path: str = Field(min_length=1, max_length=300)
     body: str = Field(min_length=1, max_length=5000)
@@ -161,11 +163,12 @@ class SpecificationCommentUpdate(BaseModel):
     is_resolved: bool
 
 
-class SpecificationCommentRead(BaseModel):
+class SpecificationCommentRead(CommentImageReadFields):
     model_config = ConfigDict(from_attributes=True)
     id: int
     author_id: int
     author_name: str = "メンバー"
+    author_avatar_url: str | None = None
     field_path: str
     field_snapshot: str
     specification_version: int

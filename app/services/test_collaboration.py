@@ -28,7 +28,10 @@ from app.models.test_design import (
     TestPatternExpectedValue,
     TestPatternValue,
 )
+from app.models.user import User
 from app.repositories.test_collaboration import TestCollaborationRepository
+from app.repositories.user import UserRepository
+from app.schemas.comment_image import CommentImageRead
 from app.schemas.comment_mention import CommentMentionOccurrence
 from app.schemas.test_collaboration import (
     RequirementCoverageRead,
@@ -39,9 +42,11 @@ from app.schemas.test_collaboration import (
     TestDesignCommentRead,
     TestDesignCommentUpdate,
 )
+from app.services.comment_image import bind_comment_images
 from app.services.comment_mention import CommentMentionService
 from app.services.conflict import raise_if_version_conflict
 from app.services.notification import NotificationService
+from app.services.storage import StorageService
 from app.services.test_design import TestDesignService
 
 TARGET_MODELS = {
@@ -339,7 +344,11 @@ class TestCollaborationService:
         ]
 
     def _comment_read(
-        self, db: Session, comment: TestDesignComment, names: dict[int, str]
+        self,
+        db: Session,
+        comment: TestDesignComment,
+        authors: dict[int, User],
+        storage: StorageService,
     ) -> TestDesignCommentRead:
         """コメント対象の現状を投稿時スナップショットと比較する。"""
         try:
@@ -359,8 +368,12 @@ class TestCollaborationService:
             )
         except NotFoundError:
             status = "missing"
+        author = authors.get(comment.author_id)
         return TestDesignCommentRead(
             id=comment.id,
+            images=[]
+            if comment.deleted_at
+            else [CommentImageRead.model_validate(image) for image in comment.images],
             design_id=comment.design_id,
             target_type=comment.target_type,
             target_id=comment.target_id,
@@ -376,7 +389,10 @@ class TestCollaborationService:
                 for mention in comment.mentions
             ],
             author_id=comment.author_id,
-            author_name=names.get(comment.author_id),
+            author_name=author.name if author else None,
+            author_avatar_url=storage.generate_presigned_url(author.avatar_key)
+            if author
+            else None,
             is_resolved=comment.is_resolved,
             version=comment.version,
             created_at=comment.created_at,
@@ -390,8 +406,14 @@ class TestCollaborationService:
         """設計書内のスレッドを対象削除後も返す。"""
         self.designs.get(db, project_id, design_id)
         comments = self.repository.comments(db, design_id)
-        names = self.repository.user_names(db, {row.author_id for row in comments})
-        return [self._comment_read(db, row, names) for row in comments]
+        authors = {
+            user.id: user
+            for user in UserRepository().list_by_ids(
+                db, list({row.author_id for row in comments})
+            )
+        }
+        storage = StorageService().for_demo(db)
+        return [self._comment_read(db, row, authors, storage) for row in comments]
 
     def create_comment(
         self,
@@ -438,6 +460,14 @@ class TestCollaborationService:
         )
         db.add(comment)
         db.flush()
+        bind_comment_images(
+            db,
+            project_id=project_id,
+            kind="test_design",
+            images=comment.images,
+            actor_id=actor_id,
+            image_ids=data.image_ids,
+        )
         NotificationService().mentions_changed(
             db,
             project_id=project_id,
@@ -455,7 +485,10 @@ class TestCollaborationService:
         )
         db.commit()
         return self._comment_read(
-            db, comment, self.repository.user_names(db, {actor_id})
+            db,
+            comment,
+            {user.id: user for user in UserRepository().list_by_ids(db, [actor_id])},
+            StorageService().for_demo(db),
         )
 
     def update_comment(
@@ -484,7 +517,13 @@ class TestCollaborationService:
             current_version=comment.version,
             requested_version=data.version,
             current=self._comment_read(
-                db, comment, self.repository.user_names(db, {comment.author_id})
+                db,
+                comment,
+                {
+                    user.id: user
+                    for user in UserRepository().list_by_ids(db, [comment.author_id])
+                },
+                StorageService().for_demo(db),
             ).model_dump(mode="json"),
         )
         before = {
@@ -546,5 +585,11 @@ class TestCollaborationService:
         )
         db.commit()
         return self._comment_read(
-            db, comment, self.repository.user_names(db, {comment.author_id})
+            db,
+            comment,
+            {
+                user.id: user
+                for user in UserRepository().list_by_ids(db, [comment.author_id])
+            },
+            StorageService().for_demo(db),
         )

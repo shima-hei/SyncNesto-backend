@@ -133,9 +133,9 @@ class TrashRepository:
         ]
 
     def storage_keys(self, db: Session, targets: dict[str, set]) -> list[str]:
-        """回収する文書添付・証跡の確定済みキーだけを返す。"""
+        """回収する添付・証跡の確定済みキーだけを返す。"""
         keys = []
-        for name in ("document_attachments", "test_evidence"):
+        for name in ("document_attachments", "test_evidence", "comment_images"):
             if not targets.get(name):
                 continue
             table = Base.metadata.tables[name]
@@ -279,6 +279,12 @@ class TrashRepository:
             ("source_requirement_id", "requirements", "id")
         ]
         edges["comment_mentions"] = [(c, p, "id") for c, p in MENTION_OWNERS.items()]
+        edges["comment_images"] = edges["comment_images"] + [
+            ("task_comment_id", "task_comments", "id"),
+            ("requirement_comment_id", "requirement_target_comments", "id"),
+            ("specification_comment_id", "specification_comments", "id"),
+            ("test_comment_id", "test_design_comments", "id"),
+        ]
         changed = True
         while changed:
             changed = False

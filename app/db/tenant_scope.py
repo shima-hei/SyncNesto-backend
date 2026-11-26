@@ -86,6 +86,7 @@ OWNERS = {
     "specification_links": [("specification_id", "specifications", "id")],
     "document_revisions": [("document_id", "project_documents", "id")],
     "document_attachments": [("document_id", "project_documents", "id")],
+    "comment_images": [("project_id", "projects", "id")],
     "document_links": [("document_id", "project_documents", "id")],
     "project_members": [("project_id", "projects", "id")],
     "requirement_documents": [("project_id", "projects", "id")],

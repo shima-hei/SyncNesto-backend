@@ -12,6 +12,7 @@ from app.schemas.change_log import (
     TaskChangeLogFieldName,
     TaskChangeLogTargetTypeCode,
 )
+from app.schemas.comment_image import CommentImageCreateFields, CommentImageReadFields
 from app.schemas.comment_mention import CommentMentionOccurrence
 from app.schemas.task_phase import (
     EffortBasis,
@@ -198,7 +199,7 @@ class TaskTagListResponse(BaseModel):
     items: list[str]
 
 
-class TaskCommentCreate(BaseModel):
+class TaskCommentTextCreate(BaseModel):
     """タスクコメント作成リクエストで受け取るschema。"""
 
     mentions: list[CommentMentionOccurrence] = Field(
@@ -207,6 +208,10 @@ class TaskCommentCreate(BaseModel):
 
     parent_comment_id: int | None = None
     body: str
+
+
+class TaskCommentCreate(TaskCommentTextCreate, CommentImageCreateFields):
+    """Webからコメントと画像を作成する。"""
 
 
 class TaskCommentUpdate(BaseModel):
@@ -226,7 +231,7 @@ class TaskCommentStateUpdate(BaseModel):
     version: int
 
 
-class TaskCommentRead(BaseModel):
+class TaskCommentTextRead(BaseModel):
     """タスクコメント読み取り時に返すschema。"""
 
     mentions: list[CommentMentionOccurrence] = Field(
@@ -246,6 +251,10 @@ class TaskCommentRead(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class TaskCommentRead(TaskCommentTextRead, CommentImageReadFields):
+    """Web表示用の添付メタデータを含む。"""
 
 
 class TaskChangeLogRead(BaseModel):

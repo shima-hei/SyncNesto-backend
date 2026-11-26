@@ -599,6 +599,7 @@ def build_requirement_target_comment_response(
     comment: RequirementTargetComment,
     *,
     user: User | None = None,
+    storage: StorageService | None = None,
 ) -> RequirementTargetCommentRead:
     """要件定義対象コメントレスポンスを組み立てる。
 
@@ -611,7 +612,7 @@ def build_requirement_target_comment_response(
     """
     return RequirementTargetCommentRead.model_validate(comment).model_copy(
         update={
-            "author": _build_change_log_user_response(user)
+            "author": _build_change_log_user_response(user, storage)
             if user is not None
             else None
         }
@@ -622,6 +623,7 @@ def build_requirement_target_comment_responses(
     comments: list[RequirementTargetComment],
     *,
     users_by_id: dict[int, User],
+    storage: StorageService | None = None,
 ) -> list[RequirementTargetCommentRead]:
     """要件定義対象コメントレスポンス一覧を組み立てる。
 
@@ -636,6 +638,7 @@ def build_requirement_target_comment_responses(
         build_requirement_target_comment_response(
             comment,
             user=users_by_id.get(comment.author_id),
+            storage=storage,
         )
         for comment in comments
     ]
@@ -741,11 +744,13 @@ def build_requirement_change_log_list_response(
     )
 
 
-def _build_change_log_user_response(user: User) -> ChangeLogUserRead:
+def _build_change_log_user_response(
+    user: User, storage: StorageService | None = None
+) -> ChangeLogUserRead:
     """変更履歴の変更者として返す軽量ユーザー情報を組み立てる。"""
     return ChangeLogUserRead(
         id=user.id,
         name=user.name,
         email=user.email,
-        avatar_url=None,
+        avatar_url=storage.generate_presigned_url(user.avatar_key) if storage else None,
     )

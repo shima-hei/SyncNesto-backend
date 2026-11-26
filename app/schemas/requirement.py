@@ -13,6 +13,7 @@ from app.schemas.change_log import (
     RequirementChangeLogFieldName,
     RequirementChangeLogTargetTypeCode,
 )
+from app.schemas.comment_image import CommentImageCreateFields, CommentImageReadFields
 from app.schemas.comment_mention import CommentMentionOccurrence
 from app.schemas.project_objective import ObjectiveFields
 from app.schemas.user import UserSummary
@@ -401,7 +402,7 @@ class RequirementApprovalListResponse(BaseModel):
     page_size: int
 
 
-class RequirementTargetCommentCreate(BaseModel):
+class RequirementTargetCommentCreate(CommentImageCreateFields):
     """要件定義対象コメント作成リクエストで受け取るschema。"""
 
     mentions: list[CommentMentionOccurrence] = Field(
@@ -434,7 +435,7 @@ class RequirementTargetCommentStateUpdate(BaseModel):
     reason: str | None = None
 
 
-class RequirementTargetCommentRead(BaseModel):
+class RequirementTargetCommentRead(CommentImageReadFields):
     """要件定義対象コメント読み取り時に返すschema。"""
 
     mentions: list[CommentMentionOccurrence] = Field(

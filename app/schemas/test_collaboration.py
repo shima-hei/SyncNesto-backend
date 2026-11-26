@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.comment_image import CommentImageCreateFields, CommentImageReadFields
 from app.schemas.comment_mention import CommentMentionOccurrence
 
 
@@ -41,7 +42,7 @@ class RequirementCoverageRead(BaseModel):
     has_tests: bool
 
 
-class TestDesignCommentCreate(BaseModel):
+class TestDesignCommentCreate(CommentImageCreateFields):
     """対象を指定した設計コメント投稿。"""
 
     mentions: list[CommentMentionOccurrence] = Field(
@@ -75,7 +76,7 @@ class TestDesignCommentUpdate(BaseModel):
     is_resolved: bool | None = None
 
 
-class TestDesignCommentRead(BaseModel):
+class TestDesignCommentRead(CommentImageReadFields):
     """対象状態を含むコメント表示情報。"""
 
     mentions: list[CommentMentionOccurrence] = Field(
@@ -94,6 +95,7 @@ class TestDesignCommentRead(BaseModel):
     body: str
     author_id: int
     author_name: str | None
+    author_avatar_url: str | None = None
     is_resolved: bool
     version: int
     created_at: datetime

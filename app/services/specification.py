@@ -37,7 +37,9 @@ from app.schemas.specification import (
 )
 from app.services.audit_log import AuditLogService
 from app.services.authorization import AuthorizationService
+from app.services.comment_image import bind_comment_images
 from app.services.conflict import raise_if_version_conflict
+from app.services.storage import StorageService
 
 TARGET_PERMISSIONS = {
     "requirement": "requirement:read",
@@ -246,19 +248,27 @@ class SpecificationService:
         row = self.get(db, project_id, specification_id)
         comments = self.repository.comments(db, row.id, page, page_size)
         authors = {
-            author_id: name
-            for author_id, name in db.execute(
-                select(User.id, User.name).where(
+            user.id: user
+            for user in db.scalars(
+                select(User).where(
                     User.id.in_({comment.author_id for comment in comments})
                 )
-            ).all()
+            )
         }
+        storage = StorageService().for_demo(db)
         return [
             SpecificationCommentRead.model_validate(comment).model_copy(
                 update={
                     "anchor_changed": anchor_digest(row, comment.field_path)
                     != comment.field_digest,
-                    "author_name": authors.get(comment.author_id, "メンバー"),
+                    "author_name": authors[comment.author_id].name
+                    if comment.author_id in authors
+                    else "メンバー",
+                    "author_avatar_url": storage.generate_presigned_url(
+                        authors[comment.author_id].avatar_key
+                    )
+                    if comment.author_id in authors
+                    else None,
                 }
             )
             for comment in comments
@@ -289,6 +299,15 @@ class SpecificationService:
             body=data.body.strip(),
         )
         db.add(comment)
+        db.flush()
+        bind_comment_images(
+            db,
+            project_id=project_id,
+            kind="specification",
+            images=comment.images,
+            actor_id=user.id,
+            image_ids=data.image_ids,
+        )
         db.commit()
         self.audit(db, row, user.id, "commented")
         return SpecificationCommentRead.model_validate(comment)

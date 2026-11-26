@@ -17,6 +17,7 @@ from app.schemas.task import (
     TaskCommentStateUpdate,
     TaskCommentUpdate,
 )
+from app.services.storage import StorageService
 
 router = APIRouter(tags=["tasks"])
 
@@ -39,6 +40,7 @@ def list_task_comments(
     return task_presenter.build_task_comment_responses(
         comments,
         users_by_id=task_comment_service.get_task_comment_users_by_id(db, comments),
+        storage=StorageService().for_demo(db),
     )
 
 
@@ -67,7 +69,9 @@ def create_task_comment(
         comment_in=comment_in,
         actor_id=current_user.id,
     )
-    return task_presenter.build_task_comment_response(comment, user=current_user)
+    return task_presenter.build_task_comment_response(
+        comment, user=current_user, storage=StorageService().for_demo(db)
+    )
 
 
 @router.patch("/task-comments/{comment_id}", response_model=TaskCommentRead)
@@ -92,7 +96,9 @@ def update_task_comment(
         comment_in=comment_in,
         actor_id=current_user.id,
     )
-    return task_presenter.build_task_comment_response(comment, user=current_user)
+    return task_presenter.build_task_comment_response(
+        comment, user=current_user, storage=StorageService().for_demo(db)
+    )
 
 
 @router.delete("/task-comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -139,7 +145,9 @@ def resolve_task_comment(
         comment_in=comment_in,
         actor_id=current_user.id,
     )
-    return task_presenter.build_task_comment_response(comment, user=current_user)
+    return task_presenter.build_task_comment_response(
+        comment, user=current_user, storage=StorageService().for_demo(db)
+    )
 
 
 @router.post("/task-comments/{comment_id}/reopen", response_model=TaskCommentRead)
@@ -164,4 +172,6 @@ def reopen_task_comment(
         comment_in=comment_in,
         actor_id=current_user.id,
     )
-    return task_presenter.build_task_comment_response(comment, user=current_user)
+    return task_presenter.build_task_comment_response(
+        comment, user=current_user, storage=StorageService().for_demo(db)
+    )
