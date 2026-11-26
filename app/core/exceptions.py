@@ -194,6 +194,20 @@ class FixedApprovalMigratedError(ConflictError):
     code = "APPROVAL_MIGRATED"
 
 
+class LegacyRequirementApprovalCreationDisabledError(ConflictError):
+    """新規の要件承認は定義書全体の正式承認に集約する。"""
+
+    message = error_messages.LEGACY_REQUIREMENT_APPROVAL_CREATION_DISABLED
+    code = "LEGACY_REQUIREMENT_APPROVAL_CREATION_DISABLED"
+
+
+class LegacyRequirementReviewCreationDisabledError(ConflictError):
+    """新規の確認依頼は版に結び付いたレビューに集約する。"""
+
+    message = error_messages.LEGACY_REQUIREMENT_REVIEW_CREATION_DISABLED
+    code = "LEGACY_REQUIREMENT_REVIEW_CREATION_DISABLED"
+
+
 class SpecificationUnresolvedCommentsError(ConflictError):
     """設計書の未解決指摘が承認を妨げている。"""
 

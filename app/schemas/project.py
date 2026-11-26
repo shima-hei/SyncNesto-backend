@@ -62,6 +62,7 @@ class ProjectUpdate(BaseModel):
 
     version: int
     navigation: ProjectNavigation | None = None
+    requirement_review_required: bool | None = None
     project_code: str | None = None
     name: str | None = None
     description: str | None = None
@@ -76,6 +77,7 @@ class ProjectRead(ProjectBase):
     id: int
     version: int
     navigation: ProjectNavigation | None = None
+    requirement_review_required: bool = True
     created_by: int | None = None
     updated_by: int | None = None
     created_at: datetime

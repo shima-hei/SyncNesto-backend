@@ -24,6 +24,8 @@ class PublicationCacheMiddleware:
                     "guest-participations",
                     "guest-invitations",
                     "guest-fixed-approvals",
+                    "guest-requirement-reviews",
+                    "guest-requirement-approvals",
                     "requirement-verification-plans",
                     "requirement-verification-requests",
                     "requirement-verdicts",

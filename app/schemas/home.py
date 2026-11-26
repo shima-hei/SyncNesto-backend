@@ -1,7 +1,8 @@
 """個人HOMEの作業と参加案件の読み取り契約。"""
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Literal
+from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import AfterValidator, BaseModel
@@ -78,3 +79,27 @@ class HomeProjectsRead(BaseModel):
     timezone: str
     total: int
     items: list[HomeProjectRead]
+
+
+class HomeRequirementWorkItem(BaseModel):
+    """本人が次に操作する依頼または修正指摘。"""
+
+    id: UUID
+    request_id: UUID
+    project_id: int
+    project_name: str
+    version_label: str
+    title: str
+    kind: Literal["review", "formal_approval", "correction"]
+    status: Literal["pending", "open", "in_progress", "awaiting_confirmation"]
+    due_on: date | None
+    node_id: UUID | None
+
+
+class HomeRequirementWorkRead(BaseModel):
+    """現在の権限で操作できる依頼のページ。"""
+
+    items: list[HomeRequirementWorkItem]
+    total: int
+    page: int
+    page_size: int

@@ -164,6 +164,12 @@ class Settings:
     )
     mcp_read_context_enabled: bool = get_bool_env("MCP_READ_CONTEXT_ENABLED")
     mcp_task_comments_enabled: bool = get_bool_env("MCP_TASK_COMMENTS_ENABLED")
+    legacy_requirement_approval_creation_enabled: bool = get_bool_env(
+        "LEGACY_REQUIREMENT_APPROVAL_CREATION_ENABLED"
+    )
+    legacy_requirement_review_creation_enabled: bool = get_bool_env(
+        "LEGACY_REQUIREMENT_REVIEW_CREATION_ENABLED"
+    )
     mcp_issuer_url: str = os.getenv("MCP_ISSUER_URL", "http://127.0.0.1:8000")
     mcp_resource_url: str = os.getenv(
         "MCP_RESOURCE_URL",

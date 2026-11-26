@@ -45,6 +45,7 @@ AUTO_OPEN_ISSUE_CODE_PREFIX = "ISSUE"
 AUTO_OPEN_ISSUE_CODE_RETRY_LIMIT = 5
 AUTO_PROMOTED_REQUIREMENT_CODE_RETRY_LIMIT = 5
 REQUIREMENT_OPEN_ISSUE_UPDATABLE_FIELDS = {
+    "blocks_approval",
     "related_requirement_id",
     "title",
     "description",
@@ -55,6 +56,7 @@ REQUIREMENT_OPEN_ISSUE_UPDATABLE_FIELDS = {
     "resolution",
 }
 REQUIREMENT_OPEN_ISSUE_CONFLICT_CURRENT_FIELDS = (
+    "blocks_approval",
     "related_requirement_id",
     "issue_code",
     "title",
@@ -208,6 +210,7 @@ class RequirementOpenIssueService:
         document_id: int | None = None,
         q: str | None = None,
         status: str | None = None,
+        resolved: bool | None = None,
         assignee_id: int | None = None,
         due_date_from: date | None = None,
         due_date_to: date | None = None,
@@ -234,6 +237,7 @@ class RequirementOpenIssueService:
             page_size=page_size,
             q=q,
             status=status,
+            resolved=resolved,
             assignee_id=assignee_id,
             due_date_from=due_date_from,
             due_date_to=due_date_to,

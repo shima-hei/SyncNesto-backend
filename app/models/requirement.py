@@ -454,6 +454,11 @@ class RequirementOpenIssue(Base):
         nullable=True,
         comment=db_comment("解決内容", "未決事項の解決内容"),
     )
+    blocks_approval: Mapped[bool] = mapped_column(
+        default=True,
+        server_default="true",
+        comment=db_comment("承認までに解決", "未解決の場合に正式承認を止める"),
+    )
     version: Mapped[int] = mapped_column(
         Integer,
         nullable=False,

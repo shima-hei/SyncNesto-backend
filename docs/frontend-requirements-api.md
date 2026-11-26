@@ -752,3 +752,38 @@ commented
 参照だけの変更はgoal_source_versionを増加し、既存Project.version/更新者/更新日時を変更しない。別案件文書は複合FKでも拒否する。論理削除時は参照不可、同じIDを復元した場合は現在本文を再表示する。承認や公開の復活を伴わない。
 
 固定版はinternal-preview-v1/v2、公開はpublic-preview-v1/v2を扱う。新UIはv2を明示し、APIの旧入力既定v1は保持する。新本文がある文書のv1新規固定は409 OBJECTIVE_PROJECTION_UPGRADE_REQUIRED。旧固定版を更新せず、v2の文書payloadに3項目を固定し、v2の公開前確認にも含める。個別REQの同じ内容への合意と文書の正式承認は別。
+
+## 要件定義書のレビュー依頼
+
+- `GET /projects/{project_id}/requirement-workflow/recipients` はレビューを発行できる社内ユーザーに、案件内の担当者候補を返します。
+- `POST /projects/{project_id}/requirement-documents/{document_id}/review-requests/preview` に定義書の `document_version`、`scope_kind`、`participant_ids` を渡します。章（`section`）と個別要件（`requirement`）には `scope_id` が必要です。回答期限 `due_on`、依頼メモ `note`、設計・テスト設計の `included_sources` は任意です。
+- 同じ入力に `expected_digest`（確認時の `confirmation_digest`）と `request_key`（UUID）を加え、末尾が `/review-requests` のAPIに送信します。版・依頼・担当者を一つのトランザクションで保存します。再送は同じ入力とキーを使います。確認後の本文変更は `409 VERSION_CONFLICT` になり、最新の内容で再確認します。
+- `GET /projects/{project_id}/requirement-workflow` は `document_id`、`view=all|assigned|requested`、`kind`、`status`、`q` で絞り込みます。`q` はタイトルまたは版番号で検索します。詳細は `/{request_id}`、固定内容は `/{request_id}/content` です。固定内容は依頼対象の部分と添付の範囲を `next_cursor` 付きで返します。固定内容を読むには案件の閲覧権限と、発行者・担当者・固定版の閲覧権限のいずれかが必要です。
+- 依頼配下の `GET /review-progress` は本人の確認件数と操作可否 `can_respond`、`can_discuss` を返します。個別要件の確認状況は `node_ids` に固定本文のノードIDを最大100件渡して取得します。
+- `PUT /review-items/{node_id}` で個別確認、`POST /review-confirm-remaining` で一括確認、`POST /review-result` で本人の結果を提出します。一括確認からは未解決の修正指摘の対象を除きます。各操作は確認していた依頼の `version` が必要です。
+- `GET /review-threads?node_id={node_id}` で固定本文の対象ごとのコメントと修正指摘を取得します。`POST /review-threads` で対象ノードと本文を指定し、必要な場合は原文の `field`、`quote`、Unicodeコードポイント位置 `quote_start` を渡します。`GET /review-threads/{thread_id}` が返す `available_actions` から操作を選び、`POST /review-threads/{thread_id}/actions` に指摘の `version` と回答・理由を送信します。
+
+従来の個別要件レビューは履歴から参照します。旧 `POST /projects/{project_id}/requirements/{requirement_id}/reviews` は、通常 `409 LEGACY_REQUIREMENT_REVIEW_CREATION_DISABLED` を返します。新規レビューは版に結び付いたレビュー依頼APIを使用してください。旧クライアントの移行中に限り `LEGACY_REQUIREMENT_REVIEW_CREATION_ENABLED=true` で旧登録を有効にできます。
+
+## 要件定義書全体の正式承認
+
+要件に対する新規申請は、定義書全体の正式承認APIを使用します。旧承認API、内部固定版承認API、外部固定版承認APIで要件を対象とした新規申請・申請プレビューは、通常 `409 LEGACY_REQUIREMENT_APPROVAL_CREATION_DISABLED` を返します。既存依頼の閲覧・判断、記録の保全、既存の冪等な再送に適用対象を広げません。設計書・テスト設計書単体の外部固定版承認は従来APIで扱います。移行時に従来クライアントを戻す場合に限り、`LEGACY_REQUIREMENT_APPROVAL_CREATION_ENABLED=true` で旧申請APIを有効にできます。
+
+- `GET /projects/{project_id}/requirement-workflow/formal-approval-recipients` で案件の正式承認者候補を取得します。申請者自身を除き、現在の案件で固定版の閲覧と要件承認ができる社内ユーザーを返します。
+- `/projects/{project_id}/requirement-documents/{document_id}/formal-approval-requests/preview` は文書全体、指定した承認者、任意の添付、対応必須の指摘と未決事項を確認します。案件の `requirement_review_required` が有効な場合、現段階では同一の文書全体と同じ添付に対する完了済みレビューが必要です。未決事項の `blocks_approval` で承認までに解消が必要かを設定します。両項目の既定値は `true` です。
+- `/formal-approval-requests` への確定時は `request_key`、`expected_digest`、`confirmed_content: true` を指定します。指定した内容とブロッカーを再検証し、固定版と承認者を原子的に保存します。例外は案件の承認権限が必要で、対象、理由、担当者、対応期限を指定します。解消していない対象が申請後に追加・変更された場合は承認を止めます。
+- `GET /projects/{project_id}/requirement-workflow/{request_id}/formal-approval-decision` で承認対象と参照可能な前回の基準版、`release_digest`、本人の操作可否を取得します。同じURLへの `POST` で `version`、`operation_key`、`expected_release_digest`、`confirmed_content: true`、`decision` を送信します。差し戻しは `reason` が必要です。全員が承認した場合に限り、新しい基準版になります。
+- `GET /projects/{project_id}/requirement-documents/{document_id}/formal-approval-baseline` は開発基準の正式承認を返します。承認対象はその依頼に固定してあるため、編集しても過去の本文や承認者の判断は変わりません。
+- 依頼の `version_label` は文書内で固定した表示用番号です。レビューは `R-001`、正式承認は `A-002` の形式で、判断後も同じ番号を使います。APIの参照にはUUIDの `id`、更新時の排他制御には数値の `version` を使います。
+
+### 外部の承認者が見る前回承認版との差分
+
+- `GET /shared/publications/{publication_id}/requirement-approvals/{request_id}` の `previous_publication_id` は、依頼時点の開発基準に対応し、本人が現在も閲覧できる公開版です。
+- 同じURLの `/comparison` に `page` と `page_size`（最大30）を渡して差分を取得します。各項目は `kind`（`added`、`changed`、`removed`）、公開ノードの `before_id` と `after_id`、変更された `fields` を持ちます。画面では、両方の公開本文から対応する公開ノードの値を表示します。
+- 差分を取得するには、正式承認に指定された本人の確認と、両版への有効な閲覧許可が必要です。差分の `authorization_revision` と `previous_authorization_revision` を、それぞれの公開本文の認可リビジョンと照合してください。比較できる前回版がない場合、差分APIは `404` を返します。
+
+### 個別要件の状態
+
+- `GET /projects/{project_id}/requirement-workflow/item-states` は `requirement_ids` を最大100件受け付け、現在の案件にある要件について `authoring`、`review`、`approval` を返します。
+- レビューは要件を対象に含む最新の依頼を参照します。未解決の修正指摘、依頼後の本文変更、担当者全員の要件確認から状態を導出します。正式承認は最新の開発基準の同じ要件を現在値と照合します。`changed_fields` に直近の承認済み版から変わった属性を含めます。
+- 固定内容を参照できる場合には、レビュー依頼や承認済み版へのIDを返します。`review_item_node_id` は閲覧できる依頼の固定版内で、この要件の本文・指摘を絞り込むIDです。検証状況は `GET /projects/{project_id}/requirement-verdicts` の記録に従います。

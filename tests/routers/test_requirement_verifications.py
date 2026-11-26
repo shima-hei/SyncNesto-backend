@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import DBAPIError
 
+from app.models.artifact_release import ArtifactRelease
 from app.models.rbac import Permission, RolePermission
 from app.models.requirement import RequirementDetail
 from app.models.requirement_verification import RequirementVerificationPlan as Plan
@@ -54,6 +55,57 @@ def manual_row(**values):
         "manual_plan": "画面を戻って確認",
         **values,
     }
+
+
+def test_start_saves_current_target_and_prepared_rows_atomically(client, context, db):
+    c = context
+    root = f"/projects/{c['project'].id}/requirement-verification-plans"
+    path = f"{root}/preparation/{c['req'].id}"
+    first = client.get(path)
+    assert first.status_code == 200, first.text
+    target = first.json()["targets"][0]
+    assert target["kind"] == "current"
+    current = {
+        "source_requirement_id": c["req"].id,
+        "expected_subject_digest": target["subject_digest"],
+        "checklist": {"rows": [manual_row()]},
+        "request_id": str(uuid4()),
+    }
+    missing = client.post(root + "/start", json={**current, "checklist": {"rows": []}})
+    assert missing.status_code == 400, missing.text
+    assert db.scalar(select(func.count()).select_from(ArtifactRelease)) == 0
+    assert db.scalar(select(func.count()).select_from(Plan)) == 0
+    c["req"].acceptance_criteria = "承認前の基準を原文のまま確認する。"
+    db.commit()
+    assert client.post(root + "/start", json=current).status_code == 409
+    target = client.get(path).json()["targets"][0]
+    current["expected_subject_digest"] = target["subject_digest"]
+    current["checklist"]["rows"][0]["reference"] = {
+        "field": "acceptance_criteria",
+        "start": 0,
+        "text": target["acceptance_criteria"],
+    }
+    created = client.post(root + "/start", json=current)
+    assert created.status_code == 201, created.text
+    detail = created.json()
+    assert detail["subject_digest"] == target["subject_digest"]
+    assert (
+        detail["revision"]["checklist"]["rows"][0]["reference"]["text"]
+        == target["acceptance_criteria"]
+    )
+    assert detail["revision"]["checklist"]["coverage"]["actor_id"] == c["user"].id
+    replay = client.post(root + "/start", json=current)
+    assert replay.status_code == 200 and replay.json()["id"] == detail["id"]
+    c["req"].acceptance_criteria = "開始した後の編集"
+    db.commit()
+    retained = client.get(f"{root}/{detail['id']}").json()
+    assert retained["comparison"] == "changed"
+    assert (
+        retained["fixed_subject"]["payload"]["acceptance_criteria"]
+        == target["acceptance_criteria"]
+    )
+    assert db.scalar(select(func.count()).select_from(ArtifactRelease)) == 1
+    assert db.scalar(select(func.count()).select_from(Plan)) == 1
 
 
 def update(client, c, rows=None, **values):

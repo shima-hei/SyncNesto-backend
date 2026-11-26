@@ -76,6 +76,26 @@ GUEST_APPROVAL_IDENTITY_OPERATIONS = {
     ),
 }
 
+# 要件レビュー・正式承認の外部画面は公開許可と本人を検証する。
+_SHARED_PUBLICATION = "/shared/publications/{publication_id}"
+_SHARED_REVIEW = _SHARED_PUBLICATION + "/requirement-reviews/{request_id}"
+_SHARED_FORMAL = _SHARED_PUBLICATION + "/requirement-approvals/{request_id}"
+GUEST_REQUIREMENT_WORKFLOW_IDENTITY_OPERATIONS = {
+    ("get", "/shared/publications/requirement-reviews"),
+    ("get", _SHARED_REVIEW),
+    ("get", _SHARED_REVIEW + "/nodes"),
+    ("put", _SHARED_REVIEW + "/nodes/{node_id}"),
+    ("post", _SHARED_REVIEW + "/submission"),
+    ("get", _SHARED_REVIEW + "/threads"),
+    ("post", _SHARED_REVIEW + "/threads"),
+    ("get", _SHARED_REVIEW + "/threads/{thread_id}/replies"),
+    ("post", _SHARED_REVIEW + "/threads/{thread_id}/actions"),
+    ("get", "/shared/publications/requirement-approvals"),
+    ("get", _SHARED_FORMAL),
+    ("get", _SHARED_FORMAL + "/comparison"),
+    ("post", _SHARED_FORMAL + "/decision"),
+}
+
 SHARED_NOTIFICATION_IDENTITY_OPERATIONS = {
     ("get", "/shared/notifications"),
     ("get", "/shared/notifications/unread-count"),
@@ -401,6 +421,7 @@ def test_all_business_routes_require_tenant_context(client):
         recipient_router,
         same_origin,
     )
+    from app.routers.guest_requirement_workflow import shared_router as workflow_router
     from app.routers.mcp import router as mcp_router
     from app.routers.notification_email import router as email_router
     from app.routers.shared_notifications import router as notification_router
@@ -415,6 +436,7 @@ def test_all_business_routes_require_tenant_context(client):
     shared_count = 0
     invitation_count = 0
     approval_count = 0
+    workflow_count = 0
     notification_count = 0
     email_count = 0
     for path, operations in client.app.openapi()["paths"].items():
@@ -450,6 +472,20 @@ def test_all_business_routes_require_tenant_context(client):
                     p["name"] == "X-Tenant-ID" for p in operation.get("parameters", [])
                 )
                 notification_count += 1
+                continue
+            if (method, path) in GUEST_REQUIREMENT_WORKFLOW_IDENTITY_OPERATIONS:
+                route = next(
+                    route
+                    for route in workflow_router.routes
+                    if isinstance(route, APIRoute)
+                    and route.path == path
+                    and method.upper() in route.methods
+                )
+                assert has_current_user(route.dependant), (method, path)
+                assert not any(
+                    p["name"] == "X-Tenant-ID" for p in operation.get("parameters", [])
+                )
+                workflow_count += 1
                 continue
             if (method, path) in GUEST_APPROVAL_IDENTITY_OPERATIONS:
                 route = next(
@@ -523,6 +559,7 @@ def test_all_business_routes_require_tenant_context(client):
     assert shared_count == len(SHARED_IDENTITY_OPERATIONS)
     assert invitation_count == len(INVITATION_IDENTITY_OPERATIONS)
     assert approval_count == len(GUEST_APPROVAL_IDENTITY_OPERATIONS)
+    assert workflow_count == len(GUEST_REQUIREMENT_WORKFLOW_IDENTITY_OPERATIONS)
     assert notification_count == len(SHARED_NOTIFICATION_IDENTITY_OPERATIONS)
     assert email_count == len(EMAIL_IDENTITY_OPERATIONS)
 
@@ -852,6 +889,7 @@ def test_every_business_operation_rejects_unowned_tenant(client, create_test_use
                 | SHARED_IDENTITY_OPERATIONS
                 | INVITATION_IDENTITY_OPERATIONS
                 | GUEST_APPROVAL_IDENTITY_OPERATIONS
+                | GUEST_REQUIREMENT_WORKFLOW_IDENTITY_OPERATIONS
                 | SHARED_NOTIFICATION_IDENTITY_OPERATIONS
                 | EMAIL_IDENTITY_OPERATIONS
             ):

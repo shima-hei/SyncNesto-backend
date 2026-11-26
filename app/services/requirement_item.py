@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core import error_messages
-from app.core.exceptions import DuplicateResourceError, NotFoundError
+from app.core.exceptions import BadRequestError, DuplicateResourceError, NotFoundError
 from app.models.notification import NotificationTargetType
 from app.models.requirement import (
     Requirement,
@@ -18,6 +18,8 @@ from app.repositories.requirement_item import RequirementRepository
 from app.repositories.requirement_section import RequirementSectionRepository
 from app.schemas.requirement import (
     RequirementCreate,
+    RequirementItemCounts,
+    RequirementSectionItemCount,
     RequirementUpdate,
 )
 from app.services.change_log_formatter import (
@@ -216,6 +218,7 @@ class RequirementService:
         status: str | None = None,
         requirement_type: str | None = None,
         section_id: int | None = None,
+        unclassified: bool = False,
         priority: str | None = None,
         owner_id: int | None = None,
         sort: str | None = None,
@@ -234,6 +237,7 @@ class RequirementService:
             status: 絞り込み対象のステータス。
             requirement_type: 絞り込み対象の要件種別。
             section_id: 絞り込み対象の要件定義セクションID。
+            unclassified: 章に属さない要件に絞り込む。
             priority: 絞り込み対象の優先度。
             owner_id: 絞り込み対象のオーナーID。
             sort: ソート指定。
@@ -246,6 +250,8 @@ class RequirementService:
         Raises:
             NotFoundError: 指定された要件定義書がプロジェクトに属さない場合。
         """
+        if section_id is not None and unclassified:
+            raise BadRequestError()
         if document_id is not None:
             document = self._get_document_in_project(
                 db,
@@ -276,11 +282,30 @@ class RequirementService:
             status=status,
             requirement_type=requirement_type,
             section_id=section_id,
+            unclassified=unclassified,
             priority=priority,
             owner_id=owner_id,
             sort=sort,
             sort_by=sort_by,
             sort_order=sort_order,
+        )
+
+    def document_item_counts(
+        self, db: Session, project_id: int, document_id: int
+    ) -> RequirementItemCounts:
+        """対象の所属を確認し、検索前の件数を取得する。"""
+        self._get_document_in_project(
+            db, project_id=project_id, document_id=document_id
+        )
+        counts = self.repository.section_counts(db, document_id)
+        return RequirementItemCounts(
+            total=sum(counts.values()),
+            unclassified=counts.get(None, 0),
+            sections=[
+                RequirementSectionItemCount(section_id=section_id, count=count)
+                for section_id, count in counts.items()
+                if section_id is not None
+            ],
         )
 
     def get_requirement(

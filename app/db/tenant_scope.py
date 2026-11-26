@@ -17,6 +17,22 @@ OWNERS = {
         ("phase_id", "project_phases", "id"),
     ],
     "requirement_document_creation_receipts": [("project_id", "projects", "id")],
+    "requirement_workflow_requests": [("project_id", "projects", "id")],
+    "requirement_workflow_participants": [
+        ("request_id", "requirement_workflow_requests", "id")
+    ],
+    "requirement_workflow_guest_bindings": [
+        ("request_id", "requirement_workflow_requests", "id")
+    ],
+    "requirement_review_confirmations": [
+        ("request_id", "requirement_workflow_requests", "id")
+    ],
+    "requirement_review_threads": [
+        ("request_id", "requirement_workflow_requests", "id")
+    ],
+    "requirement_review_thread_events": [
+        ("thread_id", "requirement_review_threads", "id")
+    ],
     "requirement_verification_requests": [
         ("plan_id", "requirement_verification_plans", "id")
     ],

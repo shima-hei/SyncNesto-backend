@@ -43,6 +43,7 @@ from app.services.artifact_release_cursor import decode_cursor, encode_cursor
 from app.services.artifact_release_snapshot import (
     MAX_PAGE_BYTES,
     ArtifactSnapshotBuilder,
+    Snapshot,
     digest,
 )
 from app.services.audit_log import AuditLogService
@@ -137,15 +138,27 @@ class ArtifactReleaseService:
     ) -> ArtifactPreview:
         """副作用なしで、固定する構成とhashを確認する。"""
         with self._transaction(db, user, project_id, "create") as (work, actor):
-            self._sources(
-                work,
-                actor,
-                project_id,
-                [s.kind for s in [data.source, *data.included_sources]],
-                create=True,
-            )
-            captured = work.execute(select(func.transaction_timestamp())).scalar_one()
-            return self.builder.build(work, project_id, data, captured).preview()
+            return self.capture_snapshot(work, actor, project_id, data).preview()
+
+    def capture_snapshot(
+        self, db: Session, actor: User, project_id: int, data: ArtifactPreviewRequest
+    ) -> Snapshot:
+        """呼び出し元のトランザクションで、許可された固定対象を読む。"""
+        self._sources(
+            db,
+            actor,
+            project_id,
+            [s.kind for s in [data.source, *data.included_sources]],
+            create=True,
+        )
+        return self._build_snapshot(db, project_id, data)
+
+    def _build_snapshot(
+        self, db: Session, project_id: int, data: ArtifactPreviewRequest
+    ) -> Snapshot:
+        """認可済みの対象を、同じトランザクションの時点で固定する。"""
+        captured = db.execute(select(func.transaction_timestamp())).scalar_one()
+        return self.builder.build(db, project_id, data, captured)
 
     def create(
         self, db: Session, user: User, project_id: int, data: ArtifactCreateRequest
@@ -169,28 +182,8 @@ class ArtifactReleaseService:
                     request = ArtifactPreviewRequest.model_validate(
                         data.model_dump(exclude={"request_id", "expected_scope_digest"})
                     )
-                    captured = work.execute(
-                        select(func.transaction_timestamp())
-                    ).scalar_one()
-                    snapshot = self.builder.build(work, project_id, request, captured)
-                    if snapshot.scope_digest != data.expected_scope_digest:
-                        raise VersionConflictError(
-                            {"scope_digest": snapshot.scope_digest}
-                        )
-                    row = self._save(work, project_id, actor.id, data, snapshot)
-                    AuditLogService().record(
-                        work,
-                        event_type="artifact_release.created",
-                        actor_user_id=actor.id,
-                        project_id=project_id,
-                        resource_type="artifact_release",
-                        metadata={
-                            "release_id": str(row.id),
-                            "source_kind": row.source_kind,
-                        },
-                        commit=False,
-                    )
-                    work.flush()
+                    snapshot = self._build_snapshot(work, project_id, request)
+                    row = self.save_snapshot(work, actor, project_id, data, snapshot)
                     result = self._metadata(work, row)
                 return result, True
             except DBAPIError as exc:
@@ -208,6 +201,34 @@ class ArtifactReleaseService:
                         error_messages.ARTIFACT_RETRY_CONFLICT
                     ) from None
         raise AssertionError("unreachable")
+
+    def save_snapshot(
+        self,
+        db: Session,
+        actor: User,
+        project_id: int,
+        data: ArtifactCreateRequest,
+        snapshot: Snapshot,
+    ) -> ArtifactRelease:
+        """確認済みの固定版と監査を、呼び出し元のトランザクションに保存する。"""
+        if (
+            snapshot.scope_digest != data.expected_scope_digest
+            or snapshot.request.model_dump()
+            != data.model_dump(exclude={"request_id", "expected_scope_digest"})
+        ):
+            raise VersionConflictError({"scope_digest": snapshot.scope_digest})
+        row = self._save(db, project_id, actor.id, data, snapshot)
+        AuditLogService().record(
+            db,
+            event_type="artifact_release.created",
+            actor_user_id=actor.id,
+            project_id=project_id,
+            resource_type="artifact_release",
+            metadata={"release_id": str(row.id), "source_kind": row.source_kind},
+            commit=False,
+        )
+        db.flush()
+        return row
 
     def _save(self, db, project_id, actor_id, data, snapshot):
         """認可済みの投影だけから固定版の保存データを組み立てる。"""

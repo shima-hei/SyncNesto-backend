@@ -208,6 +208,12 @@ PRESERVATION_PLAN_CHANGED = (
     "選択した資料または添付が変更されています。構成を確認し直してください"
 )
 FIXED_APPROVAL_INVALID = "固定した承認対象または確認内容が一致しません"
+LEGACY_REQUIREMENT_APPROVAL_CREATION_DISABLED = (
+    "要件の新規承認は、要件定義書の「正式承認を依頼」から申請してください"
+)
+LEGACY_REQUIREMENT_REVIEW_CREATION_DISABLED = (
+    "新しいレビューは、要件定義書または個別要件の「レビューを依頼」から作成してください"
+)
 FIXED_APPROVAL_MIGRATED = (
     "この申請は新方式へ移行済みです。承認履歴から移行先を確認してください"
 )
@@ -234,3 +240,22 @@ TASK_TYPE_UNAVAILABLE = "この種別は選択できません。別の種別を�
 TASK_TYPE_NAME_EXISTS = "同じ名前の種別が既にあります。"
 TASK_RETURN_REASON_REQUIRED = "差し戻し理由を入力してください。"
 TASK_RETURN_CREATE_INVALID = "差し戻しは作成済みのタスクに理由を付けて行ってください。"
+REQUIREMENT_WORKFLOW_INVALID_PARTICIPANT = (
+    "現在の権限で対象を確認できる案件メンバーを選択してください。"
+)
+REQUIREMENT_WORKFLOW_DUPLICATE_ATTACHMENT = "同じ添付資料を重複して選択できません。"
+REQUIREMENT_FORMAL_APPROVAL_PENDING = "この要件定義書には既に承認待ちの依頼があります。"
+REQUIREMENT_FORMAL_APPROVAL_BLOCKED = "対応必須の指摘または未決事項を確認してください。"
+REQUIREMENT_FORMAL_APPROVAL_REVIEW_REQUIRED = (
+    "承認対象と同じ内容のレビューを完了してください。"
+)
+REQUIREMENT_FORMAL_APPROVAL_CLOSED = "この正式承認には既に判断が記録されています。"
+REQUIREMENT_FORMAL_APPROVAL_INVALID_EXCEPTION = (
+    "例外の対象、担当者、対応期限を確認してください。"
+)
+
+REQUIREMENT_REVIEW_CLOSED = "このレビューの回答は締め切られています。"
+REQUIREMENT_REVIEW_BLOCKED = "修正依頼中の要件は確認済みにできません。"
+REQUIREMENT_REVIEW_INCOMPLETE = "未確認の要件があります。確認してから提出してください。"
+REQUIREMENT_REVIEW_INVALID_ANCHOR = "指定の位置と固定版の本文が一致しません。"
+REQUIREMENT_REVIEW_CONCURRENT = "別の操作と競合しました。最新の状態を確認してください。"

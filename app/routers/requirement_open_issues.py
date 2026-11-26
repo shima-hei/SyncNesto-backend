@@ -68,6 +68,7 @@ def list_open_issues(
     document_id: int | None = Query(default=None),
     q: str | None = Query(default=None),
     status: str | None = Query(default=None),
+    resolved: bool | None = Query(default=None),
     assignee_id: int | None = Query(default=None),
     due_date_from: date | None = Query(default=None),
     due_date_to: date | None = Query(default=None),
@@ -84,6 +85,7 @@ def list_open_issues(
         document_id: 絞り込み対象の要件定義書ID。
         q: 検索キーワード。
         status: 絞り込み対象のステータス。
+        resolved: 解決済みかどうかで絞り込む。
         assignee_id: 絞り込み対象の担当者ID。
         due_date_from: 期限の開始日。
         due_date_to: 期限の終了日。
@@ -102,6 +104,7 @@ def list_open_issues(
         document_id=document_id,
         q=q,
         status=status,
+        resolved=resolved,
         assignee_id=assignee_id,
         due_date_from=due_date_from,
         due_date_to=due_date_to,

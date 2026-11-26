@@ -32,6 +32,7 @@ from app.services.conflict import (
 
 PROJECT_CONFLICT_CURRENT_FIELDS = (
     "navigation",
+    "requirement_review_required",
     "project_code",
     "name",
     "description",

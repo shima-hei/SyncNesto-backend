@@ -18,17 +18,25 @@ from app.core.exceptions import (
     NotFoundError,
     VersionConflictError,
 )
-from app.models.artifact_release import ArtifactRelease
+from app.models.artifact_release import ArtifactRelease, ArtifactReleaseNode
+from app.models.requirement import Requirement
 from app.models.requirement_verification import RequirementVerificationPlan as Plan
 from app.models.requirement_verification import (
     RequirementVerificationRevision as Revision,
 )
+from app.models.requirement_workflow import RequirementWorkflowRequest
 from app.repositories.requirement_agreement import RequirementAgreementRepository
 from app.repositories.requirement_verification import RequirementVerificationRepository
+from app.repositories.requirement_workflow import RequirementWorkflowRepository
 from app.repositories.verification_candidates import VerificationCandidateRepository
 from app.schemas import requirement_verification as s
 from app.schemas import test_design as ts
-from app.services.artifact_release import ArtifactReleaseService
+from app.schemas.artifact_release import (
+    ArtifactCreateRequest,
+    ArtifactPreviewRequest,
+    ArtifactSource,
+)
+from app.services.artifact_release import SOURCE_PERMISSIONS, ArtifactReleaseService
 from app.services.artifact_release_cursor import decode_cursor, encode_cursor
 from app.services.artifact_release_snapshot import canonical_bytes, digest
 from app.services.audit_log import AuditLogService
@@ -129,12 +137,26 @@ class RequirementVerificationService:
                 else "changed"
             )
         version = saved_version or row.current_version
+        approved_version = db.scalar(
+            select(RequirementWorkflowRequest.display_number)
+            .where(
+                RequirementWorkflowRequest.project_id == project_id,
+                RequirementWorkflowRequest.release_id == row.release_id,
+                RequirementWorkflowRequest.kind == "formal_approval",
+                RequirementWorkflowRequest.status == "approved",
+            )
+            .order_by(RequirementWorkflowRequest.display_number.desc())
+            .limit(1)
+        )
         return s.VerificationDetail(
             **{
                 **self.summary(row, subject["payload"].get("title")),
                 "current_version": version,
             },
             subject_digest=row.subject_digest,
+            target_version_label=f"正式承認済み A-{approved_version:03d}"
+            if approved_version is not None
+            else None,
             fixed_subject=subject,
             comparison=comparison,
             can_prepare=self.can(
@@ -167,6 +189,7 @@ class RequirementVerificationService:
                     in {
                         "uq_verification_plan_request",
                         "uq_verification_revision_operation",
+                        "uq_artifact_release_request",
                     }
                 ):
                     raise
@@ -185,6 +208,251 @@ class RequirementVerificationService:
             commit=False,
         )
 
+    def preparation_targets(self, db, actor, project_id, requirement_id):
+        subjects = RequirementAgreementRepository().subjects(
+            db, project_id, [requirement_id]
+        )
+        if not subjects:
+            raise NotFoundError()
+        current = subjects[0]["subject"]
+        if current is None:
+            raise ArtifactReleaseTooLargeError()
+
+        def target(subject, kind, label, approval_id=None):
+            payload = subject["payload"]
+            return s.VerificationPreparationTarget(
+                kind=kind,
+                version=subject["source_version"],
+                label=label,
+                title=payload.get("title") or "名称未設定",
+                description=payload.get("description") or "",
+                acceptance_criteria=payload.get("acceptance_criteria") or "",
+                subject_digest=digest(subject),
+                approval_id=approval_id,
+            )
+
+        results: list[
+            tuple[
+                s.VerificationPreparationTarget,
+                ArtifactRelease | None,
+                ArtifactReleaseNode | None,
+            ]
+        ] = [(target(current, "current", "現在の保存内容"), None, None)]
+        document_id = db.scalar(
+            select(Requirement.document_id).where(Requirement.id == requirement_id)
+        )
+        baseline = RequirementWorkflowRepository().approval_for_document(
+            db, project_id, document_id, "approved"
+        )
+        if baseline is None:
+            return results
+        release = self.access.repository.get(db, project_id, baseline.release_id)
+        if release is None or not all(
+            self.can(db, actor, project_id, f"{SOURCE_PERMISSIONS[kind]}:read")
+            for kind in release.source_kinds
+        ):
+            return results
+        node = db.scalar(
+            select(ArtifactReleaseNode).where(
+                ArtifactReleaseNode.release_id == release.id,
+                ArtifactReleaseNode.node_kind == "requirement",
+                ArtifactReleaseNode.source_id == requirement_id,
+            )
+        )
+        if node is None:
+            return results
+        fixed = self.repository.fixed(db, project_id, release.id, node.id)
+        results.insert(
+            0,
+            (
+                target(
+                    fixed,
+                    "approved",
+                    f"正式承認済み A-{baseline.display_number:03d}",
+                    baseline.id,
+                ),
+                release,
+                node,
+            ),
+        )
+        return results
+
+    def require_start_permissions(self, db, actor, project_id):
+        self.allowed(db, actor, project_id, prepare=True)
+        for code in (
+            "artifact_release:create",
+            "artifact_release:read",
+            "requirement:update",
+        ):
+            self.access._permission(db, actor, project_id, code)
+
+    def preparation(self, original, user, project_id, requirement_id):
+        with self.access._transaction(original, user, project_id, None) as (db, actor):
+            self.require_start_permissions(db, actor, project_id)
+            options = self.preparation_targets(db, actor, project_id, requirement_id)
+            return s.VerificationPreparation(
+                targets=[option[0] for option in options],
+                test_items=[
+                    s.VerificationTargetOption(
+                        item_id=row.id, code=row.code, title=row.title or "名称未設定"
+                    )
+                    for row in self.candidates.linked(db, project_id, requirement_id)
+                ],
+            )
+
+    def start(self, original, user, project_id, data):
+        request_digest = digest(data.model_dump(mode="json"))
+
+        def save():
+            with self.access._transaction(original, user, project_id, None) as (
+                db,
+                actor,
+            ):
+                self.require_start_permissions(db, actor, project_id)
+                old = self.previous_plan(
+                    db, actor, project_id, data.request_id, request_digest
+                )
+                if old:
+                    return self.detail(db, actor, project_id, old), False
+                choices = self.preparation_targets(
+                    db, actor, project_id, data.source_requirement_id
+                )
+                selected = next(
+                    (
+                        option
+                        for option in choices
+                        if option[0].approval_id == data.approval_id
+                    ),
+                    None,
+                )
+                if (
+                    not selected
+                    or selected[0].subject_digest != data.expected_subject_digest
+                ):
+                    raise VersionConflictError(
+                        {
+                            "subject_digest": selected[0].subject_digest
+                            if selected
+                            else None
+                        }
+                    )
+                target, release, node = selected
+                if release is None:
+                    source = ArtifactPreviewRequest(
+                        source=ArtifactSource(
+                            kind="requirement",
+                            id=data.source_requirement_id,
+                            version=target.version,
+                        )
+                    )
+                    snapshot = self.access.capture_snapshot(
+                        db, actor, project_id, source
+                    )
+                    release = self.access.save_snapshot(
+                        db,
+                        actor,
+                        project_id,
+                        ArtifactCreateRequest(
+                            **source.model_dump(),
+                            request_id=uuid5(data.request_id, "verification-target"),
+                            expected_scope_digest=snapshot.scope_digest,
+                        ),
+                        snapshot,
+                    )
+                    node = db.scalar(
+                        select(ArtifactReleaseNode).where(
+                            ArtifactReleaseNode.release_id == release.id,
+                            ArtifactReleaseNode.node_kind == "requirement",
+                            ArtifactReleaseNode.source_id == data.source_requirement_id,
+                        )
+                    )
+                assert node is not None
+                subject = self.repository.fixed(db, project_id, release.id, node.id)
+                if digest(subject) != target.subject_digest:
+                    raise VersionConflictError({"subject_digest": digest(subject)})
+                row = self.save_initial_plan(
+                    db,
+                    actor,
+                    project_id,
+                    data.source_requirement_id,
+                    release.id,
+                    node.id,
+                    subject,
+                    data.request_id,
+                    request_digest,
+                    data.checklist,
+                )
+                return self.detail(db, actor, project_id, row), True
+
+        return self.retry(save)
+
+    def previous_plan(self, db, actor, project_id, request_id, request_digest):
+        old = db.scalar(
+            select(Plan).where(
+                Plan.project_id == project_id,
+                Plan.created_by == actor.id,
+                Plan.request_id == request_id,
+            )
+        )
+        if old and old.request_digest != request_digest:
+            raise DuplicateResourceError()
+        return old
+
+    def save_initial_plan(
+        self,
+        db,
+        actor,
+        project_id,
+        requirement_id,
+        release_id,
+        node_id,
+        subject,
+        request_id,
+        request_digest,
+        prepared_checklist=None,
+    ):
+        row = Plan(
+            id=uuid4(),
+            project_id=project_id,
+            source_requirement_id=requirement_id,
+            release_id=release_id,
+            target_node_id=node_id,
+            subject_digest=digest(subject),
+            current_version=1,
+            created_by=actor.id,
+            updated_by=actor.id,
+            request_id=request_id,
+            request_digest=request_digest,
+        )
+        checklist = (
+            self.validate(
+                db,
+                project_id,
+                row,
+                subject,
+                SimpleNamespace(checklist=prepared_checklist, confirm_coverage=True),
+            )
+            if prepared_checklist is not None
+            else {"rows": [], "coverage": None}
+        )
+        self.stamp_coverage(db, actor, checklist)
+        row = self.repository.insert_header(db, row)
+        db.add(
+            Revision(
+                plan_id=row.id,
+                version=1,
+                checklist=checklist,
+                checklist_digest=digest(checklist),
+                actor_id=actor.id,
+                operation_id=request_id,
+                operation_digest=request_digest,
+            )
+        )
+        self.audit(db, actor, project_id, row, "created")
+        db.flush()
+        db.refresh(row)
+        return row
+
     def create(self, original, user, project_id, data):
         request_digest = digest(data.model_dump(mode="json"))
 
@@ -193,23 +461,11 @@ class RequirementVerificationService:
                 db,
                 actor,
             ):
-                self.allowed(db, actor, project_id, prepare=True)
-                for code in (
-                    "artifact_release:create",
-                    "artifact_release:read",
-                    "requirement:update",
-                ):
-                    self.access._permission(db, actor, project_id, code)
-                old = db.scalar(
-                    select(Plan).where(
-                        Plan.project_id == project_id,
-                        Plan.created_by == actor.id,
-                        Plan.request_id == data.request_id,
-                    )
+                self.require_start_permissions(db, actor, project_id)
+                old = self.previous_plan(
+                    db, actor, project_id, data.request_id, request_digest
                 )
                 if old:
-                    if old.request_digest != request_digest:
-                        raise DuplicateResourceError()
                     return self.detail(db, actor, project_id, old), False
                 release = db.scalar(
                     select(ArtifactRelease).where(
@@ -229,35 +485,17 @@ class RequirementVerificationService:
                 )
                 if subject["source_id"] != data.source_requirement_id:
                     raise BadRequestError(error_messages.VERIFICATION_TARGET_INVALID)
-                row = Plan(
-                    id=uuid4(),
-                    project_id=project_id,
-                    source_requirement_id=data.source_requirement_id,
-                    release_id=release.id,
-                    target_node_id=data.target_node_id,
-                    subject_digest=digest(subject),
-                    current_version=1,
-                    created_by=actor.id,
-                    updated_by=actor.id,
-                    request_id=data.request_id,
-                    request_digest=request_digest,
+                row = self.save_initial_plan(
+                    db,
+                    actor,
+                    project_id,
+                    data.source_requirement_id,
+                    release.id,
+                    data.target_node_id,
+                    subject,
+                    data.request_id,
+                    request_digest,
                 )
-                row = self.repository.insert_header(db, row)
-                checklist = {"rows": [], "coverage": None}
-                db.add(
-                    Revision(
-                        plan_id=row.id,
-                        version=1,
-                        checklist=checklist,
-                        checklist_digest=digest(checklist),
-                        actor_id=actor.id,
-                        operation_id=data.request_id,
-                        operation_digest=request_digest,
-                    )
-                )
-                self.audit(db, actor, project_id, row, "created")
-                db.flush()
-                db.refresh(row)
                 result = self.detail(db, actor, project_id, row)
             return result, True
 
@@ -344,6 +582,17 @@ class RequirementVerificationService:
             }
         return checklist
 
+    def stamp_coverage(self, db, actor, checklist):
+        if checklist["coverage"]:
+            checklist["coverage"].update(
+                actor_id=actor.id,
+                confirmed_at=db.execute(select(func.transaction_timestamp()))
+                .scalar_one()
+                .isoformat(),
+            )
+        if len(json.dumps(checklist, ensure_ascii=False).encode()) > 256 * 1024:
+            raise ArtifactReleaseTooLargeError()
+
     def update(self, original, user, project_id, plan_id, data):
         request_digest = digest(data.model_dump(mode="json"))
 
@@ -378,15 +627,7 @@ class RequirementVerificationService:
                     db, project_id, row.release_id, row.target_node_id
                 )
                 checklist = self.validate(db, project_id, row, subject, data)
-                if checklist["coverage"]:
-                    checklist["coverage"].update(
-                        actor_id=actor.id,
-                        confirmed_at=db.execute(select(func.transaction_timestamp()))
-                        .scalar_one()
-                        .isoformat(),
-                    )
-                if len(json.dumps(checklist, ensure_ascii=False).encode()) > 256 * 1024:
-                    raise ArtifactReleaseTooLargeError()
+                self.stamp_coverage(db, actor, checklist)
                 db.add(
                     Revision(
                         plan_id=row.id,

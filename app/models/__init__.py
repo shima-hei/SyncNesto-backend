@@ -72,6 +72,14 @@ from app.models.requirement_verification import (
     RequirementVerificationPlan,
     RequirementVerificationRevision,
 )
+from app.models.requirement_workflow import (
+    RequirementReviewConfirmation,
+    RequirementReviewThread,
+    RequirementReviewThreadEvent,
+    RequirementWorkflowGuestBinding,
+    RequirementWorkflowParticipant,
+    RequirementWorkflowRequest,
+)
 from app.models.review_account import ReviewAccountGrant
 from app.models.session import UserSession
 from app.models.specification import (
@@ -217,6 +225,12 @@ __all__ = [
     "RequirementDetail",
     "RequirementDocument",
     "RequirementDocumentCreationReceipt",
+    "RequirementWorkflowParticipant",
+    "RequirementWorkflowGuestBinding",
+    "RequirementWorkflowRequest",
+    "RequirementReviewConfirmation",
+    "RequirementReviewThread",
+    "RequirementReviewThreadEvent",
     "RequirementLink",
     "RequirementOpenIssue",
     "RequirementRelation",
