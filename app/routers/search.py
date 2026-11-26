@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
@@ -14,10 +14,41 @@ from app.schemas.search import (
     SearchQuery,
     SearchRead,
 )
+from app.schemas.smart_link import SmartLinkGroup, SmartLinkRead, SmartLinkResolve
 from app.services.search import SearchService
+from app.services.smart_link import SmartLinkService
 
 router = APIRouter(prefix="/search", tags=["search"])
 service = SearchService()
+smart_links = SmartLinkService()
+
+
+@router.post("/smart-links/resolve", response_model=list[SmartLinkRead])
+def resolve_smart_links(
+    data: SmartLinkResolve,
+    response: Response,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[SmartLinkRead]:
+    """公開情報とは分離し、認可済みのタイトルまたは概要を返す。"""
+    response.headers["Cache-Control"] = "private, no-store"
+    return smart_links.resolve(db, user, data)
+
+
+@router.get("/smart-links", response_model=list[SmartLinkRead])
+def find_smart_links(
+    q: Annotated[SearchQuery, Query()],
+    response: Response,
+    group: SmartLinkGroup | None = None,
+    preferred_project: int | None = Query(default=None, ge=1, le=2147483647),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[SmartLinkRead]:
+    """文章に挿入できる成果物を名称と表示IDで検索する。"""
+    response.headers["Cache-Control"] = "private, no-store"
+    return smart_links.find(
+        db, user, q=q, group=group, preferred_project=preferred_project
+    )
 
 
 @router.get("", response_model=SearchRead)

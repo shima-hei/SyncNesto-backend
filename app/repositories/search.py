@@ -1,10 +1,15 @@
 """組織・所属・種類ごとの権限をSQLで適用する横断検索。"""
 
+from collections import defaultdict
+from uuid import UUID
+
 from sqlalchemy import (
+    Date,
     DateTime,
     Integer,
     Select,
     String,
+    and_,
     case,
     cast,
     func,
@@ -16,13 +21,14 @@ from sqlalchemy import (
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Subquery
 
-from app.models.document import ProjectDocument
+from app.models.document import DocumentAttachment, ProjectDocument
 from app.models.project import Project, ProjectMember
 from app.models.rbac import Permission, Role, RolePermission
 from app.models.requirement import Requirement, RequirementDocument
 from app.models.specification import Specification
 from app.models.task import Task
 from app.models.test_design import TestCase, TestDesign, TestItem
+from app.schemas.smart_link import UUID_KINDS, SmartLinkReference
 
 READ_PERMISSIONS = (
     "requirement:read",
@@ -74,6 +80,9 @@ class SearchRepository:
         *,
         include_objectives: bool = False,
         include_metadata: bool = False,
+        smart_link: bool = False,
+        references: dict[str, list[SmartLinkReference]] | None = None,
+        preview: bool = False,
     ) -> Subquery:
         """各リソースを同じ列構成へ揃え、UNION前に境界を確定する。"""
         pattern = escaped_pattern(q)
@@ -91,6 +100,8 @@ class SearchRepository:
             container=None,
             conditions=(),
         ):
+            if references is not None and kind not in references:
+                return None
             body = func.concat_ws("\n", *fields)
             title = func.coalesce(title, "")
             code = func.coalesce(code, "")
@@ -114,8 +125,23 @@ class SearchRepository:
                 ).label("container_id"),
                 func.substr(title, 1, 240).label("title"),
                 code.label("code"),
-                func.substr(body, start, 240).label("excerpt"),
+                (literal("") if smart_link else func.substr(body, start, 240)).label(
+                    "excerpt"
+                ),
                 rank.label("rank"),
+                *(
+                    [
+                        cast(
+                            Specification.kind
+                            if model is Specification
+                            else literal(None),
+                            String,
+                        ).label("specification_kind")
+                    ]
+                    if smart_link
+                    else []
+                ),
+                *(self.preview_columns(model) if preview else []),
                 *(
                     [
                         cast(getattr(model, "status", literal(None)), String).label(
@@ -134,27 +160,48 @@ class SearchRepository:
                 ),
             ).select_from(model)
             if parent is not None:
-                query = query.join(
-                    parent,
-                    model.document_id == parent.id
-                    if parent is RequirementDocument
-                    else model.design_id == parent.id,
-                )
+                assert container is not None
+                query = query.join(parent, container == parent.id)
             owner = parent if parent is not None else model
-            query = query.join(Project, owner.project_id == Project.id).where(
+            if model is not Project:
+                query = query.join(Project, owner.project_id == Project.id)
+            query = query.where(
                 Project.id.in_(self.project_ids(tenant_id, user_id, (permission,))),
-                or_(
-                    title.ilike(pattern, escape="\\"),
-                    code.ilike(pattern, escape="\\"),
-                    body.ilike(pattern, escape="\\"),
-                ),
                 *conditions,
             )
+            if references is not None:
+                query = query.where(
+                    or_(
+                        *(
+                            and_(
+                                Project.id == ref.project_id,
+                                model.id
+                                == (
+                                    UUID(ref.id) if kind in UUID_KINDS else int(ref.id)
+                                ),
+                                *(
+                                    (container == ref.container_id,)
+                                    if container is not None
+                                    else ()
+                                ),
+                            )
+                            for ref in references[kind]
+                        )
+                    )
+                )
+            else:
+                matches = [
+                    title.ilike(pattern, escape="\\"),
+                    code.ilike(pattern, escape="\\"),
+                ]
+                if not smart_link:
+                    matches.append(body.ilike(pattern, escape="\\"))
+                query = query.where(or_(*matches))
             if project_id is not None:
                 query = query.where(Project.id == project_id)
             return query
 
-        return union_all(
+        queries = [
             source(
                 "requirement_document",
                 "requirement",
@@ -287,7 +334,133 @@ class SearchRepository:
                 "document:read",
                 conditions=(Specification.deleted_at.is_(None),),
             ),
-        ).subquery()
+        ]
+        if smart_link:
+            queries.extend(
+                [
+                    source(
+                        "project",
+                        "project",
+                        Project,
+                        Project.name,
+                        Project.project_code,
+                        (),
+                        "project:read",
+                        conditions=(Project.deleted_at.is_(None),),
+                    ),
+                    source(
+                        "document_attachment",
+                        "document",
+                        DocumentAttachment,
+                        DocumentAttachment.filename,
+                        literal(""),
+                        (),
+                        "document:read",
+                        parent=ProjectDocument,
+                        container=DocumentAttachment.document_id,
+                        conditions=(
+                            DocumentAttachment.deleted_at.is_(None),
+                            ProjectDocument.deleted_at.is_(None),
+                        ),
+                    ),
+                ]
+            )
+        return union_all(*(query for query in queries if query is not None)).subquery()
+
+    @staticmethod
+    def preview_columns(model):
+        """概要を求められた場合だけ、既存属性を取得する。"""
+        person = {
+            Task: Task.assignee_id,
+            Requirement: Requirement.owner_id,
+            TestCase: TestCase.executed_by,
+        }.get(model, literal(None))
+        count = (
+            select(func.count(TestItem.id))
+            .where(
+                TestItem.design_id == TestDesign.id,
+                TestItem.deleted_at.is_(None),
+                TestItem.is_spacer.is_(False),
+            )
+            .correlate(TestDesign)
+            .scalar_subquery()
+            if model is TestDesign
+            else literal(None)
+        )
+        return [
+            cast(getattr(model, "status", literal(None)), String).label("status"),
+            cast(getattr(model, "priority", literal(None)), String).label("priority"),
+            cast(getattr(model, "requirement_type", literal(None)), String).label(
+                "requirement_type"
+            ),
+            cast(person, Integer).label("assignee_id"),
+            cast(getattr(model, "due_date", literal(None)), Date).label("due_date"),
+            cast(
+                getattr(
+                    model, "updated_at", getattr(model, "created_at", literal(None))
+                ),
+                DateTime(timezone=True),
+            ).label("updated_at"),
+            cast(getattr(model, "content_type", literal(None)), String).label(
+                "file_type"
+            ),
+            cast(count, Integer).label("test_item_count"),
+            cast(
+                func.substr(TestCase.actual_result, 1, 240)
+                if model is TestCase
+                else literal(None),
+                String,
+            ).label("actual_result"),
+        ]
+
+    def resolve_links(
+        self,
+        db: Session,
+        *,
+        tenant_id: int,
+        user_id: int,
+        references: list[SmartLinkReference],
+        preview: bool,
+    ) -> list[dict]:
+        """案件・成果物・親IDを指定して検索と同じ権限で解決する。"""
+        by_kind: dict[str, list[SmartLinkReference]] = defaultdict(list)
+        for ref in references:
+            by_kind[ref.kind].append(ref)
+        rows = self.sources(
+            tenant_id,
+            user_id,
+            "",
+            None,
+            smart_link=True,
+            references=by_kind,
+            preview=preview,
+        )
+        return [dict(row) for row in db.execute(select(rows)).mappings()]
+
+    def find_links(
+        self,
+        db: Session,
+        *,
+        tenant_id: int,
+        user_id: int,
+        q: str,
+        group: str | None,
+        preferred_project: int | None,
+    ) -> list[dict]:
+        """参照先をタイトル・コードで検索し、作業中の案件を優先する。"""
+        rows = self.sources(tenant_id, user_id, q, None, smart_link=True)
+        query = select(rows)
+        if group == "specification":
+            query = query.where(rows.c.kind == "specification")
+        elif group is not None:
+            query = query.where(
+                rows.c.category == group, rows.c.kind != "specification"
+            )
+        preferred_rank = case((rows.c.project_id == preferred_project, 0), else_=1)
+        query = query.order_by(
+            preferred_rank, rows.c.rank, rows.c.project_id, rows.c.kind, rows.c.id
+        ).limit(16)
+        return [dict(row) for row in db.execute(query).mappings()]
 
     def search(
         self,
