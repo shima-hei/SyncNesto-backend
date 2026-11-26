@@ -22,6 +22,7 @@ from tests.routers.test_publication_access import publish
 def guest_approval_context(client, db, access_fixture, monkeypatch):
     """社内担当と有効な共有先・公開本文を用意する。"""
     monkeypatch.setenv("GUEST_FIXED_APPROVALS_ENABLED", "true")
+    monkeypatch.setattr(settings, "legacy_requirement_approval_creation_enabled", True)
     ctx = access_fixture
     publish(client, ctx, both=True)
     identity = ctx["publication"]["content"]["id"]
@@ -119,14 +120,27 @@ def decision(client, path, *, reject=False):
     "kind", ["requirement", "requirement_document", "specification"]
 )
 def test_guest_judgment_uses_existing_canonical_request(
-    client, db, guest_approval_context, kind
+    client, db, guest_approval_context, kind, monkeypatch
 ):
     """既存の判断正本へ一度保存し、可変本文・内部roleを変更しない。"""
     ctx = guest_approval_context
+    if kind == "specification":
+        monkeypatch.setattr(
+            settings, "legacy_requirement_approval_creation_enabled", False
+        )
     row, create_body = create_request(client, ctx, kind)
+    monkeypatch.setattr(settings, "legacy_requirement_approval_creation_enabled", False)
     assert row["audience"] == "guest" and row["can_decide"] is False
     replay = client.post(ctx["requests"], json=create_body)
     assert replay.status_code == 200 and replay.json()["id"] == row["id"]
+    if kind != "specification":
+        declined = client.post(
+            ctx["requests"], json={**create_body, "request_id": str(uuid4())}
+        )
+        assert declined.status_code == 409
+        assert (
+            declined.json()["code"] == "LEGACY_REQUIREMENT_APPROVAL_CREATION_DISABLED"
+        )
     guest_login(client, db, ctx)
     path = approval_path(ctx, row)
     metadata = client.get(path)

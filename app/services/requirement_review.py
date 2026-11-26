@@ -3,7 +3,11 @@
 from sqlalchemy.orm import Session
 
 from app.core import error_messages
-from app.core.exceptions import NotFoundError
+from app.core.config import settings
+from app.core.exceptions import (
+    LegacyRequirementReviewCreationDisabledError,
+    NotFoundError,
+)
 from app.models.requirement import (
     RequirementReview,
 )
@@ -50,6 +54,8 @@ class RequirementReviewService(RequirementChildBaseService):
             project_id,
             requirement_id,
         )
+        if not settings.legacy_requirement_review_creation_enabled:
+            raise LegacyRequirementReviewCreationDisabledError()
         review = self.review_repository.create(
             db,
             requirement_id=requirement_id,
@@ -65,6 +71,7 @@ class RequirementReviewService(RequirementChildBaseService):
             changed_by=actor_id,
         )
         return review
+
     def list_reviews(
         self,
         db: Session,
@@ -87,6 +94,7 @@ class RequirementReviewService(RequirementChildBaseService):
         """
         self._ensure_requirement_in_project(db, project_id, requirement_id)
         return self.review_repository.list_by_requirement(db, requirement_id)
+
     def update_review(
         self,
         db: Session,
@@ -141,6 +149,7 @@ class RequirementReviewService(RequirementChildBaseService):
             changed_by=actor_id,
         )
         return updated_review
+
     def delete_review(
         self,
         db: Session,
@@ -184,6 +193,7 @@ class RequirementReviewService(RequirementChildBaseService):
             old_value=before_value,
             changed_by=actor_id,
         )
+
     def _get_review_in_requirement(
         self,
         db: Session,

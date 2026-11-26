@@ -20,6 +20,7 @@ from app.routers import (
     gantt_order,
     guest_fixed_approvals,
     guest_invitations,
+    guest_requirement_workflow,
     health,
     home,
     mcp,
@@ -32,6 +33,7 @@ from app.routers import (
     requirement_schedule,
     requirement_trace,
     requirement_verifications,
+    requirement_workflow,
     requirements,
     search,
     shared_notifications,
@@ -61,6 +63,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(notification_email.router)
     app.include_router(shared_notifications.router)
     app.include_router(guest_fixed_approvals.shared_router)
+    app.include_router(guest_requirement_workflow.shared_router)
     app.include_router(artifact_publication_access.shared_router)
     app.include_router(guest_invitations.recipient_router)
     app.include_router(mfa.router)
@@ -80,6 +83,8 @@ def register_routers(app: FastAPI) -> None:
         fixed_approvals.router,
         guest_fixed_approvals.router,
         guest_invitations.router,
+        guest_requirement_workflow.router,
+        guest_requirement_workflow.approval_router,
         home.router,
         search.router,
         trash.router,
@@ -90,6 +95,7 @@ def register_routers(app: FastAPI) -> None:
         requirement_schedule.router,
         requirement_agreements.router,
         requirement_verifications.router,
+        requirement_workflow.router,
         verification_evidence.router,
         verification_verdicts.router,
         documents.router,

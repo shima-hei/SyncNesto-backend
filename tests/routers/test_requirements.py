@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.project import Project, ProjectMember
 from app.models.requirement import (
     Requirement,
@@ -1498,8 +1499,10 @@ def test_request_and_approve_requirement_approval_records_change_logs(
     assign_project_role: Callable[..., ProjectMember],
     create_test_requirement_document: Callable[..., RequirementDocument],
     db: Session,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """承認申請と承認ができ、変更履歴が記録されることを確認する。"""
+    monkeypatch.setattr(settings, "legacy_requirement_approval_creation_enabled", True)
     requester = create_test_user(email="requester@example.com")
     approver = create_test_user(email="approver@example.com")
     project = create_test_project(name="Project")
@@ -1524,6 +1527,17 @@ def test_request_and_approve_requirement_approval_records_change_logs(
     assert request_response.json()["status"] == "requested"
     assert request_response.json()["requested_by"] == requester.id
     assert request_response.json()["approver_id"] == approver.id
+    monkeypatch.setattr(settings, "legacy_requirement_approval_creation_enabled", False)
+    blocked = client.post(
+        f"/projects/{project.id}/approvals/request",
+        json={
+            "target_type": "document",
+            "target_id": document.id,
+            "approver_id": approver.id,
+        },
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["code"] == "LEGACY_REQUIREMENT_APPROVAL_CREATION_DISABLED"
 
     authorize_as(client, approver)
     approve_response = client.post(
@@ -2573,6 +2587,48 @@ def test_list_requirements_filters_by_document_status_priority_and_owner(
     assert response.status_code == 200
     assert response.json()["total"] == 1
     assert response.json()["items"][0]["requirement_code"] == "REQ-A"
+    counts_path = (
+        f"/projects/{project.id}/requirement-documents/{document.id}/item-counts"
+    )
+    counts = client.get(counts_path)
+    assert counts.status_code == 200, counts.text
+    assert counts.json() == {
+        "total": 2,
+        "unclassified": 1,
+        "sections": [{"section_id": section.id, "count": 1}],
+    }
+    unclassified = client.get(
+        f"/projects/{project.id}/requirements",
+        params={"document_id": document.id, "unclassified": "true"},
+    )
+    assert unclassified.status_code == 200, unclassified.text
+    assert unclassified.json()["total"] == 1
+    assert unclassified.json()["items"][0]["requirement_code"] == "REQ-B"
+    conflicting = client.get(
+        f"/projects/{project.id}/requirements",
+        params={
+            "document_id": document.id,
+            "section_id": section.id,
+            "unclassified": "true",
+        },
+    )
+    assert conflicting.status_code == 400
+    section.deleted_at = datetime.now(UTC)
+    db.commit()
+    assert client.get(counts_path).json() == {
+        "total": 2,
+        "unclassified": 2,
+        "sections": [],
+    }
+    remaining = client.get(
+        f"/projects/{project.id}/requirements",
+        params={"document_id": document.id, "unclassified": "true"},
+    )
+    assert remaining.status_code == 200, remaining.text
+    assert {item["requirement_code"] for item in remaining.json()["items"]} == {
+        "REQ-A",
+        "REQ-B",
+    }
 
 
 def test_list_requirements_sorts_before_pagination(
@@ -3133,6 +3189,7 @@ def test_requirement_review_crud_allows_manager(
     assign_project_role: Callable[..., ProjectMember],
     create_test_requirement_document: Callable[..., RequirementDocument],
     db: Session,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """managerが要件レビューを作成、取得、更新、削除できることを確認する。"""
     user = create_test_user(email="manager@example.com")
@@ -3151,14 +3208,18 @@ def test_requirement_review_crud_allows_manager(
     db.refresh(requirement)
     authorize_as(client, user)
 
-    create_response = client.post(
-        f"/projects/{project.id}/requirements/{requirement.id}/reviews",
-        json={
-            "reviewer_id": reviewer.id,
-            "status": "pending",
-            "comment": "レビューお願いします",
-        },
-    )
+    path = f"/projects/{project.id}/requirements/{requirement.id}/reviews"
+    data = {
+        "reviewer_id": reviewer.id,
+        "status": "pending",
+        "comment": "レビューお願いします",
+    }
+    blocked = client.post(path, json=data)
+    assert blocked.status_code == 409
+    assert blocked.json()["code"] == "LEGACY_REQUIREMENT_REVIEW_CREATION_DISABLED"
+    monkeypatch.setattr(settings, "legacy_requirement_review_creation_enabled", True)
+    create_response = client.post(path, json=data)
+    monkeypatch.setattr(settings, "legacy_requirement_review_creation_enabled", False)
     review_id = create_response.json()["id"]
     list_response = client.get(
         f"/projects/{project.id}/requirements/{requirement.id}/reviews"

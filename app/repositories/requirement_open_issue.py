@@ -37,6 +37,7 @@ class RequirementOpenIssueRepository:
             due_date=issue_in.due_date,
             status=issue_in.status,
             resolution=issue_in.resolution,
+            blocks_approval=issue_in.blocks_approval,
             created_by=actor_id,
             updated_by=actor_id,
         )
@@ -131,6 +132,7 @@ class RequirementOpenIssueRepository:
         page_size: int,
         q: str | None = None,
         status: str | None = None,
+        resolved: bool | None = None,
         assignee_id: int | None = None,
         due_date_from: date | None = None,
         due_date_to: date | None = None,
@@ -152,6 +154,9 @@ class RequirementOpenIssueRepository:
             )
         if status is not None:
             query = query.filter(RequirementOpenIssue.status == status)
+        if resolved is not None:
+            is_resolved = RequirementOpenIssue.status == "resolved"
+            query = query.filter(is_resolved if resolved else ~is_resolved)
         if assignee_id is not None:
             query = query.filter(RequirementOpenIssue.assignee_id == assignee_id)
         if due_date_from is not None:
@@ -198,6 +203,8 @@ class RequirementOpenIssueRepository:
         commit: bool = True,
     ) -> RequirementOpenIssue:
         """未決事項を更新する。"""
+        if issue_in.blocks_approval is not None:
+            issue.blocks_approval = issue_in.blocks_approval
         for field in (
             "related_requirement_id",
             "title",

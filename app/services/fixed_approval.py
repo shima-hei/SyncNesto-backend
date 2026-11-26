@@ -11,6 +11,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.exc import DBAPIError
 
 from app.core import error_messages
+from app.core.config import settings
 from app.core.exceptions import (
     AppError,
     BadRequestError,
@@ -18,6 +19,7 @@ from app.core.exceptions import (
     FixedApprovalScopeConflictError,
     FixedApprovalTooLargeError,
     ForbiddenError,
+    LegacyRequirementApprovalCreationDisabledError,
     NotFoundError,
     ObjectiveProjectionUpgradeError,
     VersionConflictError,
@@ -307,6 +309,8 @@ class FixedApprovalService:
             for ref in release.source_refs[1:]
         ):
             raise FixedApprovalScopeConflictError()
+        if not settings.legacy_requirement_approval_creation_enabled:
+            raise LegacyRequirementApprovalCreationDisabledError()
         candidate = db.scalar(
             self.repository.candidates(
                 db,

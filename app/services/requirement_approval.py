@@ -3,7 +3,12 @@
 from sqlalchemy.orm import Session
 
 from app.core import error_messages
-from app.core.exceptions import BadRequestError, NotFoundError
+from app.core.config import settings
+from app.core.exceptions import (
+    BadRequestError,
+    LegacyRequirementApprovalCreationDisabledError,
+    NotFoundError,
+)
 from app.models.requirement import RequirementApproval, RequirementDocument
 from app.repositories.requirement_approval import RequirementApprovalRepository
 from app.repositories.requirement_document import RequirementDocumentRepository
@@ -63,9 +68,7 @@ class RequirementApprovalService:
             document_repository or RequirementDocumentRepository()
         )
         self.section_repository = section_repository or RequirementSectionRepository()
-        self.requirement_repository = (
-            requirement_repository or RequirementRepository()
-        )
+        self.requirement_repository = requirement_repository or RequirementRepository()
         self.open_issue_repository = (
             open_issue_repository or RequirementOpenIssueRepository()
         )
@@ -99,6 +102,8 @@ class RequirementApprovalService:
             target_type=approval_in.target_type,
             target_id=approval_in.target_id,
         )
+        if not settings.legacy_requirement_approval_creation_enabled:
+            raise LegacyRequirementApprovalCreationDisabledError()
         approval = self.repository.create(
             db,
             document_id=document.id,

@@ -239,6 +239,8 @@ class ProjectRepository:
             project.navigation = (
                 project_in.navigation.model_dump() if project_in.navigation else None
             )
+        if project_in.requirement_review_required is not None:
+            project.requirement_review_required = project_in.requirement_review_required
         if project_in.project_code is not None:
             project.project_code = project_in.project_code
         if project_in.name is not None:

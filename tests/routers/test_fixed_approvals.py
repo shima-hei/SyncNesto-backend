@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.exc import DBAPIError
 
+from app.core.config import settings
 from app.models.fixed_approval import (
     FixedApprovalEvent,
     FixedApprovalRequest,
@@ -171,8 +172,11 @@ def test_fixed_request_survives_original_document_purge(client, db, approval_con
 
 
 @pytest.fixture
-def approval_context(client, db, context, create_test_user, assign_project_role):
+def approval_context(
+    client, db, context, create_test_user, assign_project_role, monkeypatch
+):
     """申請者・指定本人と、一つの固定文書を作る。"""
+    monkeypatch.setattr(settings, "legacy_requirement_approval_creation_enabled", True)
     approver = create_test_user(email=f"approver-{uuid4()}@example.com")
     manager = create_test_user(email=f"manager-{uuid4()}@example.com")
     assign_project_role(
@@ -384,6 +388,29 @@ def test_legacy_switch_blocks_old_api_and_preserves_history(
     assert listing.json()["total"] == 2
     assert db.scalar(select(func.count()).select_from(LegacyApprovalImport)) == 1
     assert db.scalar(select(func.count()).select_from(FixedApprovalRequest)) == 1
+
+
+def test_cutover_rejects_new_fixed_approval_but_retains_existing_decision(
+    client, db, approval_context, monkeypatch
+):
+    """従来の依頼を保ったまま、新規の個別要件承認を止める。"""
+    ctx = approval_context
+    row, body = request(client, ctx)
+    monkeypatch.setattr(settings, "legacy_requirement_approval_creation_enabled", False)
+    replay = client.post(ctx["approvals"], json=body)
+    assert replay.status_code == 200 and replay.json()["id"] == row["id"]
+    results = [
+        client.post(ctx["approvals"] + "/preview", json=scope_data(ctx)),
+        client.post(ctx["approvals"], json={**body, "request_id": str(uuid4())}),
+    ]
+    for response in results:
+        assert response.status_code == 409
+        assert (
+            response.json()["code"] == "LEGACY_REQUIREMENT_APPROVAL_CREATION_DISABLED"
+        )
+    assert db.scalar(select(func.count()).select_from(FixedApprovalRequest)) == 1
+    authorize_as(client, ctx["approver"])
+    assert decide(client, ctx, row)[0]["status"] == "approved"
 
 
 def test_candidates_do_not_expand_existing_permissions(client, approval_context):

@@ -6,10 +6,12 @@ from uuid import uuid4
 
 from sqlalchemy import func, select
 
+from app.core.config import settings
 from app.core.exceptions import (
     DuplicateResourceError,
     FixedApprovalScopeConflictError,
     FixedApprovalTooLargeError,
+    LegacyRequirementApprovalCreationDisabledError,
     NotFoundError,
     VersionConflictError,
 )
@@ -177,6 +179,11 @@ class GuestFixedApprovalService:
         if len(canonical_bytes(data.model_dump(mode="json"))) > 1024 * 1024:
             raise FixedApprovalTooLargeError()
         pub, release, nodes, target = self.source(db, actor, project_id, data)
+        if (
+            target.node_kind in {"requirement", "requirement_document"}
+            and not settings.legacy_requirement_approval_creation_enabled
+        ):
+            raise LegacyRequirementApprovalCreationDisabledError()
         candidates = self.recipients(
             db, actor, project_id, pub.id, grant_id=data.grant_id
         )

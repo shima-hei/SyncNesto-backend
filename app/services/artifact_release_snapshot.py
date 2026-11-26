@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from pydantic import ValidationError
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core import error_messages
@@ -52,6 +52,25 @@ def canonical_bytes(value: Any) -> bytes:
 def digest(value: Any) -> str:
     """schemaで指定したJSONの内容hashを返す。"""
     return hashlib.sha256(canonical_bytes(value)).hexdigest()
+
+
+def requirement_snapshot_payload(requirement: Requirement) -> dict:
+    """要件本文として固定・比較する属性をそろえる。"""
+    return {
+        key: getattr(requirement, key)
+        for key in (
+            "requirement_code",
+            "requirement_type",
+            "category",
+            "title",
+            "description",
+            "rationale",
+            "acceptance_criteria",
+            "priority",
+            "status",
+            "source",
+        )
+    }
 
 
 @dataclass
@@ -237,17 +256,15 @@ class ArtifactSnapshotBuilder:
                 .where(
                     Requirement.document_id == document_id,
                     Requirement.deleted_at.is_(None),
-                    or_(
-                        Requirement.section_id.is_(None),
-                        Requirement.section_id.in_([s.id for s in sections]),
-                    ),
                 )
                 .order_by(Requirement.id)
             )
         )
         groups: dict[int | None, list[Requirement]] = {}
+        active_sections = {section.id for section in sections}
         for item in requirements:
-            groups.setdefault(item.section_id, []).append(item)
+            section_id = item.section_id if item.section_id in active_sections else None
+            groups.setdefault(section_id, []).append(item)
         detail_groups: dict[int, list[RequirementDetail]] = {}
         for detail in db.scalars(
             select(RequirementDetail)
@@ -290,21 +307,7 @@ class ArtifactSnapshotBuilder:
             requirement,
             parent,
             position,
-            {
-                k: getattr(requirement, k)
-                for k in (
-                    "requirement_code",
-                    "requirement_type",
-                    "category",
-                    "title",
-                    "description",
-                    "rationale",
-                    "acceptance_criteria",
-                    "priority",
-                    "status",
-                    "source",
-                )
-            },
+            requirement_snapshot_payload(requirement),
         )
         if details is None:
             details = db.scalars(

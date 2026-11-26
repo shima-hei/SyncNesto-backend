@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    true,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -39,6 +40,11 @@ class Project(Base):
     navigation: Mapped[dict | None] = mapped_column(
         JSONB(none_as_null=True),
         comment=db_comment("案件ナビゲーション", "案件内メニューの順序と表示位置"),
+    )
+    requirement_review_required: Mapped[bool] = mapped_column(
+        default=True,
+        server_default=true(),
+        comment=db_comment("承認前レビュー", "正式承認の申請にレビュー完了を要する"),
     )
     estimate_method: Mapped[str] = mapped_column(
         String(16),

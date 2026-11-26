@@ -3,11 +3,12 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import or_, text
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.models.requirement import (
     Requirement,
+    RequirementSection,
 )
 from app.schemas.requirement import (
     RequirementCreate,
@@ -17,6 +18,32 @@ from app.schemas.requirement import (
 
 class RequirementRepository:
     """Requirementテーブルへのデータアクセス処理を提供する。"""
+
+    def section_counts(self, db: Session, document_id: int) -> dict[int | None, int]:
+        """有効な要件を章ごとに集計する。"""
+        return dict(
+            db.execute(
+                select(RequirementSection.id, func.count(Requirement.id))
+                .select_from(Requirement)
+                .outerjoin(RequirementSection, self._active_section())
+                .where(
+                    Requirement.document_id == document_id,
+                    Requirement.deleted_at.is_(None),
+                )
+                .group_by(RequirementSection.id)
+                .order_by(RequirementSection.id)
+            )
+            .tuples()
+            .all()
+        )
+
+    @staticmethod
+    def _active_section():
+        return and_(
+            RequirementSection.id == Requirement.section_id,
+            RequirementSection.document_id == Requirement.document_id,
+            RequirementSection.deleted_at.is_(None),
+        )
 
     def create(
         self,
@@ -134,6 +161,7 @@ class RequirementRepository:
         status: str | None = None,
         requirement_type: str | None = None,
         section_id: int | None = None,
+        unclassified: bool = False,
         priority: str | None = None,
         owner_id: int | None = None,
         sort: str | None = None,
@@ -158,7 +186,11 @@ class RequirementRepository:
             query = query.filter(Requirement.status == status)
         if requirement_type is not None:
             query = query.filter(Requirement.requirement_type == requirement_type)
-        if section_id is not None:
+        if unclassified:
+            query = query.filter(
+                ~select(RequirementSection.id).where(self._active_section()).exists()
+            )
+        elif section_id is not None:
             query = query.filter(Requirement.section_id == section_id)
         if priority is not None:
             query = query.filter(Requirement.priority == priority)

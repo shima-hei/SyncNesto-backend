@@ -16,6 +16,7 @@ from app.presenters.requirement import (
 from app.routers import requirements_shared as shared
 from app.schemas.requirement import (
     RequirementCreate,
+    RequirementItemCounts,
     RequirementListResponse,
     RequirementRead,
     RequirementRevisionRead,
@@ -71,6 +72,7 @@ def list_requirements(
     page_size: int = Query(default=20, ge=1, le=100),
     document_id: int | None = Query(default=None),
     section_id: int | None = Query(default=None),
+    unclassified: bool = Query(default=False),
     q: str | None = Query(default=None),
     status: str | None = Query(default=None),
     requirement_type: str | None = Query(default=None),
@@ -90,6 +92,7 @@ def list_requirements(
         page_size: 1ページあたりの取得件数。
         document_id: 絞り込み対象の要件定義書ID。
         section_id: 絞り込み対象の要件定義セクションID。
+        unclassified: 章に属さない要件に絞り込む。
         q: 検索キーワード。
         status: 絞り込み対象のステータス。
         requirement_type: 絞り込み対象の要件種別。
@@ -111,6 +114,7 @@ def list_requirements(
         page_size=page_size,
         document_id=document_id,
         section_id=section_id,
+        unclassified=unclassified,
         q=q,
         status=status,
         requirement_type=requirement_type,
@@ -128,6 +132,20 @@ def list_requirements(
         users_by_id=shared.get_requirement_owner_users_by_id(db, requirements),
         storage_service=shared.storage_service,
     )
+
+
+@router.get(
+    "/requirement-documents/{document_id}/item-counts",
+    response_model=RequirementItemCounts,
+)
+def read_requirement_item_counts(
+    project_id: int,
+    document_id: int,
+    _: User = Depends(require_project_permission("requirement:read")),
+    db: Session = Depends(get_db),
+) -> RequirementItemCounts:
+    """定義書の章別・未分類の要件件数を取得する。"""
+    return shared.requirement_service.document_item_counts(db, project_id, document_id)
 
 
 @router.get(

@@ -227,6 +227,21 @@ class RequirementRead(RequirementBase):
     model_config = {"from_attributes": True}
 
 
+class RequirementSectionItemCount(BaseModel):
+    """章にある有効な個別要件の件数。"""
+
+    section_id: int
+    count: int
+
+
+class RequirementItemCounts(BaseModel):
+    """定義書全体・未分類・章別の要件件数。"""
+
+    total: int
+    unclassified: int
+    sections: list[RequirementSectionItemCount]
+
+
 class RequirementListResponse(BaseModel):
     """要件一覧レスポンスschema。"""
 
@@ -248,6 +263,7 @@ class RequirementOpenIssueBase(BaseModel):
     due_date: date | None = None
     status: str = "open"
     resolution: str | None = None
+    blocks_approval: bool = True
 
 
 class RequirementOpenIssueCreate(RequirementOpenIssueBase):
@@ -269,6 +285,7 @@ class RequirementOpenIssueUpdate(BaseModel):
     due_date: date | None = None
     status: str | None = None
     resolution: str | None = None
+    blocks_approval: bool | None = None
     reason: str | None = None
 
 
