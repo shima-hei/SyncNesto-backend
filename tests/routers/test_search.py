@@ -9,10 +9,11 @@ from sqlalchemy import event
 
 from app.core.config import settings
 from app.models.demo import DemoSession
-from app.models.document import ProjectDocument
+from app.models.document import DocumentAttachment, ProjectDocument
 from app.models.project import Project, ProjectMember
 from app.models.rbac import Permission, Role, RolePermission
 from app.models.requirement import Requirement, RequirementDocument
+from app.models.specification import Specification
 from app.models.task import Task
 from app.models.tenant import Tenant, TenantMember
 from app.models.test_design import (
@@ -24,6 +25,7 @@ from app.models.test_design import (
 from app.models.test_design import (
     TestItem as Item,
 )
+from app.models.user import UserType
 from app.repositories.rbac import RbacRepository
 from tests.helpers.auth import authorize_as
 
@@ -125,6 +127,155 @@ def test_all_kinds_body_counts_and_project_filters(client, context):
         assert search(client, project_id=project.id)["total"] == 0
     assert search(client, project_id=999999)["counts"] == dict(
         requirement=0, task=0, test=0, document=0
+    )
+
+
+def test_smart_links_resolve_only_readable_exact_references(client, db, context):
+    own, other, hidden = context["projects"]
+    resources = context["seed"](own)
+    second = context["seed"](other)
+    secret = context["seed"](hidden)
+    actor = context["user"]
+    attachment = DocumentAttachment(
+        document_id=resources["document"].id,
+        filename="秘密設計.pdf",
+        content_type="application/pdf",
+        byte_size=10,
+        storage_key="test-only-pdf",
+        uploaded_by=actor.id,
+    )
+    specification = Specification(
+        project_id=own.id,
+        kind="api",
+        title="備品検索API",
+        content={},
+        created_by=actor.id,
+        updated_by=actor.id,
+    )
+    resources["task"].assignee_id = actor.id
+    db.add_all([attachment, specification])
+    db.commit()
+
+    def ref(kind, entry, project=own, container=None):
+        return dict(
+            kind=kind,
+            id=str(entry.id),
+            project_id=project.id,
+            container_id=container,
+        )
+
+    references = [
+        ref("project", own),
+        ref("requirement_document", resources["requirement_document"]),
+        ref(
+            "requirement",
+            resources["requirement"],
+            container=resources["requirement_document"].id,
+        ),
+        ref("task", resources["task"]),
+        ref("specification", specification),
+        ref("test_design", resources["test_design"]),
+        ref("test_case", resources["test_case"], container=resources["test_design"].id),
+        ref("test_item", resources["test_item"], container=resources["test_design"].id),
+        ref("document", resources["document"]),
+        ref("document_attachment", attachment, container=resources["document"].id),
+        ref("task", second["task"], other),
+    ]
+    rejected = [
+        ref("task", resources["task"], other),
+        ref("task", secret["task"], hidden),
+        ref("test_case", resources["test_case"], container=second["test_design"].id),
+    ]
+    response = client.post(
+        "/search/smart-links/resolve", json={"references": references + rejected}
+    )
+    assert response.status_code == 200, response.text
+    assert response.headers["Cache-Control"] == "private, no-store"
+    rows = response.json()
+    assert {tuple((r["kind"], r["id"], r["project_id"])) for r in rows} == {
+        (r["kind"], r["id"], r["project_id"]) for r in references
+    }
+    assert all(row["preview"] is None for row in rows)
+    assert (
+        next(r for r in rows if r["kind"] == "specification")["specification_kind"]
+        == "api"
+    )
+    preview = client.post(
+        "/search/smart-links/resolve", json={"references": references, "preview": True}
+    )
+    assert preview.status_code == 200, preview.text
+    details = {(r["kind"], r["project_id"]): r["preview"] for r in preview.json()}
+    assert details["task", own.id]["assignee"]["name"] == actor.name
+    assert details["test_design", own.id]["test_item_count"] == 1
+    assert details["document_attachment", own.id]["file_type"] == "application/pdf"
+
+    resources["task"].title = "変更後のタスク"
+    resources["document"].deleted_at = datetime.now(UTC)
+    db.commit()
+    changed = client.post(
+        "/search/smart-links/resolve", json={"references": references}
+    )
+    assert changed.status_code == 200, changed.text
+    assert (
+        next(
+            row
+            for row in changed.json()
+            if row["kind"] == "task" and row["project_id"] == own.id
+        )["title"]
+        == "変更後のタスク"
+    )
+    assert {"document", "document_attachment"}.isdisjoint(
+        row["kind"] for row in changed.json()
+    )
+
+    context["members"][0].deleted_at = datetime.now(UTC)
+    db.commit()
+    after = client.post("/search/smart-links/resolve", json={"references": references})
+    assert [(r["kind"], r["project_id"]) for r in after.json()] == [("task", other.id)]
+
+    actor.user_type = UserType.GUEST
+    db.commit()
+    assert (
+        client.post(
+            "/search/smart-links/resolve", json={"references": references}
+        ).json()
+        == []
+    )
+    assert client.get("/search/smart-links", params={"q": "タスク"}).json() == []
+
+
+def test_smart_link_picker_prioritizes_current_project_without_body_matches(
+    client, context
+):
+    own, other, hidden = context["projects"]
+    rows = context["seed"](own)
+    context["seed"](other)
+    context["seed"](hidden)
+
+    def find(q, **params):
+        result = client.get("/search/smart-links", params={"q": q, **params})
+        assert result.status_code == 200, result.text
+        return result.json()
+
+    assert find("横断キーワード") == []
+    assert [
+        r["project_id"]
+        for r in find("タスク", group="task", preferred_project=other.id)
+    ] == [other.id, own.id]
+    assert [r["id"] for r in find(rows["task"].task_code)] == [str(rows["task"].id)]
+    assert [
+        r["title"] for r in find("参加", group="project", preferred_project=other.id)
+    ] == ["参加B", "参加A"]
+    assert (
+        client.post(
+            "/search/smart-links/resolve",
+            json={
+                "references": [
+                    {"kind": "task", "id": "https://example.com/", "project_id": own.id}
+                ]
+            },
+        ).status_code
+        == 422
     )
 
 
@@ -249,10 +400,26 @@ def test_tenant_selection_limits_shared_identity(client, db, context):
     assert result["total"] == 7
     assert {r["project_id"] for r in result["items"]} == {project.id}
     assert client.get("/search/projects").json()["items"][0]["name"] == "別組織案件"
+    both = [
+        dict(kind="project", id=str(p.id), project_id=p.id)
+        for p in (context["projects"][0], project)
+    ]
+    assert [
+        item["project_id"]
+        for item in client.post(
+            "/search/smart-links/resolve", json={"references": both}
+        ).json()
+    ] == [project.id]
     client.headers["X-Tenant-ID"] = str(context["projects"][0].tenant_id)
     assert {r["project_id"] for r in search(client)["items"]} == {
         context["projects"][0].id
     }
+    assert [
+        item["project_id"]
+        for item in client.post(
+            "/search/smart-links/resolve", json={"references": both}
+        ).json()
+    ] == [context["projects"][0].id]
 
 
 def test_stable_pagination_and_fixed_query_count(client, db, context):
