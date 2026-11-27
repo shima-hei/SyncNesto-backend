@@ -2,12 +2,13 @@
 
 from contextlib import contextmanager
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import uuid4, uuid5
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from app.core.config import settings
 from app.core.exceptions import (
+    BadRequestError,
     DuplicateResourceError,
     FixedApprovalScopeConflictError,
     FixedApprovalTooLargeError,
@@ -16,6 +17,7 @@ from app.core.exceptions import (
     VersionConflictError,
 )
 from app.models.fixed_approval import FixedApprovalEvent
+from app.models.guest_fixed_approval import FixedApprovalGuestBinding
 from app.models.user import User
 from app.repositories.artifact_publication_access import PublicationAccessRepository
 from app.repositories.guest_fixed_approval import GuestFixedApprovalRepository
@@ -25,6 +27,7 @@ from app.schemas.guest_fixed_approval import (
     GuestApprovalCandidates,
     GuestApprovalPreview,
 )
+from app.services.artifact_publication_access import ArtifactPublicationAccessService
 from app.services.artifact_release_snapshot import canonical_bytes, digest
 from app.services.fixed_approval import FixedApprovalService
 from app.services.fixed_approval_notification import emit_fixed_approval
@@ -51,20 +54,7 @@ class GuestFixedApprovalService:
         self.access = PublicationAccessRepository()
         self.repository = GuestFixedApprovalRepository()
         self.approvals = FixedApprovalService()
-
-    def related_user(self, original, project_id, grant_id):
-        """資格境界より先に取得するFK対象のIDだけを予備解決する。"""
-        g, p = self.access.grants, self.access.participations
-        with original.get_bind().engine.connect() as connection:
-            return connection.scalar(
-                select(p.c.user_id)
-                .join(g, g.c.participation_id == p.c.id)
-                .where(
-                    g.c.id == grant_id,
-                    g.c.project_id == project_id,
-                    p.c.project_id == project_id,
-                )
-            )
+        self.sharing = ArtifactPublicationAccessService()
 
     def permissions(self, db, actor, project_id, release, target_kind):
         """新しい外部依頼の管理に必要な既存権限を再確認する。"""
@@ -95,18 +85,41 @@ class GuestFixedApprovalService:
         ) as (db, actor):
             yield db, actor
 
-    def source(self, db, actor, project_id, data):
+    def source(self, db, actor, project_id, data, *, allow_prepared=False):
         """公開中の同Projectの全固定構成を確認する。"""
         publication = self.access.publication(db, project_id, data.publication_id)
-        if publication is None or publication.publication_state != "published":
+        states = {"prepared", "published"} if allow_prepared else {"published"}
+        if publication is None or publication.publication_state not in states:
             raise NotFoundError()
         release, nodes, target = target_and_nodes(
             db, actor, project_id, publication, data.target_node_id
         )
         self.permissions(db, actor, project_id, release, target.node_kind)
+        if publication.publication_state == "prepared" and not self._standalone(
+            release, target
+        ):
+            raise NotFoundError()
         return publication, release, nodes, target
 
-    def recipients(self, db, actor, project_id, publication_id, *, grant_id=None, q=""):
+    @staticmethod
+    def _standalone(release, target):
+        return (
+            target.node_kind in {"specification", "test_design"}
+            and release.source_kind == target.node_kind
+            and release.source_id == target.source_id
+        )
+
+    def recipients(
+        self,
+        db,
+        actor,
+        project_id,
+        publication_id,
+        *,
+        grant_id=None,
+        q="",
+        new_grants=(),
+    ):
         """既存の公開許可を持つ別の本人だけを候補にする。"""
         g, part = self.access.grants, self.access.participations
         candidates = self.access.candidates(
@@ -129,6 +142,7 @@ class GuestFixedApprovalService:
                 g.c.publication_id == publication_id,
                 g.c.status == "active",
                 g.c.expires_at > func.clock_timestamp(),
+                or_(g.c.decision_only.is_(False), g.c.id.in_(new_grants)),
                 part.c.id.in_(select(candidates.c.id)),
                 User.id != actor.id,
                 User.password_change_required.is_(False),
@@ -143,12 +157,13 @@ class GuestFixedApprovalService:
     def candidates(self, original, user, project_id, data, q, page, page_size):
         """候補と件数を同じ認可集合から取得する。"""
         with self.internal(original, user, project_id) as (db, actor):
-            self.source(db, actor, project_id, data)
+            self.source(db, actor, project_id, data, allow_prepared=True)
             rows = self.recipients(db, actor, project_id, data.publication_id, q=q)
             return GuestApprovalCandidates(
                 items=[
                     GuestApprovalCandidate(
                         grant_id=r["grant_id"],
+                        participation_id=r["participation_id"],
                         name=r["name"],
                         expires_at=r["expires_at"],
                     )
@@ -165,7 +180,9 @@ class GuestFixedApprovalService:
         from app.services.shared_fixed_approval import basis_page
 
         with self.internal(original, user, project_id) as (db, actor):
-            pub, _, nodes, target = self.source(db, actor, project_id, data)
+            pub, _, nodes, target = self.source(
+                db, actor, project_id, data, allow_prepared=True
+            )
             bases = external_bases(db, project_id, nodes, target)
             return basis_page(
                 public_bases(pub, bases),
@@ -178,18 +195,37 @@ class GuestFixedApprovalService:
         """指定公開内容と公開する依頼文・例外の構成を封印する。"""
         if len(canonical_bytes(data.model_dump(mode="json"))) > 1024 * 1024:
             raise FixedApprovalTooLargeError()
-        pub, release, nodes, target = self.source(db, actor, project_id, data)
+        pub, release, nodes, target = self.source(
+            db, actor, project_id, data, allow_prepared=data.sharing is not None
+        )
         if (
             target.node_kind in {"requirement", "requirement_document"}
             and not settings.legacy_requirement_approval_creation_enabled
         ):
             raise LegacyRequirementApprovalCreationDisabledError()
-        candidates = self.recipients(
-            db, actor, project_id, pub.id, grant_id=data.grant_id
-        )
+        if data.sharing is not None:
+            if not self._standalone(release, target):
+                raise BadRequestError(
+                    "設計書またはテスト設計書を主資料とする固定版を指定してください。"
+                )
+            candidates = self.sharing.preview_decision_recipients(
+                db, actor, project_id, pub, data.sharing
+            )
+        else:
+            candidates = self.recipients(
+                db, actor, project_id, pub.id, grant_id=data.grant_id
+            )
         if not candidates:
             raise FixedApprovalScopeConflictError()
         recipient = candidates[0]
+        deadline = data.decision_expires_at
+        now = db.scalar(select(func.clock_timestamp()))
+        if deadline is not None and (
+            deadline <= now or deadline > recipient["expires_at"]
+        ):
+            raise BadRequestError(
+                "回答期限は現在時刻より後で、共有期限以内にしてください。"
+            )
         bases = external_bases(db, project_id, nodes, target)
         reverse = {value: key for key, value in pub.source_manifest["id_map"].items()}
         exceptions = {
@@ -218,6 +254,8 @@ class GuestFixedApprovalService:
             exception_count=len(exceptions),
             policy=POLICY,
         )
+        if deadline is not None:
+            context["decision_expires_at"] = deadline.isoformat()
         if len(canonical_bytes(context)) > 1024 * 1024:
             raise FixedApprovalTooLargeError()
         public_digest = digest(context)
@@ -228,7 +266,11 @@ class GuestFixedApprovalService:
                 context=context,
                 publication_id=str(pub.id),
                 target=str(data.target_node_id),
-                grant=str(data.grant_id),
+                grant=(
+                    data.sharing.model_dump(mode="json")
+                    if data.sharing is not None
+                    else str(data.grant_id)
+                ),
                 publication_version=pub.publication_version,
                 grant_version=recipient["grant_version"],
                 participant_version=recipient["participant_version"],
@@ -246,6 +288,7 @@ class GuestFixedApprovalService:
             approver_name=recipient["name"],
             requester_name=actor.name,
             request_note=context["request_note"],
+            decision_expires_at=deadline,
             exception_count=len(exceptions),
             basis_counts=counts(bases),
             public_scope_digest=public_digest,
@@ -262,11 +305,19 @@ class GuestFixedApprovalService:
     @retry_publication_operation
     def create(self, original, user, project_id, data):
         """対応・依頼・根拠・封印・監査を一つのtransactionで保存する。"""
-        related = self.related_user(original, project_id, data.grant_id)
-        with self.internal(
-            original, user, project_id, related=(related,) if related else ()
-        ) as (db, actor):
+        related = self.sharing.decision_users(
+            original,
+            project_id,
+            data.publication_id,
+            [data.grant_id] if data.grant_id is not None else [],
+            data.sharing,
+        )
+        with self.internal(original, user, project_id, related=related) as (db, actor):
             values = data.model_dump(mode="json")
+            if data.sharing is None:
+                values.pop("sharing")
+            if values.get("decision_expires_at") is None:
+                values.pop("decision_expires_at", None)
             request_digest = digest(values)
             previous = self.approvals.repository.by_operation(
                 db, project_id, actor.id, data.request_id
@@ -284,8 +335,19 @@ class GuestFixedApprovalService:
             if (
                 not data.confirm_public_scope
                 or preview.preview_digest != data.expected_preview_digest
+                or recipient["user_id"] not in related
             ):
                 raise FixedApprovalScopeConflictError()
+            grant_id = data.grant_id
+            if data.sharing is not None:
+                (grant_id,) = self.sharing.publish_for_decision(
+                    db,
+                    actor,
+                    project_id,
+                    pub.id,
+                    data.sharing,
+                    uuid5(data.request_id, "fixed-approval-publication"),
+                )
             internal_data = SimpleNamespace(
                 release_id=pub.release_id,
                 target_node_id=target.id,
@@ -315,7 +377,7 @@ class GuestFixedApprovalService:
                     publication_id=pub.id,
                     public_target_node_id=data.target_node_id,
                     participation_id=recipient["participation_id"],
-                    grant_id=data.grant_id,
+                    grant_id=grant_id,
                     projection_version=pub.projection_version,
                     public_scope_digest=preview.public_scope_digest,
                     public_context=context,
@@ -347,6 +409,15 @@ class GuestFixedApprovalService:
                 raise FixedApprovalScopeConflictError()
             now = db.scalar(select(func.clock_timestamp()))
             row.status, row.version, row.finalized_at = "cancelled", 2, now
+            bindings = FixedApprovalGuestBinding.__table__
+            self.sharing.revoke_for_decision(
+                db,
+                actor,
+                project_id,
+                bindings,
+                bindings.c.approval_id == row.id,
+                data.reason.strip(),
+            )
             db.flush()
             db.add(
                 FixedApprovalEvent(

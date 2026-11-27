@@ -127,6 +127,9 @@ class CurrentUserRead(UserRead):
 
     demo: DemoStatus | None = None
     review_access_expires_at: datetime | None = None
+    guest_workspace_only: bool = Field(
+        default=False, exclude_if=lambda value: not value
+    )
     password_change_required: bool = False
     initial_password_expires_at: datetime | None = None
 

@@ -16,7 +16,9 @@ from app.schemas.artifact_publication import (
     PublicationPreview,
     PublicationPreviewRequest,
     PublicationRead,
+    PublicationState,
 )
+from app.schemas.artifact_release import SourceKind
 from app.services.artifact_publication import ArtifactPublicationService
 
 router = APIRouter(
@@ -63,9 +65,22 @@ def list_publications(
     release_id: UUID | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    source_kind: SourceKind | None = None,
+    source_id: int | None = Query(default=None, ge=1),
+    state: Annotated[list[PublicationState] | None, Query(max_length=3)] = None,
 ):
-    """現在の許可範囲にある準備版だけを一覧する。"""
-    return service.list(db, user, project_id, release_id, page, page_size)
+    """現在の許可範囲にある固定版の公開設定を一覧する。"""
+    return service.list(
+        db,
+        user,
+        project_id,
+        release_id,
+        page,
+        page_size,
+        source_kind=source_kind,
+        source_id=source_id,
+        states=state,
+    )
 
 
 @router.get("/{publication_id}", response_model=PublicationRead)

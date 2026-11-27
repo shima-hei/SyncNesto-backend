@@ -69,7 +69,7 @@ class DeliveryS3(MemoryS3Client):
 
 
 @pytest.fixture
-def download_fixture(client, db, context, monkeypatch, create_test_user):
+def download_fixture(client, db, context, monkeypatch, create_test_user, request):
     """保全済み添付つき公開版と、別組織の本人2名を用意する。"""
     ctx = context
     preservation, _ = prepare(client, ctx)
@@ -106,7 +106,15 @@ def download_fixture(client, db, context, monkeypatch, create_test_user):
         guests.append((person, part))
     ctx["guests"] = guests
     authorize_as(client, ctx["user"])
-    publish(client, ctx)
+    if hasattr(request, "param"):
+        ctx["can_download"] = request.param
+        publish(
+            client,
+            ctx,
+            recipient_options={guests[0][1].id: {"download_allowed": request.param}},
+        )
+    else:
+        publish(client, ctx)
     ctx["sid"] = authorize_as(client, guests[0][0])
     ctx["revision"] = client.get(shared_path(ctx)).json()["authorization_revision"]
     file = ctx["publication"]["content"]["files"][0]
@@ -128,6 +136,34 @@ def download_fixture(client, db, context, monkeypatch, create_test_user):
 
 def post(client, ctx):
     return client.post(ctx["url"], json=ctx["request"])
+
+
+@pytest.mark.parametrize("download_fixture", [False, True], indirect=True)
+def test_authenticated_file_content(client, db, download_fixture):
+    ctx = download_fixture
+    path = ctx["url"].removesuffix("/download") + "/content"
+    params = {"revision": ctx["revision"]}
+    files = client.get(shared_path(ctx, "/files")).json()
+    assert files["download_allowed"] is ctx["can_download"]
+    assert post(client, ctx).status_code == 404
+    response = client.get(path, params=params)
+    assert response.headers["cache-control"] == "private, no-store"
+    assert ctx["delivery"].signs == 0
+    if not files["download_allowed"]:
+        assert response.status_code == 404
+        assert not ctx["delivery"].objects
+        return
+    assert response.status_code == 200, response.text
+    assert response.content == ctx["body"]
+    assert response.headers["content-disposition"].startswith("attachment;")
+    grant = db.scalar(select(ArtifactPublicationGrant))
+    db.execute(text("SELECT publication_lock(:p)"), {"p": ctx["project"].id})
+    grant.status = "revoked"
+    grant.version += 1
+    grant.revoked_at = datetime.now(UTC)
+    grant.revocation_reason = "検証"
+    db.commit()
+    assert client.get(path, params=params).status_code == 404
 
 
 def test_download_selected_fixed_file_and_reuses_private_copy(

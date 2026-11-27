@@ -14,3 +14,11 @@ class CommentMentionOccurrence(BaseModel):
     start: int = Field(ge=0, strict=True)
     end: int = Field(gt=0, strict=True)
     display_name: str = Field(min_length=1, max_length=255)
+
+
+class CommentMentionText(BaseModel):
+    """UTF-16単位の半開区間と本文に含まれる表示名。"""
+
+    start: int = Field(ge=0, strict=True)
+    end: int = Field(gt=0, strict=True)
+    display_name: str = Field(min_length=1, max_length=255)

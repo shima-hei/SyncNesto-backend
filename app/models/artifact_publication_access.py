@@ -1,6 +1,6 @@
 """固定公開版の本人別参加資格・許可・追記の業務履歴。"""
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from sqlalchemy import (
@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     String,
+    Text,
     UniqueConstraint,
     func,
     text,
@@ -19,6 +20,28 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.models.comments import db_comment
+
+
+class GuestProjectProfile(Base):
+    """社内案件から独立した、参加ゲスト向けの公開概要。"""
+
+    __tablename__ = "guest_project_profiles"
+    __table_args__ = (
+        CheckConstraint(
+            "version > 0 AND "
+            "(starts_on IS NULL OR ends_on IS NULL OR starts_on <= ends_on)",
+            name="ck_guest_project_profile_version_and_dates",
+        ),
+        {"comment": db_comment("ゲスト公開概要", "参加者向けに明示設定した案件情報")},
+    )
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), primary_key=True)
+    name: Mapped[str | None] = mapped_column(String(255))
+    description: Mapped[str | None] = mapped_column(Text)
+    starts_on: Mapped[date | None]
+    ends_on: Mapped[date | None]
+    contact: Mapped[str | None] = mapped_column(String(255))
+    announcement: Mapped[str | None] = mapped_column(Text)
+    version: Mapped[int]
 
 
 class ProjectGuestParticipation(Base):
@@ -66,6 +89,7 @@ class ArtifactPublicationGrant(Base):
     __tablename__ = "artifact_publication_grants"
     __table_args__ = (
         UniqueConstraint("project_id", "id", name="uq_publication_grant_project"),
+        UniqueConstraint("publication_id", "id", name="uq_grant_publication_id"),
         ForeignKeyConstraint(
             ["project_id", "publication_id"],
             ["artifact_publications.project_id", "artifact_publications.id"],
@@ -99,6 +123,9 @@ class ArtifactPublicationGrant(Base):
     status: Mapped[str] = mapped_column(String(20), default="active")
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(default=1)
+    download_allowed: Mapped[bool | None]
+    comment_allowed: Mapped[bool] = mapped_column(default=False, server_default="false")
+    decision_only: Mapped[bool] = mapped_column(default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.clock_timestamp()
     )
@@ -175,3 +202,157 @@ class ArtifactPublicationEvent(Base):
     request_id: Mapped[UUID | None]
     request_digest: Mapped[str | None] = mapped_column(String(64))
     result: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+
+
+class SharedPublicationComment(Base):
+    """共有された固定版の会話。社内コメントとは独立したスレッド。"""
+
+    __tablename__ = "shared_publication_comments"
+    __table_args__ = (
+        UniqueConstraint("publication_id", "id", name="uq_shared_comment_publication"),
+        ForeignKeyConstraint(
+            ["publication_id", "parent_id"],
+            [
+                "shared_publication_comments.publication_id",
+                "shared_publication_comments.id",
+            ],
+            name="fk_shared_comment_parent",
+        ),
+        ForeignKeyConstraint(
+            ["publication_id", "node_id"],
+            [
+                "artifact_publication_nodes.publication_id",
+                "artifact_publication_nodes.id",
+            ],
+            name="fk_shared_comment_node",
+        ),
+        CheckConstraint(
+            "id <> parent_id AND node_id IS NULL OR parent_id IS NULL",
+            name="ck_shared_comment_reply_shape",
+        ),
+        CheckConstraint(
+            "anchor IS NULL OR (parent_id IS NULL AND node_id IS NOT NULL "
+            "AND jsonb_typeof(anchor) = 'object')",
+            name="ck_shared_comment_quote_shape",
+        ),
+        Index(
+            "ix_shared_comment_thread",
+            "publication_id",
+            "parent_id",
+            "created_at",
+            "id",
+        ),
+        {"comment": db_comment("共有コメント", "共有固定版に紐づく本文・返信")},
+    )
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    publication_id: Mapped[UUID] = mapped_column(ForeignKey("artifact_publications.id"))
+    parent_id: Mapped[UUID | None]
+    node_id: Mapped[UUID | None]
+    anchor: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    author_label: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.clock_timestamp()
+    )
+
+
+class SharedCommentFile(Base):
+    """非公開の添付下書きと、それを確定した共有コメント。"""
+
+    __tablename__ = "shared_publication_comment_files"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["publication_id", "comment_id"],
+            [
+                "shared_publication_comments.publication_id",
+                "shared_publication_comments.id",
+            ],
+            name="fk_shared_comment_file_comment",
+        ),
+        ForeignKeyConstraint(
+            ["publication_id", "grant_id"],
+            [
+                "artifact_publication_grants.publication_id",
+                "artifact_publication_grants.id",
+            ],
+            name="fk_shared_comment_file_grant",
+        ),
+        CheckConstraint(
+            "(comment_id IS NULL AND position IS NULL) OR "
+            "(comment_id IS NOT NULL AND position IS NOT NULL AND "
+            "position BETWEEN 0 AND 3)",
+            name="ck_shared_comment_file_position",
+        ),
+        UniqueConstraint(
+            "comment_id", "position", name="uq_shared_comment_file_position"
+        ),
+        Index(
+            "ix_shared_comment_file_drafts",
+            "publication_id",
+            "uploaded_by",
+            "created_at",
+            postgresql_where=text("comment_id IS NULL"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    publication_id: Mapped[UUID] = mapped_column(ForeignKey("artifact_publications.id"))
+    comment_id: Mapped[UUID | None]
+    position: Mapped[int | None]
+    grant_id: Mapped[UUID | None]
+    uploaded_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(32))
+    byte_size: Mapped[int]
+    content_digest: Mapped[str] = mapped_column(String(64))
+    storage_key: Mapped[str] = mapped_column(String(512), unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.clock_timestamp()
+    )
+
+
+class SharedCommentMention(Base):
+    """固定版での宛先を、ゲストの付与または社内の公開投稿へ結び付ける。"""
+
+    __tablename__ = "shared_publication_comment_mentions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["publication_id", "comment_id"],
+            [
+                "shared_publication_comments.publication_id",
+                "shared_publication_comments.id",
+            ],
+            name="fk_shared_comment_mention_comment",
+        ),
+        ForeignKeyConstraint(
+            ["publication_id", "grant_id"],
+            [
+                "artifact_publication_grants.publication_id",
+                "artifact_publication_grants.id",
+            ],
+            name="fk_shared_comment_mention_grant",
+        ),
+        ForeignKeyConstraint(
+            ["publication_id", "public_author_comment_id"],
+            [
+                "shared_publication_comments.publication_id",
+                "shared_publication_comments.id",
+            ],
+            name="fk_shared_comment_mention_author",
+        ),
+        CheckConstraint(
+            "(grant_id IS NOT NULL AND public_author_comment_id IS NULL "
+            "AND recipient_ref_id = grant_id) OR "
+            "(grant_id IS NULL AND public_author_comment_id IS NOT NULL "
+            "AND recipient_ref_id = public_author_comment_id)",
+            name="ck_shared_comment_mention_recipient",
+        ),
+    )
+
+    publication_id: Mapped[UUID]
+    comment_id: Mapped[UUID] = mapped_column(primary_key=True)
+    recipient_ref_id: Mapped[UUID] = mapped_column(primary_key=True)
+    grant_id: Mapped[UUID | None]
+    public_author_comment_id: Mapped[UUID | None]
+    occurrences: Mapped[list[dict]] = mapped_column(JSONB)

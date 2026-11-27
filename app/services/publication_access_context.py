@@ -81,6 +81,18 @@ class PublicationAccessContext:
         ):
             raise ForbiddenError()
 
+    def read_projects(self, db, original, actor, query, project_column):
+        """認可済み案件を順にロックし、待機後に一覧と件数の対象を揃える。"""
+        projects = sorted(
+            db.scalars(query.with_only_columns(project_column).distinct())
+        )
+        for project_id in projects:
+            db.execute(
+                text("SELECT publication_lock(:project,true)"), {"project": project_id}
+            )
+        self.verify(db, original, actor, internal=False)
+        return query.where(project_column.in_(projects))
+
     def management(self, db, actor, project_id, permission):
         """内部管理のメタデータ権限を本文閲覧へ流用しない。"""
         p, m, r, t = (

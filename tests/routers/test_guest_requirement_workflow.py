@@ -1,7 +1,12 @@
 """外部の公開範囲、本人の操作と内部の進捗の整合を実DBで確認する。"""
 
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
+from sqlalchemy import update
+
+from app.models.requirement_workflow import RequirementWorkflowRequest
 from app.services.artifact_release_snapshot import digest
 from tests.helpers.auth import authorize_as
 from tests.routers.test_artifact_publications import create, nodes, publication_base
@@ -11,6 +16,203 @@ from tests.routers.test_guest_fixed_approvals import guest_login
 from tests.routers.test_publication_access import access_fixture as access_fixture  # noqa: F401
 from tests.routers.test_publication_access import publish
 from tests.routers.test_test_designs import graph
+
+
+def test_standalone_review_creates_and_cancels_only_its_own_grant(
+    client, db, access_fixture
+):
+    ctx = access_fixture
+    release, _ = save(client, ctx, preview_data(ctx, kind="requirement", include=False))
+    ctx["publication"], _ = create(client, ctx, release)
+    content = ctx["publication"]["content"]
+    identity = content["id"]
+    history = f"{publication_base(ctx)}/{identity}/grants"
+    route = f"/projects/{ctx['project'].id}/guest-requirement-reviews"
+    public = f"/shared/publications/{identity}"
+    target = next(
+        node
+        for node in nodes(client, publication_base(ctx), identity)
+        if node["node_kind"] == "requirement"
+    )
+    actor, participant = ctx["guests"][0]
+    reviewer, other = ctx["guests"][1]
+    expiry = (datetime.now(UTC) + timedelta(days=1)).isoformat()
+    share = dict(
+        expected_state="prepared",
+        publication_version=1,
+        public_digest=content["public_digest"],
+        confirmed_full_content=True,
+        recipients=[
+            dict(
+                participation_id=str(participant.id),
+                version=participant.version,
+                expires_at=expiry,
+                download_allowed=False,
+            )
+        ],
+    )
+    command = dict(
+        publication_id=identity,
+        target_node_id=target["id"],
+        request_key=str(uuid4()),
+        expected_public_digest=content["public_digest"],
+        sharing=share,
+    )
+    actor.password_change_required = True
+    db.commit()
+    failed = client.post(route, json=command)
+    assert failed.status_code == 400, failed.text
+    assert client.get(history).json()["items"] == []
+    actor.password_change_required = False
+    db.commit()
+
+    independent = {
+        **share,
+        "request_id": str(uuid4()),
+        "recipients": [
+            dict(
+                participation_id=str(other.id),
+                version=other.version,
+                expires_at=expiry,
+                download_allowed=False,
+            )
+        ],
+    }
+    published = client.post(
+        f"{publication_base(ctx)}/{identity}/publish", json=independent
+    )
+    assert published.status_code == 200, published.text
+    original_grant = client.get(history).json()["items"][0]
+    mixed_command = {
+        **command,
+        "sharing": {**share, "expected_state": "published", "publication_version": 2},
+        "grant_ids": [original_grant["id"]],
+    }
+    response = client.post(route, json=mixed_command)
+    assert response.status_code == 201, response.text
+    request = response.json()
+    verified_replay = client.post(route, json=mixed_command)
+    assert (
+        verified_replay.status_code == 200
+        and verified_replay.json()["id"] == request["id"]
+    )
+    grants = {
+        item["participation_id"]: item for item in client.get(history).json()["items"]
+    }
+    derived = grants[str(participant.id)]
+    assert derived["decision_only"] and not grants[str(other.id)]["decision_only"]
+    management = (
+        f"/projects/{ctx['project'].id}/guest-participations/{participant.id}/decisions"
+    )
+    result = client.get(management)
+    assert result.status_code == 200, result.text
+    (record,) = result.json()["items"]
+    assert record["id"] == request["id"] and record["publication_id"] == identity
+    assert record["kind"] == "review" and record["target_kind"] == "requirement"
+    assert record["state"] == "requested" and record["response_state"] == "pending"
+    assignment = f"{public}/requirement-reviews/{request['id']}"
+    guest_login(client, db, ctx)
+    assert client.get(assignment).status_code == 200
+    assert {
+        node["node_kind"] for node in client.get(public + "/nodes").json()["items"]
+    } == {"requirement", "requirement_detail"}
+    notices = client.get("/shared/activity").json()["items"]
+    assert any(
+        item["id"] == request["id"] and item["kind"] == "requirement_review_requested"
+        for item in notices
+    )
+    deadline = update(RequirementWorkflowRequest).where(
+        RequirementWorkflowRequest.id == request["id"]
+    )
+    db.execute(
+        deadline.values(
+            due_on=datetime.now(ZoneInfo("Asia/Tokyo")).date() - timedelta(days=1)
+        )
+    )
+    db.commit()
+    assert client.get(public).status_code == 200
+    assert client.post(f"/shared/activity/{request['id']}/read").status_code == 404
+    db.execute(deadline.values(due_on=None))
+    db.commit()
+    guest_login(client, db, ctx, index=1)
+    assert any(
+        item["id"] == request["id"]
+        for item in client.get("/shared/activity").json()["items"]
+    )
+
+    authorize_as(client, ctx["user"])
+    cancelled = client.post(
+        f"{route}/{request['id']}/cancel", json={"version": 1, "reason": "依頼の見直し"}
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["status"] == "cancelled"
+    after = {item["id"]: item for item in client.get(history).json()["items"]}
+    assert after[derived["id"]]["effective_status"] == "revoked"
+    assert after[original_grant["id"]] == original_grant
+    guest_login(client, db, ctx)
+    assert client.get(assignment).status_code == 404
+    assert client.get(public).status_code == 404
+    guest_login(client, db, ctx, index=1)
+    assert client.get(public).status_code == 200
+    assert client.get(assignment).status_code == 404
+    activity = client.get("/shared/activity")
+    assert activity.status_code == 200, activity.text
+    assert request["id"] not in {item["id"] for item in activity.json()["items"]}
+
+
+def test_guest_review_of_single_requirement_does_not_share_its_document(
+    client, db, access_fixture
+):
+    ctx = access_fixture
+    release, _ = save(client, ctx, preview_data(ctx, kind="requirement", include=False))
+    ctx["publication"], _ = create(client, ctx, release)
+    publish(client, ctx)
+    content = ctx["publication"]["content"]
+    identity = content["id"]
+    project = f"/projects/{ctx['project'].id}"
+    grant = client.get(f"{publication_base(ctx)}/{identity}/grants").json()["items"][0]
+    target = next(
+        item
+        for item in nodes(client, publication_base(ctx), identity)
+        if item["node_kind"] == "requirement"
+    )
+    command = {
+        "publication_id": identity,
+        "target_node_id": target["id"],
+        "grant_ids": [grant["id"]],
+        "request_key": str(uuid4()),
+        "expected_public_digest": content["public_digest"],
+    }
+    today = datetime.now(ZoneInfo("Asia/Tokyo")).date()
+    expired = client.post(
+        project + "/guest-requirement-reviews",
+        json={**command, "due_on": (today - timedelta(days=1)).isoformat()},
+    )
+    assert expired.status_code == 400, expired.text
+    created = client.post(
+        project + "/guest-requirement-reviews",
+        json={**command, "due_on": today.isoformat()},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["scope_kind"] == "requirement"
+    guest_login(client, db, ctx)
+    shared = f"/shared/publications/{identity}"
+    expected = {"requirement", "requirement_detail"}
+    assert {
+        item["node_kind"] for item in client.get(shared + "/nodes").json()["items"]
+    } == expected
+    assigned = shared + f"/requirement-reviews/{created.json()['id']}"
+    assert (
+        datetime.fromisoformat(client.get(assigned).json()["expires_at"]).date()
+        == today
+    )
+    assert {
+        item["node_kind"] for item in client.get(assigned + "/nodes").json()["items"]
+    } == expected
+    submitted = client.post(
+        assigned + "/submission", json={"version": 1, "confirm_remaining": True}
+    )
+    assert submitted.status_code == 200, submitted.text
 
 
 def test_guest_review_uses_only_assigned_shared_scope(client, db, access_fixture):
@@ -24,6 +226,10 @@ def test_guest_review_uses_only_assigned_shared_scope(client, db, access_fixture
     project = f"/projects/{ctx['project'].id}"
     internal = project + "/guest-requirement-reviews"
     public = f"/shared/publications/{identity}"
+    profile = client.put(
+        project + "/guest-profile", json={"name": "公開した確認案件", "version": 0}
+    )
+    assert profile.status_code == 200, profile.text
     option_response = client.get(
         internal + "/options", params={"publication_id": identity}
     )
@@ -68,11 +274,25 @@ def test_guest_review_uses_only_assigned_shared_scope(client, db, access_fixture
     assert client.get(public).status_code == 200
     assert client.get(path).status_code == 404
     assert client.get(inbox).json()["total"] == 0
+    other = client.get("/shared/publications").json()["items"][0]
+    assert other["own_decision_status"] == "none"
+    assert "decision_refresh_at" not in other
 
     guest_login(client, db, ctx, verified=False)
     assert client.get(path).json()["code"] == "MFA_REQUIRED"
+    before_mfa = client.get("/shared/publications").json()["items"][0]
+    assert "own_decision_status" not in before_mfa
+    assert "decision_refresh_at" not in before_mfa
     guest_login(client, db, ctx)
-    assert client.get(inbox).json()["total"] == 1
+    assert (
+        client.get("/shared/publications").json()["items"][0]["own_decision_status"]
+        == "pending"
+    )
+    assigned = client.get(inbox).json()
+    assert assigned["total"] == 1
+    (entry,) = assigned["items"]
+    assert entry["public_project_name"] == "公開した確認案件"
+    assert entry["captured_at"] == ctx["publication"]["content"]["captured_at"]
     read = client.get(path)
     assert read.status_code == 200, read.text
     assert read.headers["cache-control"] == "private, no-store"
@@ -188,8 +408,8 @@ def test_guest_review_uses_only_assigned_shared_scope(client, db, access_fixture
     assert client.get(inbox).json()["total"] == 0
 
 
-def publish_document_for_approval(client, ctx, *, include=False, test_design=None):
-    """現在の定義書全体を、承認で使う形式で固定して二人へ共有する。"""
+def prepare_document_for_approval(client, ctx, *, include=False, test_design=None):
+    """現在の定義書全体を承認で使う形式で固定する。"""
     preview_input = {
         **preview_data(ctx, include=include),
         "projection_version": "internal-preview-v2",
@@ -221,14 +441,101 @@ def publish_document_for_approval(client, ctx, *, include=False, test_design=Non
     )
     assert publication.status_code == 201, publication.text
     ctx["publication"] = publication.json()
+    return release, ctx["publication"]["content"]
+
+
+def publish_document_for_approval(client, ctx, *, include=False, test_design=None):
+    """現在の固定版を二人へ共有する。"""
+    release, content = prepare_document_for_approval(
+        client, ctx, include=include, test_design=test_design
+    )
     publish(client, ctx, both=True)
-    content = ctx["publication"]["content"]
     publication_id = content["id"]
-    grants = client.get(f"{base}/{publication_id}/grants").json()["items"]
+    grants = client.get(f"{publication_base(ctx)}/{publication_id}/grants").json()[
+        "items"
+    ]
     grant = next(
         row for row in grants if row["participation_id"] == str(ctx["guests"][0][1].id)
     )
     return release, content, grant
+
+
+def test_document_approval_creates_and_revokes_dependent_share(
+    client, db, access_fixture
+):
+    ctx = access_fixture
+    _, content = prepare_document_for_approval(client, ctx)
+    identity = content["id"]
+    base = f"{publication_base(ctx)}/{identity}"
+    route = f"/projects/{ctx['project'].id}/guest-requirement-approvals"
+    participant = ctx["guests"][0][1]
+    expiry = datetime.now(UTC) + timedelta(days=1)
+    options = {
+        "publication_id": identity,
+        "expected_public_digest": content["public_digest"],
+        "due_on": datetime.now(ZoneInfo("Asia/Tokyo")).date().isoformat(),
+        "sharing": {
+            "expected_state": "prepared",
+            "publication_version": 1,
+            "public_digest": content["public_digest"],
+            "confirmed_full_content": True,
+            "recipients": [
+                {
+                    "participation_id": str(participant.id),
+                    "version": participant.version,
+                    "expires_at": expiry.isoformat(),
+                    "download_allowed": False,
+                }
+            ],
+        },
+    }
+    blocked = client.post(route + "/preview", json=options)
+    assert blocked.status_code == 200, blocked.text
+    assert blocked.json()["review_required"] and not blocked.json()["can_request"]
+    ctx["project"].requirement_review_required = False
+    db.commit()
+    ready = client.post(route + "/preview", json=options)
+    assert ready.status_code == 200, ready.text
+    assert ready.json()["can_request"]
+    assert client.get(base).json()["state"] == "prepared"
+    assert client.get(base + "/grants").json()["items"] == []
+    command = {
+        **options,
+        "expected_digest": ready.json()["confirmation_digest"],
+        "request_key": str(uuid4()),
+        "confirmed_content": True,
+    }
+    failed = client.post(route, json={**command, "note": "確認前の変更"})
+    assert failed.status_code == 409, failed.text
+    assert client.get(base + "/grants").json()["items"] == []
+    created = client.post(route, json=command)
+    assert created.status_code == 201, created.text
+    assert created.json()["external_approval"] is True
+    assert client.post(route, json=command).status_code == 200
+    (grant,) = client.get(base + "/grants").json()["items"]
+    assert grant["decision_only"] is True
+    request = created.json()["id"]
+    guest_login(client, db, ctx)
+    publication = f"/shared/publications/{identity}"
+    approval = f"{publication}/requirement-approvals/{request}"
+    assert client.get(approval).json()["can_decide"] is True
+    activity = client.get("/shared/activity", params={"unread_only": True})
+    assert activity.status_code == 200, activity.text
+    notice = next(item for item in activity.json()["items"] if item["id"] == request)
+    assert notice["kind"] == "requirement_approval_requested"
+    assert notice["publication_id"] == identity
+    assert client.post(f"/shared/activity/{request}/read").json()["read_at"]
+    authorize_as(client, ctx["user"])
+    cancelled = client.post(
+        f"{route}/{request}/cancel", json={"version": 1, "reason": "承認範囲を再検討"}
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert (
+        client.get(base + "/grants").json()["items"][0]["effective_status"] == "revoked"
+    )
+    guest_login(client, db, ctx)
+    assert client.get(approval).status_code == 404
+    assert client.get(publication).status_code == 404
 
 
 def test_guest_and_internal_approval_share_one_development_baseline(

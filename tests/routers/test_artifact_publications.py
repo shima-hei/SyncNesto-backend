@@ -384,7 +384,12 @@ def test_normal_write_keeps_reader_and_download_is_explicit(client, context):
     assert downloads == {
         "/shared/publications/{publication_id}/files/{file_id}/download": {"post"}
     }
-    assert len([p for p in paths if "artifact-publications" in p]) == 10
+    assert set(
+        paths["/projects/{project_id}/artifact-publications/{publication_id}/comments"]
+    ) == {"get", "post"}
+    assert set(
+        paths["/shared/publications/{publication_id}/files/{file_id}/content"]
+    ) == {"get"}
 
 
 def test_capacity_conflict_and_source_purge(client, db, context, monkeypatch):

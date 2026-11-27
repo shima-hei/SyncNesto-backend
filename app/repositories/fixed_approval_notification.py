@@ -7,7 +7,6 @@ from sqlalchemy import (
     Table,
     and_,
     case,
-    exists,
     func,
     literal,
     or_,
@@ -18,6 +17,10 @@ from sqlalchemy.dialects.postgresql import insert
 from app.db.base import Base
 from app.models.notification import Notification, NotificationType
 from app.repositories.guest_fixed_approval import GuestFixedApprovalRepository
+from app.repositories.rbac import (
+    active_internal_project_identity,
+    project_role_permission,
+)
 
 ACTION_TYPES = {
     "requested": NotificationType.FIXED_APPROVAL_REQUESTED.value,
@@ -47,52 +50,13 @@ class FixedApprovalNotificationRepository:
 
     def permission(self, user_id, code):
         """現在のProject roleのpermissionだけを照合する。"""
-        pm, role, rp, perm = (
-            Base.metadata.tables[name].alias()
-            for name in ("project_members", "roles", "role_permissions", "permissions")
-        )
-        return exists(
-            select(pm.c.id)
-            .join(role, role.c.id == pm.c.role_id)
-            .join(rp, rp.c.role_id == role.c.id)
-            .join(perm, perm.c.id == rp.c.permission_id)
-            .where(
-                pm.c.user_id == user_id,
-                pm.c.project_id == self.r.c.project_id,
-                pm.c.deleted_at.is_(None),
-                role.c.scope == "project",
-                perm.c.code == code,
-            )
-            .correlate(self.r)
-        )
+        return project_role_permission(self.r.c.project_id, user_id, code)
 
     def internal_access(self, user_id):
         """本文取得と同じ所属・全source・保全readをSQL集合へ適用する。"""
-        u, tm, tenant, review = (
-            Base.metadata.tables[name].alias()
-            for name in ("users", "tenant_members", "tenants", "review_account_grants")
-        )
-        identity = exists(
-            select(u.c.id)
-            .join(tm, tm.c.user_id == u.c.id)
-            .join(tenant, tenant.c.id == tm.c.tenant_id)
-            .where(
-                u.c.id == user_id,
-                u.c.is_active.is_(True),
-                u.c.deleted_at.is_(None),
-                u.c.user_type == "internal",
-                u.c.password_change_required.is_(False),
-                tm.c.tenant_id == self.p.c.tenant_id,
-                tm.c.status == "active",
-                tenant.c.status == "active",
-                self.p.c.deleted_at.is_(None),
-                ~exists(select(review.c.user_id).where(review.c.user_id == u.c.id)),
-            )
-            .correlate(self.p, self.r)
-        )
         kinds = self.release.c.source_kinds
         return and_(
-            identity,
+            active_internal_project_identity(self.p, user_id),
             self.permission(user_id, "requirement:read"),
             self.permission(user_id, "artifact_release:read"),
             kinds.contained_by(

@@ -1,7 +1,7 @@
 """現在許可された指定本人が、公開された固定内容だけを判断する。"""
 
 from collections import Counter
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy import func, select, text, update
@@ -110,6 +110,11 @@ class SharedFixedApprovalService:
         if (
             row is None
             or row["approver_id"] != actor.id
+            or (
+                row["status"] == "requested"
+                and self._deadline(binding, publication)
+                <= db.scalar(select(func.clock_timestamp()))
+            )
             or not db.scalar(
                 text("SELECT guest_approval_has_access(:target,:actor)"),
                 {"target": approval_id, "actor": actor.id},
@@ -118,6 +123,12 @@ class SharedFixedApprovalService:
             raise NotFoundError()
         self.mfa(db, actor)
         return row, binding, publication, revision
+
+    @staticmethod
+    def _deadline(binding, publication):
+        expiry = publication["effective_expiry"]
+        deadline = binding["public_context"].get("decision_expires_at")
+        return min(expiry, datetime.fromisoformat(deadline)) if deadline else expiry
 
     def read(self, db, actor, row, binding, publication, revision):
         """内部event/manifestをそのまま外部へ返さない。"""
@@ -145,11 +156,16 @@ class SharedFixedApprovalService:
             version=row["version"],
             created_at=row["created_at"],
             captured_at=publication["captured_at"],
+            public_project_name=publication["public_project_name"],
             finalized_at=row["finalized_at"],
             decision_reason=reason,
             exception_count=context["exception_count"],
             can_decide=row["status"] == "requested",
-            expires_at=publication["effective_expiry"],
+            expires_at=(
+                self._deadline(binding, publication)
+                if row["status"] == "requested"
+                else publication["effective_expiry"]
+            ),
             authorization_revision=revision,
             public_scope_digest=binding["public_scope_digest"],
         )
@@ -178,11 +194,23 @@ class SharedFixedApprovalService:
 
     @retry_publication_operation
     def listing(
-        self, original, user, q, status, cursor, page_size, publication_id=None
+        self,
+        original,
+        user,
+        q,
+        status,
+        cursor,
+        page_size,
+        publication_id=None,
+        participation_id=None,
     ):
         """現在読める自分の依頼だけの集合と件数を作る。"""
         with self.shared.context.transaction(original, user) as (db, actor):
             query = self.repository.visible(actor.id)
+            if participation_id is not None:
+                query = query.where(
+                    self.repository.bindings.c.participation_id == participation_id
+                )
             projects = sorted(
                 set(
                     db.scalars(
@@ -197,7 +225,7 @@ class SharedFixedApprovalService:
             self.shared.context.verify(db, original, actor, internal=False)
             self.mfa(db, actor)
             r = self.repository.requests
-            query = self.repository.visible(actor.id).where(
+            query = query.where(
                 r.c.project_id.in_(projects),
                 r.c.scope_manifest["title"].as_string().icontains(q, autoescape=True),
             )
@@ -219,6 +247,7 @@ class SharedFixedApprovalService:
                     q,
                     status,
                     str(publication_id) if publication_id else None,
+                    str(participation_id) if participation_id else None,
                     [[str(row["id"]), str(row["publication_id"])] for row in rows],
                 ]
             )
@@ -293,7 +322,7 @@ class SharedFixedApprovalService:
             session = db.info["auth_session"]
             deadline = min(
                 now + timedelta(minutes=5),
-                publication["effective_expiry"],
+                self._deadline(binding, publication),
                 session.expires_at,
                 session.absolute_expires_at,
             )
@@ -346,6 +375,7 @@ class SharedFixedApprovalService:
             assert now is not None
             if (
                 deadline <= now.timestamp()
+                or self._deadline(binding, publication) <= now
                 or not data.confirm_fixed_scope
                 or (comparison != "equal" and not data.confirm_changed_or_unknown)
                 or (

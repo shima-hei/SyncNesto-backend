@@ -63,6 +63,14 @@ OWNERS = {
     "artifact_publication_events": [("project_id", "projects", "id")],
     "artifact_publications": [("project_id", "projects", "id")],
     "artifact_publication_nodes": [("publication_id", "artifact_publications", "id")],
+    "shared_publication_comments": [("publication_id", "artifact_publications", "id")],
+    "shared_publication_comment_files": [
+        ("publication_id", "artifact_publications", "id")
+    ],
+    "shared_publication_comment_mentions": [
+        ("publication_id", "artifact_publications", "id")
+    ],
+    "guest_project_profiles": [("project_id", "projects", "id")],
     "fixed_approval_requests": [("project_id", "projects", "id")],
     "fixed_approval_events": [("approval_id", "fixed_approval_requests", "id")],
     "fixed_approval_requirement_bases": [

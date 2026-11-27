@@ -131,6 +131,13 @@ class PublicationDeliveryStorage:
         except (BotoCoreError, ClientError, OSError):
             raise SharedFileUnavailableError() from None
 
+    def read(self, source: DeliverySource, key: str) -> bytes:
+        """配信用コピーの内容をアプリケーション経由で取得する。"""
+        try:
+            return self._read(self.destination, self.bucket, key, source)
+        except (BotoCoreError, ClientError, OSError):
+            raise SharedFileUnavailableError() from None
+
     def sign(self, source: DeliverySource, key: str, deadline, db_now):
         """実署名期限を検査し、DB/ホストの両時計で60秒以下へ制限する。"""
         now = datetime.now(UTC)

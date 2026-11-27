@@ -1,9 +1,10 @@
 """公開された固定範囲と、指定された本人の要件レビューを結ぶ。"""
 
 from contextlib import contextmanager
+from datetime import datetime, time
 from uuid import UUID, uuid5
 
-from sqlalchemy import and_, func, insert, or_, select, text
+from sqlalchemy import and_, exists, func, insert, or_, select, text
 
 from app.core.exceptions import (
     BadRequestError,
@@ -17,12 +18,19 @@ from app.db.base import Base
 from app.models.artifact_publication import ArtifactPublicationNode
 from app.models.artifact_release import ArtifactReleaseNode
 from app.models.project import Project
+from app.models.requirement import Requirement
 from app.models.requirement_workflow import (
     RequirementReviewThreadEvent,
     RequirementWorkflowGuestBinding,
     RequirementWorkflowParticipant,
     RequirementWorkflowRequest,
 )
+from app.repositories.guest_activity import (
+    REQUIREMENT_APPROVAL_REQUESTED,
+    REQUIREMENT_REVIEW_REQUESTED,
+    GuestActivityRepository,
+)
+from app.repositories.requirement_workflow import GUEST_DUE_ZONE
 from app.schemas.artifact_publication import PublicationNodeRead
 from app.schemas.artifact_release import ArtifactPreviewRequest, ArtifactSource
 from app.schemas.guest_requirement_workflow import (
@@ -45,6 +53,7 @@ from app.schemas.requirement_workflow import (
     RequirementFormalApprovalInput,
     RequirementWorkflowRecipient,
 )
+from app.services.artifact_publication_access import ArtifactPublicationAccessService
 from app.services.artifact_release_snapshot import MAX_PAGE_BYTES, digest
 from app.services.audit_log import AuditLogService
 from app.services.fixed_approval_cursor import encode_cursor
@@ -75,34 +84,38 @@ class GuestRequirementWorkflowService:
         self.formal = RequirementFormalApprovalService(self.workflow)
         self.shared = SharedPublicationService()
         self.recipients = GuestFixedApprovalService()
+        self.access = ArtifactPublicationAccessService()
 
-    def _source(self, db, actor, project_id, publication_id):
+    def _source(self, db, actor, project_id, publication_id, *, allow_prepared=False):
         self.shared.context.permission(
             db, actor, project_id, "artifact_publication:publish"
         )
         self.shared.context.permission(db, actor, project_id, "requirement:review")
         self.shared.context.permission(db, actor, project_id, "artifact_release:read")
         publication = self.shared.repository.publication(db, project_id, publication_id)
-        if publication is None or publication.publication_state != "published":
+        states = {"published", "prepared"} if allow_prepared else {"published"}
+        if publication is None or publication.publication_state not in states:
             raise NotFoundError()
         release = self.workflow.releases._get(
             db, actor, project_id, publication.release_id
         )
         attachments = release.source_refs[1:]
         if (
-            release.source_kind != "requirement_document"
+            release.source_kind not in {"requirement_document", "requirement"}
             or len(attachments) > 20
             or any(item["kind"] not in ATTACHMENT_ROOTS for item in attachments)
         ):
             raise BadRequestError(
-                "要件定義書と、最大20件の設計・テスト設計を含む公開版を指定してください。"
+                "要件定義書または個別要件と、最大20件の設計・テスト設計を指定してください。"
             )
         return publication, release
 
     @retry_publication_operation
     def options(self, original, user, project_id, publication_id):
         with self.shared.context.transaction(original, user, project_id) as (db, actor):
-            publication, _ = self._source(db, actor, project_id, publication_id)
+            publication, _ = self._source(
+                db, actor, project_id, publication_id, allow_prepared=True
+            )
             return GuestRequirementReviewOptions.model_validate(
                 {
                     "public_digest": publication.public_digest,
@@ -116,22 +129,13 @@ class GuestRequirementWorkflowService:
             )
 
     def _related_users(self, original, project_id, data):
-        grants, participants = (
-            self.shared.repository.grants,
-            self.shared.repository.participations,
+        return self.access.decision_users(
+            original,
+            project_id,
+            data.publication_id,
+            data.grant_ids,
+            data.sharing,
         )
-        with original.get_bind().engine.connect() as connection:
-            return tuple(
-                connection.scalars(
-                    select(participants.c.user_id)
-                    .join(grants, grants.c.participation_id == participants.c.id)
-                    .where(
-                        grants.c.project_id == project_id,
-                        grants.c.publication_id == data.publication_id,
-                        grants.c.id.in_(data.grant_ids),
-                    )
-                )
-            )
 
     @retry_publication_operation
     def create(self, original, user, project_id, data):
@@ -140,9 +144,16 @@ class GuestRequirementWorkflowService:
             original, user, project_id, write=True, related_user_ids=related
         ) as (db, actor):
             publication, release = self._source(
-                db, actor, project_id, data.publication_id
+                db,
+                actor,
+                project_id,
+                data.publication_id,
+                allow_prepared=data.sharing is not None,
             )
-            request_digest = digest({"guest_review": data.model_dump(mode="json")})
+            payload = data.model_dump(mode="json")
+            if data.sharing is None:
+                payload.pop("sharing")
+            request_digest = digest({"guest_review": payload})
             prior = self.workflow.repository.by_key(
                 db, project_id, actor.id, data.request_key
             )
@@ -152,16 +163,27 @@ class GuestRequirementWorkflowService:
                 return self.workflow._reads(db, [prior])[0], False
             if publication.public_digest != data.expected_public_digest:
                 raise VersionConflictError({"public_digest": publication.public_digest})
-            recipients = self._selected_recipients(
-                db, actor, project_id, publication.id, data.grant_ids
-            )
-            self._check_locked_users(recipients, related)
+            self._require_current_due_date(db, data.due_on)
+            if data.sharing is not None and release.source_kind != "requirement":
+                raise BadRequestError(
+                    "共有を同時に行うときは個別要件の固定版を指定してください。"
+                )
             mapped = publication.source_manifest.get("id_map", {}).get(
                 str(data.target_node_id)
             )
             if mapped is None:
                 raise NotFoundError()
-            document = self.workflow._document(db, project_id, release.source_id)
+            document_id = release.source_id
+            if release.source_kind == "requirement":
+                document_id = db.scalar(
+                    select(Requirement.document_id).where(
+                        Requirement.id == release.source_id,
+                        Requirement.deleted_at.is_(None),
+                    )
+                )
+                if document_id is None:
+                    raise NotFoundError()
+            document = self.workflow._document(db, project_id, document_id)
             db.refresh(document, with_for_update=True)
             if document.deleted_at is not None:
                 raise NotFoundError()
@@ -190,6 +212,27 @@ class GuestRequirementWorkflowService:
             target = next((node for node in nodes if str(node.id) == mapped), None)
             if target is None or target.node_kind not in REVIEW_TARGETS:
                 raise NotFoundError()
+            new_grants = (
+                self.access.publish_for_decision(
+                    db,
+                    actor,
+                    project_id,
+                    publication.id,
+                    data.sharing,
+                    uuid5(data.request_key, "requirement-review-publication"),
+                )
+                if data.sharing is not None
+                else []
+            )
+            recipients = self._selected_recipients(
+                db,
+                actor,
+                project_id,
+                publication.id,
+                data.grant_ids,
+                new_grants=new_grants,
+            )
+            self._check_locked_users(recipients, related)
             keys = {node.id: f"{node.node_kind}:{node.source_id}" for node in nodes}
             scoped = {target.id}
             subject = []
@@ -238,15 +281,62 @@ class GuestRequirementWorkflowService:
             )
             return self.workflow._reads(db, [request])[0], True
 
-    def _selected_recipients(self, db, actor, project_id, publication_id, grant_ids):
+    def _selected_recipients(
+        self, db, actor, project_id, publication_id, grant_ids, *, new_grants=()
+    ):
+        requested = [*grant_ids, *new_grants]
         recipients = [
             row
-            for row in self.recipients.recipients(db, actor, project_id, publication_id)
-            if row["grant_id"] in grant_ids
+            for row in self.recipients.recipients(
+                db, actor, project_id, publication_id, new_grants=new_grants
+            )
+            if row["grant_id"] in requested
         ]
-        if len(recipients) != len(grant_ids):
+        if len(recipients) != len(requested):
             raise BadRequestError("現在有効な共有先を指定してください。")
         return recipients
+
+    @retry_publication_operation
+    def cancel(self, original, user, project_id, request_id, data, *, kind):
+        with self.shared.context.transaction(
+            original, user, project_id, write=True
+        ) as (db, actor):
+            self.shared.context.permission(db, actor, project_id, "requirement:review")
+            request = self.workflow.repository.get(
+                db, project_id, request_id, lock=True
+            )
+            binding = RequirementWorkflowGuestBinding.__table__
+            target = binding.c.request_id == request_id
+            if (
+                request is None
+                or request.kind != kind
+                or not db.scalar(
+                    select(exists().where(target, binding.c.project_id == project_id))
+                )
+            ):
+                raise NotFoundError()
+            self.workflow.releases._get(db, actor, project_id, request.release_id)
+            if request.status != "requested" or request.version != data.version:
+                raise VersionConflictError(
+                    {"version": request.version, "status": request.status}
+                )
+            request.status = "cancelled"
+            request.version += 1
+            request.finalized_at = db.scalar(select(func.clock_timestamp()))
+            self.access.revoke_for_decision(
+                db, actor, project_id, binding, target, data.reason
+            )
+            AuditLogService().record(
+                db,
+                event_type="requirement_workflow.guest_decision_cancelled",
+                actor_user_id=actor.id,
+                project_id=project_id,
+                resource_type="requirement_workflow",
+                metadata={"request_id": str(request.id), "reason": data.reason},
+                commit=False,
+            )
+            db.flush()
+            return self.workflow._reads(db, [request])[0]
 
     @staticmethod
     def _check_locked_users(recipients, related):
@@ -278,10 +368,30 @@ class GuestRequirementWorkflowService:
                 for row in recipients
             ],
         )
+        activity = GuestActivityRepository()
+        for recipient in recipients:
+            activity.emit(
+                db,
+                tenant_id=db.info["tenant_id"],
+                project_id=request.project_id,
+                actor_id=request.requester_id,
+                recipient_id=recipient["user_id"],
+                grant_id=recipient["grant_id"],
+                publication_id=publication_id,
+                event_id=request.id,
+                kind=REQUIREMENT_REVIEW_REQUESTED
+                if request.kind == "review"
+                else REQUIREMENT_APPROVAL_REQUESTED,
+            )
 
     def _prepare_formal(
         self, db, actor, project_id, release, publication, data, recipients
     ):
+        if release.source_kind != "requirement_document":
+            raise BadRequestError(
+                "正式承認には要件定義書全体の固定版を指定してください。"
+            )
+        self._require_current_due_date(db, data.due_on)
         self.workflow.releases._permission(
             db, actor, project_id, "artifact_release:create"
         )
@@ -319,21 +429,43 @@ class GuestRequirementWorkflowService:
                 "publication": str(publication.id),
                 "public_digest": publication.public_digest,
                 "grants": sorted(str(grant) for grant in data.grant_ids),
+                **(
+                    {"sharing": data.sharing.model_dump(mode="json")}
+                    if data.sharing
+                    else {}
+                ),
             }
         )
         return approval_input, prepared
+
+    def _formal_recipients(self, db, actor, project_id, publication, data):
+        existing = self._selected_recipients(
+            db, actor, project_id, publication.id, data.grant_ids
+        )
+        pending = (
+            self.access.preview_decision_recipients(
+                db, actor, project_id, publication, data.sharing
+            )
+            if data.sharing is not None
+            else []
+        )
+        return existing, pending
 
     @retry_publication_operation
     def formal_preview(self, original, user, project_id, data):
         with self.shared.context.transaction(original, user, project_id) as (db, actor):
             publication, release = self._source(
-                db, actor, project_id, data.publication_id
+                db,
+                actor,
+                project_id,
+                data.publication_id,
+                allow_prepared=data.sharing is not None,
             )
-            recipients = self._selected_recipients(
-                db, actor, project_id, publication.id, data.grant_ids
+            existing, pending = self._formal_recipients(
+                db, actor, project_id, publication, data
             )
             _, prepared = self._prepare_formal(
-                db, actor, project_id, release, publication, data, recipients
+                db, actor, project_id, release, publication, data, [*existing, *pending]
             )
             return prepared.preview
 
@@ -350,11 +482,16 @@ class GuestRequirementWorkflowService:
             related_user_ids=(*related, *data.participant_ids),
         ) as (db, actor):
             publication, release = self._source(
-                db, actor, project_id, data.publication_id
+                db,
+                actor,
+                project_id,
+                data.publication_id,
+                allow_prepared=data.sharing is not None,
             )
-            payload_digest = digest(
-                {"guest_formal_approval": data.model_dump(mode="json")}
-            )
+            payload = data.model_dump(mode="json")
+            if data.sharing is None:
+                payload.pop("sharing")
+            payload_digest = digest({"guest_formal_approval": payload})
             previous = self.workflow.repository.by_key(
                 db, project_id, actor.id, data.request_key
             )
@@ -362,16 +499,31 @@ class GuestRequirementWorkflowService:
                 if previous.request_digest != payload_digest:
                     raise DuplicateResourceError()
                 return self.workflow._reads(db, [previous])[0], False
-            recipients = self._selected_recipients(
-                db, actor, project_id, publication.id, data.grant_ids
+            if release.source_kind != "requirement_document":
+                raise BadRequestError(
+                    "正式承認には要件定義書全体の固定版を指定してください。"
+                )
+            existing, pending = self._formal_recipients(
+                db, actor, project_id, publication, data
             )
-            self._check_locked_users(recipients, related)
+            self._check_locked_users([*existing, *pending], related)
             document = self.workflow._document(db, project_id, release.source_id)
             db.refresh(document, with_for_update=True)
             approval_input, prepared = self._prepare_formal(
-                db, actor, project_id, release, publication, data, recipients
+                db, actor, project_id, release, publication, data, [*existing, *pending]
             )
             self.formal._check_submission(prepared.preview, data.expected_digest)
+            if data.sharing is not None:
+                grants = self.access.publish_for_decision(
+                    db,
+                    actor,
+                    project_id,
+                    publication.id,
+                    data.sharing,
+                    uuid5(data.request_key, "requirement-approval-publication"),
+                )
+                for recipient, grant_id in zip(pending, grants, strict=True):
+                    recipient["grant_id"] = grant_id
             request = self.formal._save_request(
                 db,
                 actor,
@@ -389,31 +541,8 @@ class GuestRequirementWorkflowService:
                 internal_ids=data.participant_ids,
             )
             target = uuid5(publication.id, str(request.target_node_id))
-            self._bind(db, request, publication.id, target, recipients)
+            self._bind(db, request, publication.id, target, [*existing, *pending])
             return self.workflow._reads(db, [request])[0], True
-
-    def _visibility(self, actor_id):
-        bindings = RequirementWorkflowGuestBinding.__table__
-        publications = self.shared.repository.shared_query(actor_id).subquery()
-        return (
-            select(
-                bindings.c.request_id,
-                bindings.c.publication_id,
-                bindings.c.project_id,
-                bindings.c.target_node_id,
-                publications.c.effective_expiry,
-            )
-            .join(
-                publications,
-                and_(
-                    publications.c.id == bindings.c.publication_id,
-                    publications.c.project_id == bindings.c.project_id,
-                    publications.c.grant_id == bindings.c.grant_id,
-                    publications.c.participant_id == bindings.c.participation_id,
-                ),
-            )
-            .where(bindings.c.user_id == actor_id)
-        )
 
     @contextmanager
     def _request(
@@ -423,7 +552,7 @@ class GuestRequirementWorkflowService:
             db,
             actor,
         ):
-            check = self._visibility(actor.id)
+            check = self.shared.repository.guest_workflow_visibility(actor.id)
             b = RequirementWorkflowGuestBinding.__table__
             check = check.where(
                 b.c.request_id == request_id, b.c.publication_id == publication_id
@@ -447,11 +576,29 @@ class GuestRequirementWorkflowService:
             )
             if request is None or request.kind != kind or request.status == "cancelled":
                 raise NotFoundError()
+            if request.status == "requested" and self._is_past_due(db, request.due_on):
+                raise NotFoundError()
             SharedFixedApprovalService.mfa(db, actor)
             yield db, actor, request, binding, publication, revision
 
     @staticmethod
-    def _summary(row, publication_id, title, status, expires_at):
+    def _is_past_due(db, due_on):
+        return due_on is not None and due_on < db.scalar(
+            select(func.date(func.timezone(GUEST_DUE_ZONE.key, func.clock_timestamp())))
+        )
+
+    def _require_current_due_date(self, db, due_on):
+        if self._is_past_due(db, due_on):
+            raise BadRequestError("回答期限は本日以降を指定してください。")
+
+    @staticmethod
+    def _summary(
+        row, publication_id, title, status, expires_at, public_project_name, captured_at
+    ):
+        if row.status == "requested" and row.due_on is not None:
+            expires_at = min(
+                expires_at, datetime.combine(row.due_on, time.max, GUEST_DUE_ZONE)
+            )
         prefix = "R" if row.kind == "review" else "A"
         return SharedRequirementReviewSummary(
             id=row.id,
@@ -464,18 +611,31 @@ class GuestRequirementWorkflowService:
             created_at=row.created_at,
             expires_at=expires_at,
             responded=status != "pending",
+            public_project_name=public_project_name,
+            captured_at=captured_at,
         )
 
     @retry_publication_operation
     def listing(
-        self, original, user, publication_id, page, page_size, *, kind="review"
+        self,
+        original,
+        user,
+        publication_id,
+        page,
+        page_size,
+        *,
+        kind="review",
+        participation_id=None,
+        responded=None,
     ):
         with self.shared.context.transaction(original, user) as (db, actor):
             SharedFixedApprovalService.mfa(db, actor)
-            visible = self._visibility(actor.id)
+            visible = self.shared.repository.guest_workflow_visibility(actor.id)
             b = RequirementWorkflowGuestBinding.__table__
             if publication_id is not None:
                 visible = visible.where(b.c.publication_id == publication_id)
+            if participation_id is not None:
+                visible = visible.where(b.c.participation_id == participation_id)
             projects = sorted(
                 set(db.scalars(visible.with_only_columns(b.c.project_id)))
             )
@@ -496,6 +656,8 @@ class GuestRequirementWorkflowService:
                     node.payload["title"].astext,
                     participant.status,
                     allowed.c.effective_expiry,
+                    allowed.c.public_project_name,
+                    allowed.c.captured_at,
                 )
                 .join(allowed, request.id == allowed.c.request_id)
                 .join(
@@ -512,8 +674,22 @@ class GuestRequirementWorkflowService:
                         node.publication_id == allowed.c.publication_id,
                     ),
                 )
-                .where(request.kind == kind, request.status != "cancelled")
+                .where(
+                    request.kind == kind,
+                    request.status != "cancelled",
+                    or_(
+                        request.status != "requested",
+                        request.due_on.is_(None),
+                        request.due_on
+                        >= func.date(
+                            func.timezone(GUEST_DUE_ZONE.key, func.clock_timestamp())
+                        ),
+                    ),
+                )
             )
+            if responded is not None:
+                pending = participant.status == "pending"
+                query = query.where(~pending if responded else pending)
             total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
             rows = db.execute(
                 query.order_by(request.created_at.desc(), request.id.desc())
@@ -537,6 +713,8 @@ class GuestRequirementWorkflowService:
                 target.payload["title"],
                 participant.status,
                 binding["effective_expiry"],
+                binding["public_project_name"],
+                binding["captured_at"],
             ).model_dump(),
             note=request.note,
             target_node_id=target.id,
@@ -597,6 +775,8 @@ class GuestRequirementWorkflowService:
                 publication["title"],
                 participant.status,
                 binding["effective_expiry"],
+                publication["public_project_name"],
+                publication["captured_at"],
             ).model_dump(),
             note=request.note,
             version=request.version,

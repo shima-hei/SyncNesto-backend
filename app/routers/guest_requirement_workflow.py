@@ -10,6 +10,7 @@ from app.models.user import User
 from app.routers.artifact_releases import Db
 from app.routers.guest_invitations import InvitationRoute
 from app.schemas.guest_requirement_workflow import (
+    GuestRequirementDecisionCancel,
     GuestRequirementFormalApprovalCreate,
     GuestRequirementFormalApprovalInput,
     GuestRequirementReviewCreate,
@@ -79,16 +80,38 @@ def create_guest_requirement_review(
     return item
 
 
+@router.post("/{request_id}/cancel", response_model=RequirementWorkflowRead)
+def cancel_guest_requirement_review(
+    project_id: int,
+    request_id: UUID,
+    data: GuestRequirementDecisionCancel,
+    db: Db,
+    user: Actor,
+):
+    """認識合わせ依頼と、その依頼に付随する閲覧許可を取り消す。"""
+    return service.cancel(db, user, project_id, request_id, data, kind="review")
+
+
 @shared_router.get("/requirement-reviews", response_model=SharedRequirementReviewList)
 def list_shared_requirement_reviews(
     db: Db,
     user: Actor,
     publication_id: UUID | None = None,
+    participation_id: UUID | None = None,
+    responded: bool | None = None,
     page: Page = 1,
     page_size: PageSize = 20,
 ):
     """有効な許可で本人に届いたレビューを一覧する。"""
-    return service.listing(db, user, publication_id, page, page_size)
+    return service.listing(
+        db,
+        user,
+        publication_id,
+        page,
+        page_size,
+        participation_id=participation_id,
+        responded=responded,
+    )
 
 
 @shared_router.get(TARGET, response_model=SharedRequirementReviewRead)
@@ -226,17 +249,40 @@ def create_guest_requirement_approval(
     return item
 
 
+@approval_router.post("/{request_id}/cancel", response_model=RequirementWorkflowRead)
+def cancel_guest_requirement_approval(
+    project_id: int,
+    request_id: UUID,
+    data: GuestRequirementDecisionCancel,
+    db: Db,
+    user: Actor,
+):
+    """要件定義書の正式承認依頼と、付随する共有許可を取り消す。"""
+    return service.cancel(
+        db, user, project_id, request_id, data, kind="formal_approval"
+    )
+
+
 @shared_router.get("/requirement-approvals", response_model=SharedRequirementReviewList)
 def list_shared_requirement_approvals(
     db: Db,
     user: Actor,
     publication_id: UUID | None = None,
+    participation_id: UUID | None = None,
+    responded: bool | None = None,
     page: Page = 1,
     page_size: PageSize = 20,
 ):
     """有効な許可で本人に届いた正式承認を一覧する。"""
     return service.listing(
-        db, user, publication_id, page, page_size, kind="formal_approval"
+        db,
+        user,
+        publication_id,
+        page,
+        page_size,
+        kind="formal_approval",
+        participation_id=participation_id,
+        responded=responded,
     )
 
 

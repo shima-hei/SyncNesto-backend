@@ -23,6 +23,7 @@ class PublicationCacheMiddleware:
                     "artifact-publications",
                     "guest-participations",
                     "guest-invitations",
+                    "guest-profile",
                     "guest-fixed-approvals",
                     "guest-requirement-reviews",
                     "guest-requirement-approvals",
@@ -33,6 +34,12 @@ class PublicationCacheMiddleware:
             )
             or (len(parts) >= 3 and parts[1:3] == ["shared", "publications"])
             or (len(parts) >= 3 and parts[1:3] == ["shared", "notifications"])
+            or (len(parts) >= 2 and parts[1] == "notifications")
+            or (
+                len(parts) >= 3
+                and parts[1] == "shared"
+                and parts[2] in {"projects", "comments", "activity"}
+            )
             or (
                 len(parts) == 6
                 and parts[1] == "projects"

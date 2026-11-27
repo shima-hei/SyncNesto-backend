@@ -1,5 +1,7 @@
 """本文とメンションの整合性を検証し、保存する関連を確定する。"""
 
+from typing import TypeVar
+
 from sqlalchemy.orm import Session
 
 from app.core import error_messages
@@ -7,7 +9,36 @@ from app.core.exceptions import BadRequestError
 from app.models.comment_mention import CommentMention, MentionedComment
 from app.models.user import User
 from app.repositories.comment_mention import CommentMentionRepository
-from app.schemas.comment_mention import CommentMentionOccurrence
+from app.schemas.comment_mention import CommentMentionOccurrence, CommentMentionText
+
+MentionText = TypeVar(
+    "MentionText", bound=CommentMentionOccurrence | CommentMentionText
+)
+
+
+def validate_mention_text(body: str, mentions: list[MentionText]) -> list[MentionText]:
+    """本文の文字位置と表示名を照合する。"""
+    if not mentions:
+        return []
+    boundaries = {0: 0}
+    offset = 0
+    for index, char in enumerate(body):
+        offset += 2 if ord(char) > 0xFFFF else 1
+        boundaries[offset] = index + 1
+    ordered = sorted(mentions, key=lambda mention: mention.start)
+    end = 0
+    for mention in ordered:
+        if (
+            mention.start < end
+            or mention.start not in boundaries
+            or mention.end not in boundaries
+            or mention.end <= mention.start
+            or body[boundaries[mention.start] : boundaries[mention.end]]
+            != f"@{mention.display_name}"
+        ):
+            raise BadRequestError(error_messages.COMMENT_MENTION_INVALID)
+        end = mention.end
+    return ordered
 
 
 class CommentMentionService:
@@ -26,24 +57,7 @@ class CommentMentionService:
         """所属・位置・表示名を保存前に検証する。"""
         if not mentions:
             return {}
-        boundaries = {0: 0}
-        offset = 0
-        for index, char in enumerate(body):
-            offset += 2 if ord(char) > 0xFFFF else 1
-            boundaries[offset] = index + 1
-        sorted_mentions = sorted(mentions, key=lambda mention: mention.start)
-        last_end = 0
-        for mention in sorted_mentions:
-            if (
-                mention.start < last_end
-                or mention.start not in boundaries
-                or mention.end not in boundaries
-                or mention.end <= mention.start
-                or body[boundaries[mention.start] : boundaries[mention.end]]
-                != f"@{mention.display_name}"
-            ):
-                raise BadRequestError(error_messages.COMMENT_MENTION_INVALID)
-            last_end = mention.end
+        sorted_mentions = validate_mention_text(body, mentions)
         user_ids = {mention.user_id for mention in mentions}
         users = CommentMentionRepository().eligible_users(db, project_id, permission)
         names = {user.id: user.name for user in users.filter(User.id.in_(user_ids))}

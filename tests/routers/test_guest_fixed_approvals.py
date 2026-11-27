@@ -1,6 +1,6 @@
 """外部本人の固定判断・正本整合・失効を実DBで検証する。"""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -13,7 +13,9 @@ from app.models.fixed_approval import FixedApprovalEvent, FixedApprovalRequest
 from app.models.guest_fixed_approval import FixedApprovalGuestBinding
 from app.models.session import UserSession
 from tests.helpers.auth import authorize_as
+from tests.routers.test_artifact_publications import create, nodes, publication_base
 from tests.routers.test_artifact_releases import context as context  # noqa: F401
+from tests.routers.test_artifact_releases import preview_data, save
 from tests.routers.test_publication_access import access_fixture as access_fixture  # noqa: F401
 from tests.routers.test_publication_access import publish
 
@@ -62,7 +64,7 @@ def guest_login(client, db, ctx, *, index=0, verified=True):
     return sid
 
 
-def create_request(client, ctx, kind="requirement"):
+def create_request(client, ctx, kind="requirement", *, deadline=None):
     """相手向けの全例外と確認digestを渡して保存する。"""
     node = next(n for n in ctx["public_nodes"] if n.node_kind == kind)
     data: dict[str, Any] = dict(
@@ -71,6 +73,8 @@ def create_request(client, ctx, kind="requirement"):
         grant_id=ctx["grant"]["id"],
         request_note="この固定内容を確認してください",
     )
+    if deadline is not None:
+        data["decision_expires_at"] = deadline.isoformat()
     basis = client.post(
         ctx["requests"] + "/basis-preview",
         json={k: data[k] for k in ("publication_id", "target_node_id")},
@@ -94,9 +98,170 @@ def create_request(client, ctx, kind="requirement"):
     return result.json(), body
 
 
+@pytest.mark.parametrize("kind", ["specification", "test_design"])
+def test_new_guest_fixed_approval_shares_only_when_confirmed(
+    client, db, access_fixture, monkeypatch, kind
+):
+    monkeypatch.setenv("GUEST_FIXED_APPROVALS_ENABLED", "true")
+    ctx = access_fixture
+    project = f"/projects/{ctx['project'].id}"
+    profile = client.put(
+        project + "/guest-profile", json={"name": "公開した承認案件", "version": 0}
+    )
+    assert profile.status_code == 200, profile.text
+    if kind == "test_design":
+        design = client.post(
+            project + "/test-designs", json={"name": "外部承認する試験設計"}
+        )
+        assert design.status_code == 201, design.text
+        source = {
+            "source": {
+                "kind": kind,
+                "id": design.json()["id"],
+                "version": design.json()["version"],
+            }
+        }
+    else:
+        source = preview_data(ctx, kind=kind, include=False)
+    release, _ = save(client, ctx, source)
+    publication, _ = create(client, ctx, release)
+    content = publication["content"]
+    identity = content["id"]
+    base = f"{publication_base(ctx)}/{identity}"
+    target = next(
+        node
+        for node in nodes(client, publication_base(ctx), identity)
+        if node["node_kind"] == kind
+    )
+    participant = ctx["guests"][0][1]
+    now = datetime.now(UTC)
+    route = project + "/guest-fixed-approvals"
+    options = {
+        "publication_id": identity,
+        "target_node_id": target["id"],
+        "decision_expires_at": (now + timedelta(hours=1)).isoformat(),
+        "sharing": {
+            "expected_state": "prepared",
+            "publication_version": 1,
+            "public_digest": content["public_digest"],
+            "confirmed_full_content": True,
+            "recipients": [
+                {
+                    "participation_id": str(participant.id),
+                    "version": participant.version,
+                    "expires_at": (now + timedelta(hours=2)).isoformat(),
+                    "download_allowed": False,
+                }
+            ],
+        },
+    }
+    preview = client.post(route + "/preview", json=options)
+    assert preview.status_code == 200, preview.text
+    assert client.get(base).json()["state"] == "prepared"
+    assert client.get(base + "/grants").json()["items"] == []
+    command = {
+        **options,
+        "request_id": str(uuid4()),
+        "confirm_public_scope": True,
+        "expected_preview_digest": preview.json()["preview_digest"],
+    }
+    invalid = client.post(
+        route,
+        json={
+            **command,
+            "decision_expires_at": (now + timedelta(minutes=10)).isoformat(),
+        },
+    )
+    assert invalid.status_code == 409, invalid.text
+    assert client.get(base + "/grants").json()["items"] == []
+    saved = client.post(route, json=command)
+    assert saved.status_code == 201, saved.text
+    assert client.post(route, json=command).status_code == 200
+    (grant,) = client.get(base + "/grants").json()["items"]
+    assert grant["decision_only"] is True
+    management = f"{project}/guest-participations/{participant.id}/decisions"
+    history = client.get(management)
+    assert history.status_code == 200, history.text
+    (entry,) = history.json()["items"]
+    assert entry["id"] == saved.json()["id"] and entry["target_kind"] == kind
+    assert entry["publication_id"] == identity and entry["state"] == "requested"
+    assert entry["access_state"] == "active" and entry["decision_expires_at"]
+    other = ctx["guests"][1][1]
+    assert (
+        client.get(f"{project}/guest-participations/{other.id}/decisions").json()[
+            "items"
+        ]
+        == []
+    )
+    path = f"/shared/publications/{identity}/approval-requests/{saved.json()['id']}"
+    guest_login(client, db, ctx)
+    assert client.get(management).status_code == 403
+    approved_scope = client.get(path).json()
+    assert approved_scope["target_kind"] == kind
+    assert approved_scope["public_project_name"] == "公開した承認案件"
+    (summary,) = client.get("/shared/publications").json()["items"]
+    assert summary["own_decision_status"] == "pending"
+    assert datetime.fromisoformat(summary["decision_refresh_at"]) == now + timedelta(
+        hours=1
+    )
+    if kind == "test_design":
+        decided, _ = decision(client, path)
+        assert decided.status_code == 200, decided.text
+        assert decided.json()["status"] == "approved"
+        (summary,) = client.get("/shared/publications").json()["items"]
+        assert summary["own_decision_status"] == "responded"
+        assert "decision_refresh_at" not in summary
+        authorize_as(client, ctx["user"])
+        (entry,) = client.get(management).json()["items"]
+        assert entry["state"] == entry["response_state"] == "approved"
+        assert entry["responded_at"]
+        return
+    authorize_as(client, ctx["user"])
+    cancelled = client.post(
+        f"{project}/fixed-approvals/{saved.json()['id']}/cancel",
+        json={"version": 1, "operation_id": str(uuid4()), "reason": "再検討"},
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert client.get(base + "/grants").json()["items"][0]["status"] == "revoked"
+    (entry,) = client.get(management).json()["items"]
+    assert entry["state"] == "cancelled" and entry["access_state"] == "revoked"
+    assert entry["response_state"] is None
+    guest_login(client, db, ctx)
+    assert client.get(path).status_code == 404
+    assert client.get(f"/shared/publications/{identity}").status_code == 404
+
+
 def approval_path(ctx, row):
     """新しい外部専用経路。"""
     return f"/shared/publications/{ctx['publication_id']}/approval-requests/{row['id']}"
+
+
+def test_formal_request_deadline_is_independent_of_read_grant(
+    client, db, guest_approval_context
+):
+    ctx = guest_approval_context
+    deadline = datetime.now(UTC) + timedelta(minutes=3)
+    row, request_data = create_request(client, ctx, "specification", deadline=deadline)
+    expired_input = {
+        key: value
+        for key, value in request_data.items()
+        if key not in {"request_id", "expected_preview_digest", "confirm_public_scope"}
+    }
+    expired_input["decision_expires_at"] = (
+        datetime.now(UTC) - timedelta(minutes=1)
+    ).isoformat()
+    expired = client.post(ctx["requests"] + "/preview", json=expired_input)
+    assert expired.status_code == 400, expired.text
+    guest_login(client, db, ctx)
+    path = approval_path(ctx, row)
+    metadata = client.get(path)
+    assert metadata.status_code == 200, metadata.text
+    assert datetime.fromisoformat(metadata.json()["expires_at"]) == deadline
+    proof = client.post(path + "/decision-preview")
+    assert proof.status_code == 200, proof.text
+    assert datetime.fromisoformat(proof.json()["expires_at"]) == deadline
+    publication = client.get(f"/shared/publications/{ctx['publication_id']}").json()
+    assert datetime.fromisoformat(publication["expires_at"]) > deadline
 
 
 def decision(client, path, *, reject=False):

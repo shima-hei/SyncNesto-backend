@@ -6,6 +6,7 @@ from time import monotonic
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import DBAPIError
 
@@ -22,6 +23,7 @@ from app.repositories.user import UserRepository
 from tests.helpers.auth import authorize_as
 from tests.routers.test_artifact_publications import create, publication_base
 from tests.routers.test_artifact_releases import context as context  # noqa: F401
+from tests.routers.test_artifact_releases import preview_data, save
 
 
 @pytest.fixture
@@ -56,7 +58,7 @@ def access_fixture(client, db, context, create_test_user):
     return dict(**context, publication=publication, guests=guests)
 
 
-def publish(client, ctx, *, both=False, expires_at=None):
+def publish(client, ctx, *, both=False, expires_at=None, recipient_options=None):
     """確認済み本文・版・世代で公開する。"""
     p = ctx["publication"]
     data = dict(
@@ -72,6 +74,7 @@ def publish(client, ctx, *, both=False, expires_at=None):
                 expires_at=(
                     expires_at or datetime.now(UTC) + timedelta(days=1)
                 ).isoformat(),
+                **(recipient_options or {}).get(part.id, {}),
             )
             for _, part in ctx["guests"][: 2 if both else 1]
         ],
@@ -85,6 +88,51 @@ def publish(client, ctx, *, both=False, expires_at=None):
 def shared_path(ctx, suffix=""):
     """公開UUIDだけをURLへ含める。"""
     return f"/shared/publications/{ctx['publication']['content']['id']}{suffix}"
+
+
+def test_staff_comment_versions_filter_by_primary_source_and_state(
+    client, access_fixture
+):
+    """資料詳細では同じ主対象の公開済み・取消済みだけを現在権限で返す。"""
+    ctx = access_fixture
+    base = publication_base(ctx)
+    result, _, _ = publish(client, ctx)
+    version_id = result["id"]
+    create(client, ctx)
+    release, _ = save(client, ctx, preview_data(ctx, kind="specification"))
+    spec, _ = create(client, ctx, release)
+    params = {
+        "source_kind": "requirement_document",
+        "source_id": ctx["doc"].id,
+        "state": ["published", "withdrawn"],
+        "page_size": 1,
+    }
+
+    listing = client.get(base, params=params)
+    assert listing.status_code == 200, listing.text
+    assert listing.json()["total"] == 1
+    assert [(row["id"], row["state"]) for row in listing.json()["items"]] == [
+        (version_id, "published")
+    ]
+    spec_source = {"source_kind": "specification", "source_id": ctx["spec"].id}
+    assert client.get(base, params={**params, **spec_source}).json()["total"] == 0
+    preparatory = client.get(base, params={**spec_source, "state": "prepared"})
+    assert [row["id"] for row in preparatory.json()["items"]] == [spec["content"]["id"]]
+    assert client.get(base, params={"source_id": ctx["doc"].id}).status_code == 400
+
+    stop = client.post(
+        f"{base}/{version_id}/withdraw",
+        json={"request_id": str(uuid4()), "version": 2, "reason": "公開範囲の見直し"},
+    )
+    assert stop.status_code == 200, stop.text
+    listing = client.get(base, params=params).json()
+    assert listing["total"] == 1
+    assert [(row["id"], row["state"]) for row in listing["items"]] == [
+        (version_id, "withdrawn")
+    ]
+
+    authorize_as(client, ctx["guests"][0][0])
+    assert client.get(base, params=params).status_code == 403
 
 
 def denied(client, ctx):
@@ -372,6 +420,41 @@ def test_cursor_bound_to_session_and_history_immutable(client, db, access_fixtur
         db.execute(update(ArtifactPublicationEvent).values(reason="改竄"))
         db.commit()
     db.rollback()
+
+
+def test_shared_publication_pages_are_bound_to_the_current_grant_set(
+    client, access_fixture
+):
+    ctx = access_fixture
+    first, _, _ = publish(client, ctx)
+    ctx["publication"], _ = create(client, ctx)
+    second, _, _ = publish(client, ctx)
+    actor, participant = ctx["guests"][0]
+    authorize_as(client, actor)
+    path = "/shared/publications"
+    params = {"page_size": 1, "participation_id": str(participant.id)}
+    page = client.get(path, params=params).json()
+    assert page["total"] == 2
+    assert page["items"][0]["id"] == second["id"]
+    next_request = {**params, "cursor": page["next_cursor"]}
+    following = client.get(path, params=next_request).json()
+    assert following["items"][0]["id"] == first["id"]
+    assert following["next_cursor"] is None
+    grant_path = f"{publication_base(ctx)}/{second['id']}/grants"
+    admin = TestClient(client.app)
+    authorize_as(admin, ctx["user"])
+    grant = admin.get(grant_path).json()["items"][0]
+    cancelled = admin.post(
+        f"{grant_path}/{grant['id']}/revoke",
+        json={
+            "version": grant["version"],
+            "reason": "検証",
+            "request_id": str(uuid4()),
+        },
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert client.get(path, params=next_request).status_code == 409
+    assert client.get(path, params=params).json()["total"] == 1
 
 
 def await_database_wait(db, pattern):

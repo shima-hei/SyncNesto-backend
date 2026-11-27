@@ -3,7 +3,8 @@
 import hashlib
 import hmac
 
-from sqlalchemy import select, text
+from sqlalchemy import func, literal, select, text
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 
 from app.core.config import settings
 from app.core.exceptions import (
@@ -13,12 +14,14 @@ from app.core.exceptions import (
     NotFoundError,
 )
 from app.repositories.artifact_publication_access import PublicationAccessRepository
+from app.repositories.shared_decision_status import shared_decision_status
 from app.schemas.artifact_publication import (
     PublicationContentMetadata,
     PublicationNodeRead,
 )
 from app.schemas.artifact_publication_access import (
     SharedPublicationFiles,
+    SharedPublicationLinkTitle,
     SharedPublicationList,
     SharedPublicationNodePage,
     SharedPublicationRead,
@@ -26,6 +29,7 @@ from app.schemas.artifact_publication_access import (
 )
 from app.services.artifact_release_snapshot import MAX_PAGE_BYTES, canonical_bytes
 from app.services.fixed_approval_cursor import decode_cursor, encode_cursor
+from app.services.guest_invitation import GuestInvitationService
 from app.services.publication_access_context import (
     PublicationAccessContext,
     retry_publication_operation,
@@ -107,28 +111,85 @@ class SharedPublicationService:
             )
 
     @retry_publication_operation
-    def listing(self, original, user, q, kind, cursor, page_size):
+    def link_titles(self, original, user, ids):
+        """リンク先ごとに公開資格を評価し、授権後の表示名だけを取得する。"""
+        with self.context.transaction(original, user) as (db, actor):
+            publication = self.repository.publications
+            query = self.repository.shared_query(actor.id).where(
+                publication.c.id.in_(ids)
+            )
+            query = self.context.read_projects(
+                db, original, actor, query, publication.c.project_id
+            )
+            rows = db.execute(
+                query.with_only_columns(
+                    publication.c.id,
+                    publication.c.title,
+                    query.selected_columns.effective_expiry.label("expires_at"),
+                )
+            ).mappings()
+            return [SharedPublicationLinkTitle.model_validate(row) for row in rows]
+
+    @retry_publication_operation
+    def listing(
+        self, original, user, q, kind, cursor, page_size, participation_id=None
+    ):
         """取得前に確定したProject集合だけで検索・件数を作る。"""
         with self.context.transaction(original, user) as (db, actor):
             p = self.repository.publications
             query = self.repository.shared_query(actor.id)
-            projects = sorted({r["project_id"] for r in db.execute(query).mappings()})
-            for project_id in projects:
-                db.execute(
-                    text("SELECT publication_lock(:project,true)"),
-                    {"project": project_id},
+            if participation_id is not None:
+                query = query.where(
+                    query.selected_columns.participant_id == participation_id
                 )
-            self.context.verify(db, original, actor, internal=False)
-            query = query.where(
-                p.c.project_id.in_(projects), p.c.title.icontains(q, autoescape=True)
+            query = self.context.read_projects(
+                db, original, actor, query, p.c.project_id
             )
+            query = query.where(p.c.title.icontains(q, autoescape=True))
             if kind is not None:
                 query = query.where(p.c.source_kinds.contains([kind]))
-            rows = (
-                db.execute(query.order_by(p.c.captured_at.desc(), p.c.id))
-                .mappings()
-                .all()
+            columns = query.selected_columns
+            query = query.with_only_columns(
+                p.c.id,
+                p.c.title,
+                p.c.source_kinds,
+                p.c.captured_at,
+                p.c.publication_version,
+                columns.participant_id,
+                columns.participant_version,
+                columns.grant_id,
+                columns.grant_version,
+                columns.effective_expiry,
+                columns.public_project_name,
+                columns.shared_at,
             )
+            allowed = query.subquery()
+            latest = allowed.c
+            order = (latest.shared_at.desc(), latest.id)
+            entry = func.concat_ws(
+                ":",
+                latest.id,
+                latest.publication_version,
+                latest.participant_id,
+                latest.participant_version,
+                latest.grant_id,
+                latest.grant_version,
+                latest.effective_expiry,
+            )
+            revision = func.encode(
+                func.sha256(
+                    func.convert_to(
+                        func.string_agg(
+                            entry, aggregate_order_by(literal(","), *order)
+                        ),
+                        "UTF8",
+                    )
+                ),
+                "hex",
+            )
+            total, collection_revision = db.execute(
+                select(func.count(), revision).select_from(allowed)
+            ).one()
             scope = hmac.new(
                 settings.secret_key.encode(),
                 canonical_bytes(
@@ -137,30 +198,59 @@ class SharedPublicationService:
                         str(db.info["auth_session"].id),
                         q,
                         kind,
-                        [[str(r["id"]), self.revision(db, actor, r)] for r in rows],
+                        str(participation_id) if participation_id is not None else None,
+                        collection_revision,
                     ]
                 ),
                 hashlib.sha256,
             ).hexdigest()
             offset = self._cursor(cursor, "shared-publications", scope)
-            if offset > len(rows):
+            if offset > total:
                 raise BadRequestError()
             end = offset + page_size
-            return SharedPublicationList(
-                items=[
-                    SharedPublicationSummary(
-                        id=r["id"],
-                        title=r["title"],
-                        source_kinds=r["source_kinds"],
-                        captured_at=r["captured_at"],
-                        expires_at=r["effective_expiry"],
-                        authorization_revision=self.revision(db, actor, r),
+            rows = (
+                db.execute(
+                    select(allowed).order_by(*order).offset(offset).limit(page_size)
+                )
+                .mappings()
+                .all()
+            )
+            verified = bool(rows) and GuestInvitationService.mfa_verified(db, actor)
+            statuses = (
+                shared_decision_status(
+                    db, self.repository, actor.id, [row["id"] for row in rows]
+                )
+                if verified
+                else {}
+            )
+            items = []
+            for row in rows:
+                summary = SharedPublicationSummary(
+                    id=row["id"],
+                    title=row["title"],
+                    source_kinds=row["source_kinds"],
+                    captured_at=row["captured_at"],
+                    expires_at=row["effective_expiry"],
+                    authorization_revision=self.revision(db, actor, row),
+                    public_project_name=row["public_project_name"],
+                    shared_at=row["shared_at"],
+                )
+                if verified:
+                    status = statuses.get(row["id"], {})
+                    summary.own_decision_status = (
+                        "pending"
+                        if status.get("waiting")
+                        else "responded"
+                        if status.get("responded")
+                        else "none"
                     )
-                    for r in rows[offset:end]
-                ],
-                total=len(rows),
+                    summary.decision_refresh_at = status.get("refresh_at")
+                items.append(summary)
+            return SharedPublicationList(
+                items=items,
+                total=total,
                 next_cursor=encode_cursor(0, "shared-publications", scope, end)
-                if end < len(rows)
+                if end < total
                 else None,
             )
 
@@ -204,7 +294,9 @@ class SharedPublicationService:
         with self.context.transaction(original, user) as (db, actor):
             row, revision = self._get(db, original, actor, identity)
             return SharedPublicationFiles(
-                items=self._metadata(row).files, authorization_revision=revision
+                items=self._metadata(row).files,
+                authorization_revision=revision,
+                download_allowed=row["download_allowed"] is not False,
             )
 
     @retry_publication_operation
