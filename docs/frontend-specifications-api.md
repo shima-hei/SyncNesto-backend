@@ -96,7 +96,7 @@ Migration `e5a9c2f7b103`（親 `d4f8b1e6a902`）は4表と索引・FKを追加�
 
 OpenAPI GUIと出力は操作オブジェクトを共有する。旧項目は原文を残し、旧データから定義を起こす操作を提供する。3.1系を対象とし、不明なバージョン・外部参照・未展開のPath Item共通定義は取込時に明示する。JSONとYAMLは同じバックエンド検証に通す。DDLはPostgreSQL 17向けにスキーマ、テーブル、制約、インデックスを生成する。外部キーはテーブル作成後に生成し、実DBへは接続しない。
 
-プレビューのHTMLはサーバーの許可リストを通し、空のsandbox属性を持つiframeで表示する。CSSの外部参照は除外し、CSPで読み込みを制限する。PNG・JPEG・WebPの小さな埋め込み画像だけを表示する。原本のダウンロードはプレーンテキスト拡張子を使う。
+プレビューのHTMLはサーバーの許可リストを通し、空のsandbox属性を持つiframeで表示する。CSSの外部参照は除外し、CSPで読み込みを制限する。新しいPNG・JPEG・WebPは既存の非公開本文画像ストレージに保存し、HTMLには案件内の参照だけを持つ。権限を検証した画像をサーバーがプレビュー用のデータに変換する。既存の小さな埋め込み画像も表示できる。原本のダウンロードはプレーンテキスト拡張子を使う。
 
 MCPの `list_design_artifacts` と `get_design_artifact` は一覧、必要な構成、履歴、出力を取得する。原本は `section=mockups` の明示指定で取得する。下書きの作成・更新は `create_design_artifact`、`update_design_artifact` を使い、既存の認可・再送防止・版競合検出を適用する。`list_design_collections` と `get_design_diagram` でコレクションと図を取得する。追加ツールは `MCP_DESIGN_TOOLS_ENABLED` のローカルOAuthクライアントに限定し、公開プラグインの既存カタログを維持する。
 

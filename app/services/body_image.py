@@ -1,6 +1,8 @@
 """Markdown本文で参照する、版をまたいで不変の非公開画像。"""
 
+import base64
 import re
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from io import BytesIO
 from typing import Literal
@@ -13,16 +15,23 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.models.comment_image import BODY_KINDS, CommentImage
+from app.schemas.design_content import HtmlMockup
 from app.services.comment_image import DRAFT_RETENTION, CommentImageService
+from app.services.design_mockup import (
+    BODY_IMAGE_PREFIX,
+    mockup_document,
+    mockup_image_references,
+)
 from app.services.storage import StorageService
 
 BodyImageKind = Literal[
     "task", "requirement", "specification", "test_design", "document"
 ]
-BODY_IMAGE_PREFIX = "/api/body-images/"
 MAX_PROJECT_IMAGES = 512
 MAX_BODY_IMAGES = 32
 MAX_IMAGE_PIXELS = 20_000_000
+MAX_MOCKUP_IMAGES = 8
+MAX_MOCKUP_IMAGE_BYTES = 65_000
 MEDIA_TYPES = {"PNG": "image/png", "JPEG": "image/jpeg", "WEBP": "image/webp"}
 IMAGE_REFERENCE = re.compile(
     r"/api/body-images/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
@@ -111,9 +120,10 @@ def retain_body_images(
     kind: BodyImageKind,
     actor_id: int | None,
     *values: object,
+    additional_references: Iterable[UUID] = (),
 ) -> None:
     """保存と同じトランザクションで、同じ案件・用途の画像を確定する。"""
-    references = image_references(*values)
+    references = image_references(*values).union(additional_references)
     if not references:
         return
     if len(references) > MAX_BODY_IMAGES:
@@ -150,7 +160,46 @@ def snapshot_references(node_kind: str, payload: dict) -> tuple[str, set[UUID]]:
     kind, fields = SNAPSHOT_FIELDS.get(node_kind, ("", ()))
     if node_kind == "test_design" and "body_image_ids" in payload:
         return kind, {UUID(value) for value in payload["body_image_ids"]}
-    return kind, image_references(*(payload.get(field) for field in fields))
+    references = image_references(*(payload.get(field) for field in fields))
+    if node_kind == "specification" and payload.get("kind") == "screen":
+        for item in payload["content"].get("mockups", []):
+            references.update(mockup_image_references(item.get("html", "")))
+    return kind, references
+
+
+def stored_mockup_preview(
+    db: Session, project_id: int, actor_id: int | None, mockup: HtmlMockup
+) -> tuple[str, bool]:
+    """参照を認可し、iframeにネットワークURLを渡さず画像を埋め込む。"""
+    references = mockup_image_references(mockup.html)
+    if not references:
+        return mockup_document(mockup)
+    if len(references) > MAX_MOCKUP_IMAGES:
+        raise BadRequestError("モックアップに配置できる画像は8枚までです。")
+    identifiers = set(references)
+    rows = db.scalars(
+        select(CommentImage).where(
+            CommentImage.id.in_(identifiers),
+            CommentImage.project_id == project_id,
+            CommentImage.kind == "body_specification",
+        )
+    ).all()
+    service = BodyImageService()
+    deadline = datetime.now(UTC) - DRAFT_RETENTION
+    sources: dict[UUID, str] = {}
+    for row in rows:
+        if row.retained_at is None and (
+            actor_id is None or row.uploaded_by != actor_id or row.created_at < deadline
+        ):
+            continue
+        if (
+            row.byte_size > MAX_MOCKUP_IMAGE_BYTES
+            or row.content_type not in MEDIA_TYPES.values()
+        ):
+            continue
+        encoded = base64.b64encode(service.content(db, row)).decode("ascii")
+        sources[row.id] = f"data:{row.content_type};base64,{encoded}"
+    return mockup_document(mockup, sources)
 
 
 def ensure_snapshot_images(db: Session, project_id: int, nodes: list[dict]) -> None:

@@ -32,7 +32,7 @@ from app.schemas.artifact_publication_access import (
 from app.schemas.design_content import HtmlMockup
 from app.schemas.design_workspace import MockupPreviewRead
 from app.services.artifact_release_snapshot import MAX_PAGE_BYTES, canonical_bytes
-from app.services.design_mockup import mockup_document
+from app.services.body_image import stored_mockup_preview
 from app.services.fixed_approval_cursor import decode_cursor, encode_cursor
 from app.services.guest_invitation import GuestInvitationService
 from app.services.publication_access_context import (
@@ -308,7 +308,7 @@ class SharedPublicationService:
     def mockup_preview(self, original, user, identity, node_id, mockup_id, revision):
         """共有中の固定本文に含まれるHTMLだけを隔離表示用に変換する。"""
         with self.context.transaction(original, user) as (db, actor):
-            _, current = self._get(db, original, actor, identity)
+            row, current = self._get(db, original, actor, identity)
             if not hmac.compare_digest(current, revision):
                 raise ConflictError()
             nodes = ArtifactPublicationNode.__table__
@@ -335,7 +335,9 @@ class SharedPublicationService:
                 mockup = HtmlMockup.model_validate(selected)
             except ValidationError:
                 raise NotFoundError() from None
-            document, css_blocked = mockup_document(mockup)
+            document, css_blocked = stored_mockup_preview(
+                db, row["project_id"], None, mockup
+            )
             return MockupPreviewRead(document=document, css_blocked=css_blocked)
 
     @retry_publication_operation

@@ -28,6 +28,7 @@ from app.schemas.specification import (
     ScreenSpecification,
     SpecificationCommentCreate,
     SpecificationCommentRead,
+    SpecificationContent,
     SpecificationCreate,
     SpecificationLinkCreate,
     SpecificationLinkRead,
@@ -39,9 +40,10 @@ from app.schemas.specification import (
 )
 from app.services.audit_log import AuditLogService
 from app.services.authorization import AuthorizationService
-from app.services.body_image import retain_body_images
+from app.services.body_image import MAX_MOCKUP_IMAGES, retain_body_images
 from app.services.comment_image import bind_comment_images
 from app.services.conflict import raise_if_version_conflict
+from app.services.design_mockup import mockup_image_references
 from app.services.design_paths import design_field as field_value
 from app.services.design_references import check_design_references
 from app.services.storage import StorageService
@@ -58,6 +60,31 @@ TARGET_PERMISSIONS = {
 def anchor_digest(row: Specification, path: str) -> str | None:
     value = field_value(row, path)
     return sha256(value.encode("utf-8")).hexdigest() if value is not None else None
+
+
+def retain_specification_images(
+    db: Session,
+    project_id: int,
+    actor_id: int,
+    summary: str,
+    content: SpecificationContent,
+) -> None:
+    """設計本文とモックアップで参照する画像を同じ保存で確定する。"""
+    references = set()
+    if isinstance(content, ScreenSpecification):
+        for mockup in content.mockups:
+            images = mockup_image_references(mockup.html)
+            if len(images) > MAX_MOCKUP_IMAGES:
+                raise BadRequestError("モックアップに配置できる画像は8枚までです。")
+            references.update(images)
+    retain_body_images(
+        db,
+        project_id,
+        "specification",
+        actor_id,
+        summary,
+        additional_references=references,
+    )
 
 
 class SpecificationService:
@@ -123,7 +150,7 @@ class SpecificationService:
         self, db: Session, project_id: int, data: SpecificationCreate, user: User
     ):
         check_design_references(db, project_id, data.content, None)
-        retain_body_images(db, project_id, "specification", user.id, data.summary)
+        retain_specification_images(db, project_id, user.id, data.summary, data.content)
         row = Specification(
             project_id=project_id,
             kind=data.content.type,
@@ -158,7 +185,7 @@ class SpecificationService:
             {**row.content, **data.content.model_dump(mode="json", exclude_unset=True)}
         )
         check_design_references(db, project_id, content, row.id)
-        retain_body_images(db, project_id, "specification", user.id, data.summary)
+        retain_specification_images(db, project_id, user.id, data.summary, content)
         row.title, row.summary, row.content = (
             data.title,
             data.summary,

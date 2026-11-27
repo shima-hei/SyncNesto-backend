@@ -30,9 +30,9 @@ from app.schemas.wireframe_part import (
     WireframePartSummary,
     WireframePartUpdate,
 )
+from app.services.body_image import stored_mockup_preview
 from app.services.design_formats import export_ddl, export_openapi, import_specification
 from app.services.design_impact import analyze_impact, save_impact
-from app.services.design_mockup import mockup_document
 from app.services.design_workspace import DesignWorkspaceService
 from app.services.wireframe_part import create_part, list_parts, read_part, update_part
 
@@ -107,9 +107,9 @@ def update_design_placements(
 
 
 @router.post("/mockup-preview", response_model=MockupPreviewRead)
-def preview_design_mockup(project_id: int, data: HtmlMockup, user: Reader):
+def preview_design_mockup(project_id: int, data: HtmlMockup, db: Db, user: Reader):
     """下書き原本を許可リストで変換し、iframe専用文書を返す。"""
-    document, css_blocked = mockup_document(data)
+    document, css_blocked = stored_mockup_preview(db, project_id, user.id, data)
     return MockupPreviewRead(document=document, css_blocked=css_blocked)
 
 
