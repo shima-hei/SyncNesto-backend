@@ -38,6 +38,7 @@ from app.schemas.specification import (
 )
 from app.services.audit_log import AuditLogService
 from app.services.authorization import AuthorizationService
+from app.services.body_image import retain_body_images
 from app.services.comment_image import bind_comment_images
 from app.services.conflict import raise_if_version_conflict
 from app.services.storage import StorageService
@@ -146,6 +147,7 @@ class SpecificationService:
     def create(
         self, db: Session, project_id: int, data: SpecificationCreate, user: User
     ):
+        retain_body_images(db, project_id, "specification", user.id, data.summary)
         row = Specification(
             project_id=project_id,
             kind=data.content.type,
@@ -175,6 +177,7 @@ class SpecificationService:
         self.check_version(row, data.version)
         if row.kind != data.content.type:
             raise BadRequestError(error_messages.SPECIFICATION_KIND_IMMUTABLE)
+        retain_body_images(db, project_id, "specification", user.id, data.summary)
         row.title, row.summary, row.content = (
             data.title,
             data.summary,

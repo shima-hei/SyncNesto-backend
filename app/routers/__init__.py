@@ -12,6 +12,7 @@ from app.routers import (
     artifact_releases,
     audit_logs,
     auth,
+    body_images,
     comment_images,
     deleted_data_cleanup,
     demo,
@@ -66,6 +67,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(guest_fixed_approvals.shared_router)
     app.include_router(guest_requirement_workflow.shared_router)
     app.include_router(artifact_publication_access.shared_router)
+    app.include_router(body_images.shared_router)
     app.include_router(guest_invitations.recipient_router)
     app.include_router(mfa.router)
     app.include_router(mfa.operator_router)
@@ -101,6 +103,7 @@ def register_routers(app: FastAPI) -> None:
         verification_verdicts.router,
         documents.router,
         comment_images.router,
+        body_images.router,
         specifications.router,
         requirements.router,
         tasks.router,

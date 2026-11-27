@@ -121,7 +121,12 @@ class ArtifactSnapshotBuilder:
                     raise BadRequestError(
                         error_messages.ARTIFACT_TEST_GRAPH_INVALID
                     ) from None
+                from app.services.body_image import image_references
+
                 nodes = graph_nodes(graph, canonical_bytes)
+                image_ids = image_references(graph.description)
+                if image_ids:
+                    nodes[0]["payload"]["body_image_ids"] = sorted(map(str, image_ids))
                 nodes[0]["position"] = index
                 for node in nodes:
                     self._append_node(snapshot, node)
@@ -203,6 +208,9 @@ class ArtifactSnapshotBuilder:
                         raise NotFoundError()
                 self._version(requirement, ref.version)
                 self._requirement(db, snapshot, requirement, None, index)
+        from app.services.body_image import ensure_snapshot_images
+
+        ensure_snapshot_images(db, project_id, snapshot.nodes)
         snapshot.title = snapshot.nodes[0]["payload"]["title"]
         snapshot.scope_digest = digest(
             {

@@ -14,6 +14,7 @@ from app.routers import requirements_shared as shared
 from app.schemas.requirement import (
     RequirementTargetCommentCreate,
     RequirementTargetCommentRead,
+    RequirementTargetCommentReanchor,
     RequirementTargetCommentStateUpdate,
     RequirementTargetCommentUpdate,
 )
@@ -21,6 +22,9 @@ from app.services.authorization import AuthorizationService
 from app.services.storage import StorageService
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["requirements"])
+anchor_router = APIRouter(
+    prefix="/projects/{project_id}", tags=["document-comment-anchors"]
+)
 authorization_service = AuthorizationService()
 
 
@@ -132,6 +136,36 @@ def update_target_comment(
         project_id=project_id,
         comment_id=comment_id,
         comment_in=comment_in,
+        actor_id=current_user.id,
+        can_moderate=authorization_service.can_moderate_requirement_comments(
+            db,
+            user=current_user,
+            project_id=project_id,
+        ),
+    )
+    return build_requirement_target_comment_response(
+        comment,
+        user=_get_target_comment_author(db, comment.author_id),
+        storage=StorageService().for_demo(db),
+    )
+
+
+@anchor_router.patch(
+    "/comments/{comment_id}/anchor", response_model=RequirementTargetCommentRead
+)
+def reanchor_target_comment(
+    project_id: int,
+    comment_id: int,
+    data: RequirementTargetCommentReanchor,
+    current_user: User = Depends(require_project_permission("requirement:comment")),
+    db: Session = Depends(get_db),
+) -> RequirementTargetCommentRead:
+    """本人またはモデレーターが最新版で引用を再指定する。"""
+    comment = shared.target_comment_service.reanchor_comment(
+        db,
+        project_id=project_id,
+        comment_id=comment_id,
+        data=data,
         actor_id=current_user.id,
         can_moderate=authorization_service.can_moderate_requirement_comments(
             db,

@@ -796,3 +796,4 @@ commented
 - `GET /projects/{project_id}/requirement-workflow/item-states` は `requirement_ids` を最大100件受け付け、現在の案件にある要件について `authoring`、`review`、`approval` を返します。
 - レビューは要件を対象に含む最新の依頼を参照します。未解決の修正指摘、依頼後の本文変更、担当者全員の要件確認から状態を導出します。正式承認は最新の開発基準の同じ要件を現在値と照合します。`changed_fields` に直近の承認済み版から変わった属性を含めます。
 - 固定内容を参照できる場合には、レビュー依頼や承認済み版へのIDを返します。`review_item_node_id` は閲覧できる依頼の固定版内で、この要件の本文・指摘を絞り込むIDです。検証状況は `GET /projects/{project_id}/requirement-verdicts` の記録に従います。
+本文画像のAPI、引用アンカーの座標、再指定時の競合と履歴については [本文画像と文書の引用コメント](markdown-body-images-and-quotes.md) を参照。

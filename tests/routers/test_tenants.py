@@ -45,6 +45,10 @@ SHARED_IDENTITY_OPERATIONS = {
     ("get", "/shared/publications"),
     ("get", "/shared/publications/{publication_id}"),
     ("get", "/shared/publications/{publication_id}/nodes"),
+    (
+        "get",
+        "/shared/publications/{publication_id}/nodes/{node_id}/body-images/{image_id}",
+    ),
     ("get", "/shared/publications/{publication_id}/files"),
     ("post", "/shared/publications/{publication_id}/files/{file_id}/download"),
 }
@@ -415,6 +419,7 @@ def test_all_business_routes_require_tenant_context(client):
 
     from app.core.auth import get_current_user
     from app.routers.artifact_publication_access import shared_router
+    from app.routers.body_images import shared_router as body_image_router
     from app.routers.guest_fixed_approvals import shared_router as approval_router
     from app.routers.guest_invitations import (
         optional_user,
@@ -527,7 +532,7 @@ def test_all_business_routes_require_tenant_context(client):
             if (method, path) in SHARED_IDENTITY_OPERATIONS:
                 route = next(
                     route
-                    for route in shared_router.routes
+                    for route in (*shared_router.routes, *body_image_router.routes)
                     if isinstance(route, APIRoute)
                     and route.path == path
                     and method.upper() in route.methods

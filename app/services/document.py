@@ -29,6 +29,7 @@ from app.schemas.document import (
 )
 from app.services.audit_log import AuditLogService
 from app.services.authorization import AuthorizationService
+from app.services.body_image import retain_body_images
 from app.services.conflict import raise_if_version_conflict
 
 TARGET_PERMISSIONS = {
@@ -110,6 +111,7 @@ class DocumentService:
         """初期本文と版1を保存する。"""
         if not self.repository.project_exists(db, project_id):
             raise NotFoundError(error_messages.PROJECT_NOT_FOUND)
+        retain_body_images(db, project_id, "document", actor_id, data.body)
         row = self.repository.create(db, project_id, data.title, data.body, actor_id)
         db.commit()
         db.refresh(row)
@@ -129,6 +131,7 @@ class DocumentService:
         self.check_version(row, data.version)
         if (row.title, row.body) == (data.title, data.body):
             return row
+        retain_body_images(db, project_id, "document", actor_id, data.body)
         row.title, row.body = data.title, data.body
         row.version += 1
         row.updated_by = actor_id

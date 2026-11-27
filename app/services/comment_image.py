@@ -8,11 +8,10 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BadRequestError, NotFoundError
-from app.models.comment_image import CommentImage
+from app.models.comment_image import COMMENT_KINDS, CommentImage
 from app.models.project import Project
 from app.schemas.comment_image import MAX_COMMENT_IMAGES, CommentImageKind
 from app.schemas.file_upload import FileUploadPlan, FileUploadRequest
-from app.services.document_attachment import DocumentAttachmentService
 from app.services.file_upload import FileUploadService
 from app.services.storage import StorageService
 
@@ -32,7 +31,8 @@ logger = logging.getLogger(__name__)
 def drafts_only():
     """投稿と並行して、使用済みの画像を破棄しない。"""
     return and_(
-        *(getattr(CommentImage, key).is_(None) for key in OWNER_BY_KIND.values())
+        CommentImage.retained_at.is_(None),
+        *(getattr(CommentImage, key).is_(None) for key in OWNER_BY_KIND.values()),
     )
 
 
@@ -42,8 +42,12 @@ class CommentImageService:
     def __init__(self, storage: StorageService | None = None) -> None:
         self.storage = storage or StorageService()
 
+    kinds = COMMENT_KINDS
+
     @staticmethod
     def validate_metadata(filename: str, content_type: str, byte_size: int) -> None:
+        from app.services.document_attachment import DocumentAttachmentService
+
         if (
             content_type not in COMMENT_IMAGE_TYPES
             or not 0 < byte_size <= MAX_COMMENT_IMAGE_BYTES
@@ -57,7 +61,7 @@ class CommentImageService:
         self,
         db: Session,
         project_id: int,
-        kind: CommentImageKind,
+        kind: str,
         data: FileUploadRequest,
         actor_id: int,
     ) -> FileUploadPlan:
@@ -71,7 +75,7 @@ class CommentImageService:
         self,
         db: Session,
         project_id: int,
-        kind: CommentImageKind,
+        kind: str,
         token: str,
         actor_id: int,
     ) -> CommentImage:
@@ -113,7 +117,7 @@ class CommentImageService:
         self,
         db: Session,
         project_id: int,
-        kind: CommentImageKind,
+        kind: str,
         filename: str,
         content_type: str,
         content: bytes,
@@ -123,9 +127,7 @@ class CommentImageService:
     ) -> CommentImage:
         self.validate_metadata(filename, content_type, len(content))
         storage = self.storage.for_demo(db)
-        name = DocumentAttachmentService(storage).validate_content(
-            filename, content_type, content
-        )
+        name = self.validate_content(storage, filename, content_type, content)
         image_id = image_id or uuid4()
         key = storage.object_key(
             f"projects/{project_id}/comment-images/{image_id}/{uuid4()}"
@@ -149,10 +151,12 @@ class CommentImageService:
             if existing is not None:
                 FileUploadService(storage).discard(key)
                 return existing
+            self.check_project_limit(db, project_id)
             draft_count = db.scalar(
                 select(func.count(CommentImage.id)).where(
                     CommentImage.project_id == project_id,
                     CommentImage.uploaded_by == actor_id,
+                    CommentImage.kind.in_(self.kinds),
                     drafts_only(),
                 )
             )
@@ -176,9 +180,22 @@ class CommentImageService:
             raise
         return row
 
+    def validate_content(
+        self, storage: StorageService, filename: str, content_type: str, content: bytes
+    ) -> str:
+        """既存の添付と同じファイル名・形式検証を使う。"""
+        from app.services.document_attachment import DocumentAttachmentService
+
+        return DocumentAttachmentService(storage).validate_content(
+            filename, content_type, content
+        )
+
+    def check_project_limit(self, db: Session, project_id: int) -> None:
+        """画像の用途ごとに必要な案件上限を検証する。"""
+
     def get(self, db: Session, project_id: int, image_id: UUID) -> CommentImage:
         row = db.get(CommentImage, image_id)
-        if row is None or row.project_id != project_id:
+        if row is None or row.project_id != project_id or row.kind not in self.kinds:
             raise NotFoundError()
         return row
 
@@ -198,6 +215,7 @@ class CommentImageService:
                 CommentImage.id == image_id,
                 CommentImage.project_id == project_id,
                 CommentImage.uploaded_by == actor_id,
+                CommentImage.kind.in_(self.kinds),
                 drafts_only(),
             )
             .with_for_update()
@@ -214,6 +232,7 @@ class CommentImageService:
             .where(
                 CommentImage.project_id == project_id,
                 CommentImage.uploaded_by == actor_id,
+                CommentImage.kind.in_(self.kinds),
                 CommentImage.created_at < datetime.now(UTC) - DRAFT_RETENTION,
                 drafts_only(),
             )

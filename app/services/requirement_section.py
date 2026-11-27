@@ -12,6 +12,7 @@ from app.schemas.requirement import (
     RequirementSectionSortUpdate,
     RequirementSectionUpdate,
 )
+from app.services.body_image import retain_body_images
 from app.services.change_log_formatter import (
     build_changed_field_snapshots,
     build_update_change_log_entry,
@@ -98,6 +99,7 @@ class RequirementSectionService:
             project_id=project_id,
             document_id=document_id,
         )
+        retain_body_images(db, project_id, "requirement", actor_id, section_in.content)
         section = self.repository.create(
             db,
             document_id=document_id,
@@ -206,6 +208,7 @@ class RequirementSectionService:
                 REQUIREMENT_SECTION_CONFLICT_CURRENT_FIELDS,
             ),
         )
+        retain_body_images(db, project_id, "requirement", actor_id, section_in.content)
         before_value = self._build_section_snapshot(section)
         updated_section = self.repository.update(
             db,
