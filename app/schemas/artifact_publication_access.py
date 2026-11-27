@@ -1,6 +1,6 @@
 """本人別公開の内部操作と、内部対応を含まないshared応答。"""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -27,6 +27,8 @@ class PublicationRecipient(BaseModel):
     participation_id: UUID
     version: int = Field(ge=1)
     expires_at: datetime
+    download_allowed: bool | None = None
+    comment_allowed: bool = False
 
     @field_validator("expires_at")
     @classmethod
@@ -37,9 +39,10 @@ class PublicationRecipient(BaseModel):
         return value
 
 
-class PublicationPublish(AccessInput):
+class PublicationShareInput(BaseModel):
     """全文・添付構成と相手・期限を確認して公開する。"""
 
+    model_config = ConfigDict(extra="forbid")
     expected_state: Literal["prepared", "published"]
     publication_version: int = Field(ge=1)
     public_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -53,6 +56,10 @@ class PublicationPublish(AccessInput):
         if len({v.participation_id for v in values}) != len(values):
             raise ValueError("公開相手が重複しています")
         return values
+
+
+class PublicationPublish(AccessInput, PublicationShareInput):
+    """判断依頼を伴わない資料共有には固有の操作IDを指定する。"""
 
 
 class PublicationRevoke(AccessInput):
@@ -85,6 +92,17 @@ class GuestParticipationRead(BaseModel):
     revocation_reason: str | None
 
 
+class GuestParticipationExpiry(PublicationRevoke):
+    """同じ有効な参加世代の期限を明示的に変更する。"""
+
+    expires_at: datetime
+
+    @field_validator("expires_at")
+    @classmethod
+    def aware_expiry(cls, value):
+        return PublicationRecipient.aware_expiry(value)
+
+
 class GuestParticipationList(BaseModel):
     """参加資格のページ。"""
 
@@ -104,6 +122,9 @@ class PublicationGrantRead(BaseModel):
     effective_status: Literal["active", "revoked", "expired"]
     expires_at: datetime
     version: int
+    download_allowed: bool | None
+    comment_allowed: bool
+    decision_only: bool
     revoked_at: datetime | None
     revocation_reason: str | None
 
@@ -112,6 +133,48 @@ class PublicationGrantList(BaseModel):
     """公開版の許可一覧。"""
 
     items: list[PublicationGrantRead]
+    total: int
+    page: int
+    page_size: int
+
+
+class GuestPublicationGrantRead(PublicationGrantRead):
+    """参加者から辿る共有許可と、現在閲覧可能な公開版の情報。"""
+
+    publication_id: UUID
+    publication_title: str
+    captured_at: datetime
+
+
+class GuestPublicationGrantList(BaseModel):
+    items: list[GuestPublicationGrantRead]
+    total: int
+    page: int
+    page_size: int
+
+
+class GuestParticipationDecisionRead(BaseModel):
+    """参加世代に結び付いた依頼と、指定された本人の回答。"""
+
+    id: UUID
+    publication_id: UUID
+    title: str
+    captured_at: datetime
+    kind: Literal["review", "formal_approval", "fixed_approval"]
+    target_kind: Literal[
+        "requirement", "section", "requirement_document", "specification", "test_design"
+    ]
+    state: str
+    response_state: str | None
+    created_at: datetime
+    responded_at: datetime | None
+    due_on: date | None
+    decision_expires_at: datetime | None
+    access_state: Literal["active", "revoked", "expired"]
+
+
+class GuestParticipationDecisionList(BaseModel):
+    items: list[GuestParticipationDecisionRead]
     total: int
     page: int
     page_size: int
@@ -164,6 +227,12 @@ class SharedPublicationRead(BaseModel):
     authorization_revision: str
 
 
+class SharedPublicationLinkTitle(BaseModel):
+    id: UUID
+    title: str
+    expires_at: datetime
+
+
 class SharedPublicationSummary(BaseModel):
     """一覧に内部ID・作成者・他宛先・組織情報を持ち込まない。"""
 
@@ -173,6 +242,14 @@ class SharedPublicationSummary(BaseModel):
     captured_at: datetime
     expires_at: datetime
     authorization_revision: str
+    public_project_name: str | None
+    shared_at: datetime
+    own_decision_status: Literal["pending", "responded", "none"] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    decision_refresh_at: datetime | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class SharedPublicationList(BaseModel):
@@ -194,3 +271,4 @@ class SharedPublicationFiles(BaseModel):
 
     items: list[PublicFile]
     authorization_revision: str
+    download_allowed: bool

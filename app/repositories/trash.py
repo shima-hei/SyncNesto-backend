@@ -261,6 +261,9 @@ class TrashRepository:
                 "project_guest_participations",
                 "artifact_publication_grants",
                 "artifact_publication_events",
+                "shared_publication_comments",
+                "shared_publication_comment_files",
+                "shared_publication_comment_mentions",
             }
         }
         edges["document_links"] = edges["document_links"] + [

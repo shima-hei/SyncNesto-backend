@@ -9,7 +9,11 @@ from app.models.artifact_publication import ArtifactPublication, ArtifactPublica
 from app.models.artifact_publication_access import (
     ArtifactPublicationEvent,
     ArtifactPublicationGrant,
+    GuestProjectProfile,
     ProjectGuestParticipation,
+    SharedCommentFile,
+    SharedCommentMention,
+    SharedPublicationComment,
 )
 from app.models.artifact_release import ArtifactRelease, ArtifactReleaseNode
 from app.models.audit_log import AuditLog
@@ -145,7 +149,11 @@ __all__ = [
     "ProjectGuestInvitationEvent",
     "ArtifactPublicationEvent",
     "ArtifactPublicationGrant",
+    "GuestProjectProfile",
     "ProjectGuestParticipation",
+    "SharedCommentFile",
+    "SharedCommentMention",
+    "SharedPublicationComment",
     "ArtifactPublication",
     "ArtifactPublicationNode",
     "FixedApprovalEvent",

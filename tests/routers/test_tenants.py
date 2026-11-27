@@ -43,10 +43,28 @@ EMAIL_IDENTITY_OPERATIONS = {
 # 明示した共有取得/添付発行だけは、選択組織ではなく現在本人を検証する。
 SHARED_IDENTITY_OPERATIONS = {
     ("get", "/shared/publications"),
+    ("get", "/shared/publications/link-titles"),
     ("get", "/shared/publications/{publication_id}"),
     ("get", "/shared/publications/{publication_id}/nodes"),
     ("get", "/shared/publications/{publication_id}/files"),
     ("post", "/shared/publications/{publication_id}/files/{file_id}/download"),
+    ("get", "/shared/publications/{publication_id}/files/{file_id}/content"),
+    ("get", "/shared/publications/{publication_id}/comments"),
+    ("get", "/shared/publications/{publication_id}/comments/mention-candidates"),
+    ("post", "/shared/publications/{publication_id}/comments"),
+    ("post", "/shared/publications/{publication_id}/comments/files/plan"),
+    ("post", "/shared/publications/{publication_id}/comments/files/complete"),
+    ("post", "/shared/publications/{publication_id}/comments/files"),
+    ("delete", "/shared/publications/{publication_id}/comments/files/{file_id}"),
+    (
+        "get",
+        "/shared/publications/{publication_id}/comments/{comment_id}/files/{file_id}/content",
+    ),
+    ("get", "/shared/projects"),
+    ("get", "/shared/projects/{participation_id}"),
+    ("get", "/shared/comments"),
+    ("get", "/shared/activity"),
+    ("post", "/shared/activity/{notice_id}/read"),
 }
 
 # メール確認Cookieと本人の認証で検査する新しい5操作だけを分離する。
@@ -422,6 +440,8 @@ def test_all_business_routes_require_tenant_context(client):
         same_origin,
     )
     from app.routers.guest_requirement_workflow import shared_router as workflow_router
+    from app.routers.guest_workspace import activity_router, comment_router
+    from app.routers.guest_workspace import shared_router as workspace_router
     from app.routers.mcp import router as mcp_router
     from app.routers.notification_email import router as email_router
     from app.routers.shared_notifications import router as notification_router
@@ -527,7 +547,13 @@ def test_all_business_routes_require_tenant_context(client):
             if (method, path) in SHARED_IDENTITY_OPERATIONS:
                 route = next(
                     route
-                    for route in shared_router.routes
+                    for router in (
+                        shared_router,
+                        workspace_router,
+                        comment_router,
+                        activity_router,
+                    )
+                    for route in router.routes
                     if isinstance(route, APIRoute)
                     and route.path == path
                     and method.upper() in route.methods

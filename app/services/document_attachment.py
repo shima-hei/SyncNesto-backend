@@ -52,9 +52,10 @@ class DocumentAttachmentService:
             raise BadRequestError(error_messages.DOCUMENT_FILE_INVALID)
         return name
 
-    def validate_content(self, filename: str, content_type: str, content: bytes) -> str:
+    @classmethod
+    def validate_content(cls, filename: str, content_type: str, content: bytes) -> str:
         """メタデータだけでなく確定前に内容も検証する。"""
-        name = self.validate_metadata(filename, content_type, len(content))
+        name = cls.validate_metadata(filename, content_type, len(content))
         signature = FILE_TYPES[content_type][1]
         if signature and not content.startswith(signature):
             raise BadRequestError(error_messages.DOCUMENT_FILE_INVALID)

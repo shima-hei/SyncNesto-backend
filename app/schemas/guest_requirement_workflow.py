@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.artifact_publication import PublicationNodeRead
+from app.schemas.artifact_publication_access import PublicationShareInput
 from app.schemas.requirement_workflow import (
     RequirementFormalApprovalDecision,
     RequirementFormalApprovalException,
@@ -20,6 +21,7 @@ class GuestRequirementReviewer(BaseModel):
     """既存の公開許可を持つレビュー担当候補。"""
 
     grant_id: UUID
+    participation_id: UUID
     name: str
     expires_at: datetime
 
@@ -37,11 +39,29 @@ class GuestRequirementReviewCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     publication_id: UUID
     target_node_id: UUID
-    grant_ids: list[UUID] = Field(min_length=1, max_length=25)
+    grant_ids: list[UUID] = Field(default_factory=list, max_length=25)
+    sharing: PublicationShareInput | None = None
     request_key: UUID
     expected_public_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     note: str | None = Field(default=None, max_length=2000)
     due_on: date | None = None
+
+    @model_validator(mode="after")
+    def check_recipients(self):
+        count = len(self.grant_ids) + (
+            len(self.sharing.recipients) if self.sharing else 0
+        )
+        if not 1 <= count <= 25 or len(set(self.grant_ids)) != len(self.grant_ids):
+            raise ValueError("担当者を重複せず1名以上25名まで指定してください")
+        return self
+
+
+class GuestRequirementDecisionCancel(BaseModel):
+    """外部判断依頼の確認時版と取消理由。"""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    version: int = Field(ge=1)
+    reason: str = Field(min_length=1, max_length=1000)
 
 
 class SharedRequirementReviewSummary(BaseModel):
@@ -57,6 +77,12 @@ class SharedRequirementReviewSummary(BaseModel):
     created_at: datetime
     expires_at: datetime
     responded: bool
+    public_project_name: str | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    captured_at: datetime | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class SharedRequirementReviewList(BaseModel):
@@ -122,7 +148,8 @@ class GuestRequirementFormalApprovalInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     publication_id: UUID
     expected_public_digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
-    grant_ids: list[UUID] = Field(min_length=1, max_length=25)
+    grant_ids: list[UUID] = Field(default_factory=list, max_length=25)
+    sharing: PublicationShareInput | None = None
     participant_ids: list[Annotated[int, Field(gt=0)]] = Field(
         default_factory=list, max_length=24
     )
@@ -134,12 +161,20 @@ class GuestRequirementFormalApprovalInput(BaseModel):
 
     @model_validator(mode="after")
     def check_recipients(self):
+        guest_count = len(self.grant_ids) + (
+            len(self.sharing.recipients) if self.sharing else 0
+        )
         if (
             len(set(self.grant_ids)) != len(self.grant_ids)
             or len(set(self.participant_ids)) != len(self.participant_ids)
-            or len(self.grant_ids) + len(self.participant_ids) > 25
+            or not guest_count
+            or guest_count + len(self.participant_ids) > 25
         ):
-            raise ValueError("承認者を重複せず25名まで指定してください")
+            raise ValueError(
+                "ゲスト1名以上を含め、承認者を重複せず25名まで指定してください"
+            )
+        if self.sharing is not None and self.due_on is None:
+            raise ValueError("共有と同時に依頼するときは回答期限を指定してください")
         if len({(item.kind, item.id) for item in self.exceptions}) != len(
             self.exceptions
         ):

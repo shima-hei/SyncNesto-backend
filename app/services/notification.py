@@ -21,6 +21,8 @@ from app.repositories.fixed_approval_notification import (
     FixedApprovalNotificationRepository,
 )
 from app.repositories.notification import NotificationRepository
+from app.repositories.shared_comment_staff import TARGET as SHARED_COMMENT_TARGET
+from app.repositories.shared_comment_staff import SharedCommentStaffRepository
 from app.schemas.notification import (
     NotificationContext,
     NotificationListResponse,
@@ -222,9 +224,53 @@ class NotificationService:
             if any(i.target_type == "fixed_approval" for i in items)
             else {}
         )
+        shared_ids = [
+            item.id for item in items if item.target_type == SHARED_COMMENT_TARGET
+        ]
+        staff = SharedCommentStaffRepository()
+        shared_items = (
+            {
+                row["id"]: row
+                for row in db.execute(
+                    staff.visible(user.id, db.info.get("tenant_id", -1)).where(
+                        staff.notification.c.id.in_(shared_ids)
+                    )
+                ).mappings()
+            }
+            if shared_ids
+            else {}
+        )
         permissions = {}
         result = []
         for item in items:
+            if item.target_type == SHARED_COMMENT_TARGET:
+                value = shared_items.get(item.id)
+                if value is None:
+                    continue
+                result.append(
+                    NotificationRead(
+                        id=item.id,
+                        type=NotificationType(item.type),
+                        actor_user_id=None,
+                        project_id=item.project_id,
+                        target_type=Target.SHARED_PUBLICATION_COMMENT,
+                        target_id=item.target_id,
+                        snapshot=NotificationSnapshot(
+                            actor_name=value["author_label"],
+                            project_name=value["project_name"],
+                            target_title=value["title"],
+                        ),
+                        context=NotificationContext(
+                            publication_id=value["publication_id"],
+                            thread_id=value["thread_id"],
+                        ),
+                        target_status="available",
+                        is_read=item.read_at is not None,
+                        read_at=item.read_at,
+                        created_at=item.created_at,
+                    )
+                )
+                continue
             if item.target_type == "fixed_approval":
                 value = fixed_items.get(item.id)
                 if value is None:

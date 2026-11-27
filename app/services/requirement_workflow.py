@@ -370,8 +370,9 @@ class RequirementWorkflowService:
                         "finalized_at": entry.finalized_at,
                         "approval_basis": entry.approval_basis,
                         "external_review": entry.kind == "review"
-                        and entry.id in external
-                        and entry.kind == "review",
+                        and entry.id in external,
+                        "external_approval": entry.kind == "formal_approval"
+                        and entry.id in external,
                         "participants": [
                             RequirementWorkflowParticipantRead.model_validate(
                                 {

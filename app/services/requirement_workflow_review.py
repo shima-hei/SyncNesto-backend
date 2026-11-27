@@ -53,6 +53,15 @@ ANCHOR_FIELDS = {
 }
 
 
+def matches_fixed_quote(source, anchor):
+    """固定本文のUnicodeコードポイント位置を原文のまま確認する。"""
+    return (
+        isinstance(source, str)
+        and source[anchor.quote_start : anchor.quote_start + len(anchor.quote)]
+        == anchor.quote
+    )
+
+
 class RequirementWorkflowReviewService:
     """固定版のレビューを、発行者・担当者と現在の権限に従って扱う。"""
 
@@ -307,15 +316,9 @@ class RequirementWorkflowReviewService:
             raise NotFoundError()
         if data.anchor is not None:
             original = node.payload.get(data.anchor.field)
-            if (
-                data.anchor.field not in ANCHOR_FIELDS[node.node_kind]
-                or not isinstance(original, str)
-                or original[
-                    data.anchor.quote_start : data.anchor.quote_start
-                    + len(data.anchor.quote)
-                ]
-                != data.anchor.quote
-            ):
+            if data.anchor.field not in ANCHOR_FIELDS[
+                node.node_kind
+            ] or not matches_fixed_quote(original, data.anchor):
                 raise BadRequestError(error_messages.REQUIREMENT_REVIEW_INVALID_ANCHOR)
         thread = RequirementReviewThread(
             request_id=row.id,

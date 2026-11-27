@@ -27,6 +27,7 @@ class DeliverySource:
     byte_size: int
     content_digest: str
     storage_key: str = field(repr=False)
+    content_type: str = "application/octet-stream"
 
 
 class PublicationDownloadRepository:
@@ -92,5 +93,6 @@ class PublicationDownloadRepository:
                 byte_size=visible["byte_size"],
                 content_digest=visible["content_digest"],
                 storage_key=obj.storage_key,
+                content_type=visible["content_type"],
             )
         raise NotFoundError()

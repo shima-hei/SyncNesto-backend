@@ -774,6 +774,8 @@ commented
 
 従来の個別要件レビューは履歴から参照します。旧 `POST /projects/{project_id}/requirements/{requirement_id}/reviews` は、通常 `409 LEGACY_REQUIREMENT_REVIEW_CREATION_DISABLED` を返します。新規レビューは版に結び付いたレビュー依頼APIを使用してください。旧クライアントの移行中に限り `LEGACY_REQUIREMENT_REVIEW_CREATION_ENABLED=true` で旧登録を有効にできます。
 
+個別要件の固定版から `POST /projects/{project_id}/guest-requirement-reviews` に `sharing` を渡すと、依頼先への共有許可も同時に保存します。既存の有効な共有先は `grant_ids` に指定できます。取消は依頼配下の `POST /{request_id}/cancel` に `version` と `reason` を渡します。発行時にその依頼に付随して作られた許可が失効します。固定版の公開条件と移行は [ゲストワークスペースの仕様](guest-workspace.md) を参照してください。
+
 ## 要件定義書全体の正式承認
 
 要件に対する新規申請は、定義書全体の正式承認APIを使用します。旧承認API、内部固定版承認API、外部固定版承認APIで要件を対象とした新規申請・申請プレビューは、通常 `409 LEGACY_REQUIREMENT_APPROVAL_CREATION_DISABLED` を返します。既存依頼の閲覧・判断、記録の保全、既存の冪等な再送に適用対象を広げません。設計書・テスト設計書単体の外部固定版承認は従来APIで扱います。移行時に従来クライアントを戻す場合に限り、`LEGACY_REQUIREMENT_APPROVAL_CREATION_ENABLED=true` で旧申請APIを有効にできます。

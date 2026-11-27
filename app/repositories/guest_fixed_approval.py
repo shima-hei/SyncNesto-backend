@@ -2,7 +2,8 @@
 
 from typing import cast
 
-from sqlalchemy import Table, and_, exists, select
+from sqlalchemy import DateTime, Table, and_, exists, func, or_, select
+from sqlalchemy import cast as sql_cast
 
 from app.models.fixed_approval import FixedApprovalRequest
 from app.models.guest_fixed_approval import FixedApprovalGuestBinding
@@ -14,6 +15,22 @@ class GuestFixedApprovalRepository:
 
     bindings = cast(Table, FixedApprovalGuestBinding.__table__)
     requests = cast(Table, FixedApprovalRequest.__table__)
+
+    def deadline(self):
+        """公開依頼の時点で確定した回答期限を返す。"""
+        return sql_cast(
+            self.bindings.c.public_context["decision_expires_at"].astext,
+            DateTime(timezone=True),
+        )
+
+    def current_deadline(self):
+        """回答済みの履歴を保持し、未回答で期限切れの依頼を除く。"""
+        deadline = self.deadline()
+        return or_(
+            self.requests.c.status != "requested",
+            deadline.is_(None),
+            deadline > func.clock_timestamp(),
+        )
 
     def binding(self, db, identity, project_id=None):
         """対応を取得する。認可は呼出元で必ず追加する。"""
@@ -43,15 +60,21 @@ class GuestFixedApprovalRepository:
         """過去世代・再許可では復活しない、本人に指定した依頼集合。"""
         r, b = self.requests, self.bindings
         access = PublicationAccessRepository()
-        p, g, part = access.publications, access.grants, access.participations
-        allowed = access.shared_query(user_id).where(
+        p, g = access.publications, access.grants
+        shared = access.shared_query(user_id)
+        allowed = shared.where(
             p.c.id == b.c.publication_id,
             p.c.project_id == b.c.project_id,
             g.c.id == b.c.grant_id,
-            part.c.id == b.c.participation_id,
+            shared.selected_columns.participant_id == b.c.participation_id,
         )
         return (
             select(r.c.id, r.c.project_id, r.c.created_at, b.c.publication_id)
             .join(b, and_(b.c.approval_id == r.c.id, b.c.project_id == r.c.project_id))
-            .where(r.c.approver_id == user_id, r.c.sealed.is_(True), exists(allowed))
+            .where(
+                r.c.approver_id == user_id,
+                r.c.sealed.is_(True),
+                self.current_deadline(),
+                exists(allowed),
+            )
         )

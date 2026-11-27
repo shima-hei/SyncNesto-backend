@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.notification import NotificationTargetType, NotificationType
 
@@ -32,6 +32,10 @@ class NotificationContext(BaseModel):
     action: str | None = None
     current_status: str | None = None
     target_kind: str | None = None
+    publication_id: UUID | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    thread_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class NotificationRead(BaseModel):

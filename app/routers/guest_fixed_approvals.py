@@ -104,11 +104,14 @@ def shared_approval_requests(
     q: str = Query(default="", max_length=200),
     status: ApprovalStatus | None = None,
     publication_id: UUID | None = None,
+    participation_id: UUID | None = None,
     cursor: str | None = Query(default=None, max_length=1000),
     page_size: int = Query(default=20, ge=1, le=100),
 ):
     """現在見られる、自分への判断依頼だけを一覧する。"""
-    return shared.listing(db, user, q, status, cursor, page_size, publication_id)
+    return shared.listing(
+        db, user, q, status, cursor, page_size, publication_id, participation_id
+    )
 
 
 @shared_router.get(

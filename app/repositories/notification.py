@@ -32,6 +32,8 @@ from app.repositories.fixed_approval_notification import (
     ACTION_TYPES,
     FixedApprovalNotificationRepository,
 )
+from app.repositories.shared_comment_staff import TARGET as SHARED_COMMENT_TARGET
+from app.repositories.shared_comment_staff import SharedCommentStaffRepository
 
 
 class NotificationRepository:
@@ -49,7 +51,8 @@ class NotificationRepository:
     def query(self, db: Session, recipient_id: int, project_id: int | None = None):
         """宛先本人の通知だけに制限する。"""
         query = db.query(Notification).filter(
-            Notification.recipient_user_id == recipient_id
+            Notification.recipient_user_id == recipient_id,
+            Notification.target_type != "shared_publication",
         )
         fixed = FixedApprovalNotificationRepository()
         eligible = fixed.internal(recipient_id, db.info.get("tenant_id", -1))
@@ -60,6 +63,16 @@ class NotificationRepository:
         query = query.filter(
             or_(
                 ~is_fixed, Notification.id.in_(eligible.with_only_columns(fixed.n.c.id))
+            )
+        )
+        staff = SharedCommentStaffRepository()
+        eligible_comments = staff.visible(
+            recipient_id, db.info.get("tenant_id", -1)
+        ).with_only_columns(staff.notification.c.id)
+        query = query.filter(
+            or_(
+                Notification.target_type != SHARED_COMMENT_TARGET,
+                Notification.id.in_(eligible_comments),
             )
         )
         if project_id is not None:

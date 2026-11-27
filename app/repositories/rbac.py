@@ -1,6 +1,6 @@
 """RBACに関するデータアクセス処理を定義するモジュール。"""
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, exists, select
 from sqlalchemy.orm import Session
 
 from app.models.project import Project, ProjectMember
@@ -8,6 +8,54 @@ from app.models.rbac import Permission, Role, RolePermission, UserRole
 from app.models.review_account import ReviewAccountGrant
 from app.models.tenant import Tenant, TenantMember
 from app.models.user import User
+
+
+def project_role_permission(project_id, user_id, code):
+    """相関クエリの対象者に対し、現在の案件ロールに権限があるかを返す。"""
+    member, role, grant, permission = (
+        model.__table__.alias()
+        for model in (ProjectMember, Role, RolePermission, Permission)
+    )
+    return exists(
+        select(member.c.id)
+        .join(role, role.c.id == member.c.role_id)
+        .join(grant, grant.c.role_id == role.c.id)
+        .join(permission, permission.c.id == grant.c.permission_id)
+        .where(
+            member.c.project_id == project_id,
+            member.c.user_id == user_id,
+            member.c.deleted_at.is_(None),
+            role.c.scope == "project",
+            permission.c.code == code,
+        )
+        .correlate_except(member, role, grant, permission)
+    )
+
+
+def active_internal_project_identity(project, user_id):
+    """通知と候補を現在有効な同一組織の通常の社内ユーザーに限定する。"""
+    user, member, tenant, review = (
+        model.__table__.alias()
+        for model in (User, TenantMember, Tenant, ReviewAccountGrant)
+    )
+    return exists(
+        select(user.c.id)
+        .join(member, member.c.user_id == user.c.id)
+        .join(tenant, tenant.c.id == member.c.tenant_id)
+        .where(
+            user.c.id == user_id,
+            user.c.is_active.is_(True),
+            user.c.deleted_at.is_(None),
+            user.c.user_type == "internal",
+            user.c.password_change_required.is_(False),
+            member.c.tenant_id == project.c.tenant_id,
+            member.c.status == "active",
+            tenant.c.status == "active",
+            project.c.deleted_at.is_(None),
+            ~exists(select(review.c.user_id).where(review.c.user_id == user.c.id)),
+        )
+        .correlate_except(user, member, tenant)
+    )
 
 
 class RbacRepository:

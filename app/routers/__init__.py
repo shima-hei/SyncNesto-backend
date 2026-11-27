@@ -22,6 +22,7 @@ from app.routers import (
     guest_fixed_approvals,
     guest_invitations,
     guest_requirement_workflow,
+    guest_workspace,
     health,
     home,
     mcp,
@@ -67,6 +68,9 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(guest_requirement_workflow.shared_router)
     app.include_router(artifact_publication_access.shared_router)
     app.include_router(guest_invitations.recipient_router)
+    app.include_router(guest_workspace.shared_router)
+    app.include_router(guest_workspace.comment_router)
+    app.include_router(guest_workspace.activity_router)
     app.include_router(mfa.router)
     app.include_router(mfa.operator_router)
     app.include_router(mcp.router)
@@ -86,6 +90,7 @@ def register_routers(app: FastAPI) -> None:
         guest_invitations.router,
         guest_requirement_workflow.router,
         guest_requirement_workflow.approval_router,
+        guest_workspace.router,
         home.router,
         search.router,
         trash.router,
