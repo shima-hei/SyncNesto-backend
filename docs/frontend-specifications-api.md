@@ -73,3 +73,31 @@
 DELETEにはquery `version` が必要。30日保持の既存ごみ箱で復元できる。横断検索は既存のdocumentカテゴリ内の `kind=specification` として名前・目的・本文を検索する。旧Frontendとの互換のため、Backendを先行配布する期間には新しい設計書をまだ作成しない。
 
 Migration `e5a9c2f7b103`（親 `d4f8b1e6a902`）は4表と索引・FKを追加するだけで、既存データ・所属・Role割当を変更しない。適用順は通常/デモDBの事前backup・revision確認 → 両DBmigrationとruntime roleの新表/sequence権限確認 → Backend → Frontend。既存Terraformのdefault privilegesを利用し、追加サービス・課金設定は不要。downgradeは新設計書を削除するため、公開後のロールバックはコードを戻して表を保持する。今回は本番適用していない。
+
+## 設計ワークスペース（2026-11-28）
+
+案件ナビゲーションの「設計」から、設計概要、画面設計、API設計、DB設計を選択する。既存の詳細・作成・編集URLを保持する。設計対象の種類に `database` を追加し、従来の番号は `SCR` と `API`、DB設計は `DB` で表示する。
+
+| 方法 | `/projects/{project_id}/design-workspace` 配下 | 用途 |
+| --- | --- | --- |
+| GET | `/overview` | 種類・状態、グループ、最近の更新 |
+| GET / POST / PATCH | `/collections` / `/collections/{id}` | 機能グループ・API仕様セット・DBモデル |
+| PUT | `/memberships/{specification_id}` | 設計の版を指定してグループ所属を置換 |
+| GET | `/diagram` | 本文を除いた図・一覧の共通データ。画面遷移、外部キー、論理関連を投影 |
+| PUT | `/placements` | 全体・グループごとの配置。配置版0は新規、`hidden` は図からの配置解除 |
+| POST | `/mockup-preview` | HTML・CSS原本から許可リストを通した iframe 専用文書を生成 |
+| POST | `/openapi/import` | 差分確認と、版を指定した選択操作の下書き取込 |
+| GET | `/openapi`, `/ddl` | 仕様セット・DBモデルの出力、または設計IDと版を指定した出力 |
+| GET / PUT | `/impact/{specification_id}` | 過去版との比較と、確認結果の保存 |
+
+既存設計は従来の下書きと版履歴を維持する。新しい画面遷移・カラム・制約・要素はUUIDを持つ。図の座標は本文とは別に保存し、設計書とグループに案件ID込みの外部キーを持つ。保存は明示操作、テキストは下書き復元時にも元の版を保持する。固定版作成時にグループ、配置、API仕様セット設定をスナップショットする。共有コメントは従来の固定公開基盤を使用する。
+
+OpenAPI GUIと出力は操作オブジェクトを共有する。旧項目は原文を残し、旧データから定義を起こす操作を提供する。3.1系を対象とし、不明なバージョン・外部参照・未展開のPath Item共通定義は取込時に明示する。JSONとYAMLは同じバックエンド検証に通す。DDLはPostgreSQL 17向けにスキーマ、テーブル、制約、インデックスを生成する。外部キーはテーブル作成後に生成し、実DBへは接続しない。
+
+プレビューのHTMLはサーバーの許可リストを通し、空のsandbox属性を持つiframeで表示する。CSSの外部参照は除外し、CSPで読み込みを制限する。PNG・JPEG・WebPの小さな埋め込み画像だけを表示する。原本のダウンロードはプレーンテキスト拡張子を使う。
+
+MCPの `list_design_artifacts` と `get_design_artifact` は一覧、必要な構成、履歴、出力を取得する。原本は `section=mockups` の明示指定で取得する。下書きの作成・更新は `create_design_artifact`、`update_design_artifact` を使い、既存の認可・再送防止・版競合検出を適用する。
+
+移行は `d84b9a6e2f10 → f31a8d7c620e → 7c19d8ab502e`。既存の設計行・版・リンク・指摘は書き換えない。配備時に事前バックアップと権限・件数の照合を行う。新構造への書き込み開始後はバックエンド・フロントエンドの稼働版を戻し、DBの追加表を保全する。
+
+参照資料 [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1.html) ・ [PostgreSQL 17の制約](https://www.postgresql.org/docs/17/ddl-constraints.html) ・ [HTMLのsandbox属性](https://html.spec.whatwg.org/multipage/iframe-embed-object.html#attr-iframe-sandbox)

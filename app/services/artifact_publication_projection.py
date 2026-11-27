@@ -17,6 +17,7 @@ from app.schemas.artifact_publication import (
     PublicFile,
     PublicTestDesignGraph,
 )
+from app.schemas.design_content import DatabaseSpecification
 from app.schemas.specification import ApiSpecification, ScreenSpecification
 from app.services.artifact_release_snapshot import (
     MAX_SNAPSHOT_BYTES,
@@ -242,9 +243,11 @@ def build_projection(
         if row.node_kind == "specification":
             content = payload["content"]
             try:
-                schema = {"api": ApiSpecification, "screen": ScreenSpecification}[
-                    payload["kind"]
-                ]
+                schema = {
+                    "api": ApiSpecification,
+                    "screen": ScreenSpecification,
+                    "database": DatabaseSpecification,
+                }[payload["kind"]]
                 schema.model_validate(content)
                 # 既存型のdefault_factoryで新しい参照UUIDを発生させない。
                 for key in (
@@ -259,6 +262,35 @@ def build_projection(
                         raise invalid_projection()
             except (KeyError, TypeError, ValidationError):
                 raise invalid_projection() from None
+            # 公開対象に含まれない設計IDを接続や処理ステップから取り除く。
+            visible_designs = {
+                node.source_id
+                for node in source_nodes
+                if node.node_kind == "specification"
+            }
+            content.pop("collection_id", None)
+            content.pop("mappings", None)
+            if "transitions" in content:
+                content["transitions"] = [
+                    item
+                    for item in content["transitions"]
+                    if item["target_id"] in visible_designs
+                ]
+            for key in ("constraints", "relationships"):
+                if key in content:
+                    content[key] = [
+                        item
+                        for item in content[key]
+                        if item.get("target_id") is None
+                        or item["target_id"] in visible_designs
+                    ]
+            for steps in (
+                content.get("processing_steps", []),
+                *(event.get("steps", []) for event in content.get("actions", [])),
+            ):
+                for step in steps:
+                    if step.get("specification_id") not in visible_designs:
+                        step.pop("specification_id", None)
         node_id = str(uuid5(identity, str(row.id)))
         id_map[node_id] = str(row.id)
         nodes.append(

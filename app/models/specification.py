@@ -24,9 +24,10 @@ class Specification(Base):
     """項目のUUIDを維持する構造化した設計書。"""
 
     __tablename__ = "specifications"
-    __table_args__ = {
-        "comment": db_comment("設計書", "Projectで共有するAPI・画面の仕様")
-    }
+    __table_args__ = (
+        UniqueConstraint("project_id", "id", name="uq_specifications_project_id_id"),
+        {"comment": db_comment("設計書", "Projectで共有するAPI・画面の仕様")},
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
     kind: Mapped[str] = mapped_column(String(20))

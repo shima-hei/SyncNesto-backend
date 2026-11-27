@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 
+from app.schemas import mcp_design as ds
 from app.schemas import mcp_tools as s
 
 
@@ -60,6 +61,28 @@ TOOLS = {
         s.RequirementCommentInput,
         ("requirement:read", "requirement:comment"),
         "1件の指摘を投稿。取得したversion・フィールド・引用と位置を必須とし、競合時は再読込して再レビューする。",
+        True,
+    ),
+    "list_design_artifacts": McpTool(
+        ds.DesignListInput,
+        ("document:read",),
+        "画面・API・DBの設計を検索・ページ取得。本文は含まない。",
+    ),
+    "get_design_artifact": McpTool(
+        ds.DesignArtifactInput,
+        ("document:read",),
+        "設計IDと版を指定。既定は概要。構造・原本・OpenAPI・DDLはsectionで指定する。",
+    ),
+    "create_design_artifact": McpTool(
+        ds.DesignArtifactCreate,
+        ("document:create",),
+        "画面・API・DB設計の下書きを作る。",
+        True,
+    ),
+    "update_design_artifact": McpTool(
+        ds.DesignArtifactUpdate,
+        ("document:update",),
+        "版付きで設計内容を下書きに保存する。",
         True,
     ),
     "list_test_designs": McpTool(

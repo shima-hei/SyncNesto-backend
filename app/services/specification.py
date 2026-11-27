@@ -1,6 +1,5 @@
 """設計の編集・レビュー・関連付けの業務ルール。"""
 
-import json
 from datetime import UTC, datetime
 from hashlib import sha256
 from typing import cast
@@ -25,6 +24,8 @@ from app.models.user import User
 from app.presenters.user import build_comment_author_avatar_url
 from app.repositories.specification import TARGETS, SpecificationRepository
 from app.schemas.specification import (
+    ApiSpecification,
+    ScreenSpecification,
     SpecificationCommentCreate,
     SpecificationCommentRead,
     SpecificationCreate,
@@ -41,6 +42,8 @@ from app.services.authorization import AuthorizationService
 from app.services.body_image import retain_body_images
 from app.services.comment_image import bind_comment_images
 from app.services.conflict import raise_if_version_conflict
+from app.services.design_paths import design_field as field_value
+from app.services.design_references import check_design_references
 from app.services.storage import StorageService
 
 TARGET_PERMISSIONS = {
@@ -50,34 +53,6 @@ TARGET_PERMISSIONS = {
     "specification": "document:read",
     "document": "document:read",
 }
-
-
-def field_value(row: Specification, path: str) -> str | None:
-    """項目UUIDを使ったパスを、現在の表示値へ解決する。"""
-    if path in {"title", "summary"}:
-        return getattr(row, path)
-    parts = path.split("/")
-    if parts[0] != "content":
-        return None
-    value = row.content
-    for part in parts[1:]:
-        if isinstance(value, dict) and part in value:
-            value = value[part]
-        elif isinstance(value, list):
-            value = next((item for item in value if str(item.get("id")) == part), None)
-            if value is None:
-                return None
-        else:
-            return None
-    if value is None:
-        return ""
-    if isinstance(value, (dict, list)):
-        return None
-    return (
-        value
-        if isinstance(value, str)
-        else json.dumps(value, ensure_ascii=False, sort_keys=True)
-    )
 
 
 def anchor_digest(row: Specification, path: str) -> str | None:
@@ -147,6 +122,7 @@ class SpecificationService:
     def create(
         self, db: Session, project_id: int, data: SpecificationCreate, user: User
     ):
+        check_design_references(db, project_id, data.content, None)
         retain_body_images(db, project_id, "specification", user.id, data.summary)
         row = Specification(
             project_id=project_id,
@@ -177,14 +153,18 @@ class SpecificationService:
         self.check_version(row, data.version)
         if row.kind != data.content.type:
             raise BadRequestError(error_messages.SPECIFICATION_KIND_IMMUTABLE)
+        # 旧クライアントが送信を省いた追加項目を保存済み本文から補う。
+        content = type(data.content).model_validate(
+            {**row.content, **data.content.model_dump(mode="json", exclude_unset=True)}
+        )
+        check_design_references(db, project_id, content, row.id)
         retain_body_images(db, project_id, "specification", user.id, data.summary)
         row.title, row.summary, row.content = (
             data.title,
             data.summary,
-            data.content.model_dump(mode="json"),
+            content.model_dump(mode="json"),
         )
-        # 承認済みの内容を変更した場合は、再確認のため下書きに戻す。
-        if row.status == "approved":
+        if row.status in {"approved", "in_review"}:
             row.status = "draft"
         row.version += 1
         row.updated_by = user.id
@@ -214,14 +194,33 @@ class SpecificationService:
         if status == "approved" and self.repository.has_unresolved_comments(db, row.id):
             raise SpecificationUnresolvedCommentsError()
         if status in {"in_review", "approved"}:
-            content = row.content
-            if (
-                not row.summary.strip()
-                or not content.get("path" if row.kind == "api" else "route", "").strip()
+            content = SpecificationRead.model_validate(row).content
+            identifier = (
+                content.path
+                if isinstance(content, ApiSpecification)
+                else content.route
+                if isinstance(content, ScreenSpecification)
+                else content.physical_name
+            )
+            without_route = isinstance(
+                content, ScreenSpecification
+            ) and content.screen_kind in {"modal", "drawer", "layout"}
+            if not row.summary.strip() or (
+                not identifier.strip() and not without_route
             ):
                 raise SpecificationReviewFieldsError()
+        reviewed = (
+            self.repository.revision_number(db, row.id, row.version)
+            if row.status == "in_review" and status == "approved"
+            else None
+        )
         row.status, row.version, row.updated_by = status, row.version + 1, user.id
-        self.repository.revision(db, row, user.id)
+        self.repository.revision(
+            db,
+            row,
+            user.id,
+            reviewed=reviewed.snapshot if reviewed is not None else None,
+        )
         db.commit()
         self.audit(db, row, user.id, "status_changed")
         return row

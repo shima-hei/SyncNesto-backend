@@ -5,6 +5,11 @@ from uuid import UUID
 from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.orm import Session, load_only
 
+from app.models.design_workspace import (
+    DesignCollection,
+    DesignMembership,
+    DesignPlacement,
+)
 from app.models.document import ProjectDocument
 from app.models.requirement import Requirement, RequirementDocument
 from app.models.specification import (
@@ -98,13 +103,70 @@ class SpecificationRepository:
         ).all()
         return rows, total
 
-    def revision(self, db: Session, row: Specification, actor_id: int):
+    def revision(
+        self,
+        db: Session,
+        row: Specification,
+        actor_id: int,
+        *,
+        reviewed: dict | None = None,
+    ):
+        """本文の版を追加し、承認ではレビュー版の参照を固定する。"""
         db.flush()
+        snapshot = SpecificationRead.model_validate(row).model_dump(mode="json")
+        if reviewed is not None:
+            for key in ("groups", "placements", "collection"):
+                if key in reviewed:
+                    snapshot[key] = reviewed[key]
+        elif row.status in {"in_review", "approved"}:
+            groups = db.execute(
+                select(DesignCollection.id, DesignCollection.name)
+                .join(
+                    DesignMembership,
+                    DesignCollection.id == DesignMembership.group_id,
+                )
+                .where(
+                    DesignMembership.project_id == row.project_id,
+                    DesignMembership.specification_id == row.id,
+                )
+            )
+            snapshot["groups"] = [
+                {"id": str(identifier), "name": name} for identifier, name in groups
+            ]
+            snapshot["placements"] = [
+                {
+                    "view": value.view_key,
+                    "x": value.x,
+                    "y": value.y,
+                    "hidden": value.hidden,
+                }
+                for value in db.scalars(
+                    select(DesignPlacement).where(
+                        DesignPlacement.project_id == row.project_id,
+                        DesignPlacement.specification_id == row.id,
+                    )
+                )
+            ]
+            collection_id = row.content.get("collection_id")
+            if collection_id is not None:
+                collection = db.scalar(
+                    select(DesignCollection).where(
+                        DesignCollection.project_id == row.project_id,
+                        DesignCollection.id == UUID(collection_id),
+                    )
+                )
+                if collection is not None:
+                    snapshot["collection"] = {
+                        "id": str(collection.id),
+                        "version": collection.version,
+                        "name": collection.name,
+                        "configuration": collection.configuration,
+                    }
         db.add(
             SpecificationRevision(
                 specification_id=row.id,
                 number=row.version,
-                snapshot=SpecificationRead.model_validate(row).model_dump(mode="json"),
+                snapshot=snapshot,
                 created_by=actor_id,
             )
         )
