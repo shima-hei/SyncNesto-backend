@@ -116,3 +116,20 @@ class DesignImpactDecision(Base):
     source_version: Mapped[int] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     status: Mapped[str] = mapped_column(String(20))
+
+
+class WireframePartRevision(Base):
+    """共通部品の本文は版を追加する操作でのみ変更する。"""
+
+    __tablename__ = "wireframe_part_revisions"
+    __table_args__ = (
+        CheckConstraint("version >= 1", name="ck_wireframe_part_revision_version"),
+    )
+
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    part_id: Mapped[UUID] = mapped_column(primary_key=True)
+    version: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    content: Mapped[dict] = mapped_column(JSONB)

@@ -93,6 +93,7 @@ OWNERS = {
         ("specification_id", "specifications", "id"),
     ],
     "design_collections": [("project_id", "projects", "id")],
+    "wireframe_part_revisions": [("project_id", "projects", "id")],
     "design_memberships": [
         ("project_id", "projects", "id"),
         ("specification_id", "specifications", "id"),

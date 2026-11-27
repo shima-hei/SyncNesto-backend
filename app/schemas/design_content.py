@@ -1,6 +1,7 @@
 """設計ワークスペースで編集・参照する項目。"""
 
 import json
+from collections.abc import Sequence
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
@@ -86,8 +87,8 @@ class ScreenTransition(DesignItem):
     parameters: str = Field(default="", max_length=3000)
 
 
-class WireframeComponent(DesignItem):
-    """アートボード上の再帰配置と画面項目・イベントへの参照。"""
+class WireframeLayer(DesignItem):
+    """ワイヤーフレームと共通部品で使う再帰配置。"""
 
     kind: Literal[
         "text",
@@ -120,14 +121,51 @@ class WireframeComponent(DesignItem):
     hidden: bool = False
     locked: bool = False
     parent_id: UUID | None = None
-    field_id: UUID | None = None
-    event_id: UUID | None = None
     layout: PlacementMode = "free"
     gap: int = Field(default=8, ge=0, le=200)
     padding: int = Field(default=8, ge=0, le=200)
     columns: int = Field(default=2, ge=1, le=20)
     column_span: int = Field(default=1, ge=1, le=20)
     table_rows: list[list[str]] = Field(default_factory=list, max_length=30)
+
+
+class WireframePartPin(BaseModel):
+    """配置先の画面に保存する部品の版と、原本から画面内へのID対応。"""
+
+    model_config = ConfigDict(extra="forbid")
+    part_id: UUID
+    version: int = Field(ge=1, le=2_147_483_647)
+    layer_ids: dict[UUID, UUID] = Field(max_length=199)
+
+
+class WireframeComponent(WireframeLayer):
+    """画面固有の項目・イベントと、選択した共通部品の版を保持する。"""
+
+    field_id: UUID | None = None
+    event_id: UUID | None = None
+    part_pin: WireframePartPin | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+    @model_validator(mode="after")
+    def validate_part_pin(self):
+        if self.part_pin is not None and self.kind != "container":
+            raise ValueError("共通部品はコンテナに配置してください")
+        return self
+
+
+def validate_wireframe_layers(components: Sequence[WireframeLayer]) -> None:
+    """各レイヤーが同じアートボードまたは部品に属することを確認する。"""
+    parents = {item.id: item.parent_id for item in components}
+    containers = {item.id for item in components if item.kind == "container"}
+    for item in components:
+        seen = {item.id}
+        parent = item.parent_id
+        while parent is not None:
+            if parent in seen or parent not in containers:
+                raise ValueError("レイヤーの配置先が無効です")
+            seen.add(parent)
+            parent = parents[parent]
 
 
 class WireframeArtboard(DesignItem):
@@ -141,17 +179,7 @@ class WireframeArtboard(DesignItem):
 
     @model_validator(mode="after")
     def validate_layers(self):
-        """各レイヤーが同じアートボードのコンテナに属することを確認する。"""
-        parents = {item.id: item.parent_id for item in self.components}
-        containers = {item.id for item in self.components if item.kind == "container"}
-        for item in self.components:
-            seen = {item.id}
-            parent = item.parent_id
-            while parent is not None:
-                if parent in seen or parent not in containers:
-                    raise ValueError("レイヤーの配置先が無効です")
-                seen.add(parent)
-                parent = parents[parent]
+        validate_wireframe_layers(self.components)
         return self
 
 

@@ -86,6 +86,8 @@ Migration `e5a9c2f7b103`（親 `d4f8b1e6a902`）は4表と索引・FKを追加�
 | GET | `/diagram` | 本文を除いた図・一覧の共通データ。画面遷移、外部キー、論理関連を投影 |
 | PUT | `/placements` | 全体・グループごとの配置。配置版0は新規、`hidden` は図からの配置解除 |
 | POST | `/mockup-preview` | HTML・CSS原本から許可リストを通した iframe 専用文書を生成 |
+| GET / POST | `/wireframe-parts` | 案件共通部品の最新メタデータ一覧 / 初版を登録 |
+| GET / PATCH | `/wireframe-parts/{part_id}` | 最新または `version` 指定の部品を取得 / 最新版を指定して新版を追加 |
 | POST | `/openapi/import` | 差分確認と、版を指定した選択操作の下書き取込 |
 | GET | `/openapi`, `/ddl` | 仕様セット・DBモデルの出力、または設計IDと版を指定した出力 |
 | GET / PUT | `/impact/{specification_id}` | 過去版との比較と、確認結果の保存 |
@@ -98,6 +100,8 @@ OpenAPI GUIと出力は操作オブジェクトを共有する。旧項目は原
 
 MCPの `list_design_artifacts` と `get_design_artifact` は一覧、必要な構成、履歴、出力を取得する。原本は `section=mockups` の明示指定で取得する。下書きの作成・更新は `create_design_artifact`、`update_design_artifact` を使い、既存の認可・再送防止・版競合検出を適用する。`list_design_collections` と `get_design_diagram` でコレクションと図を取得する。追加ツールは `MCP_DESIGN_TOOLS_ENABLED` のローカルOAuthクライアントに限定し、公開プラグインの既存カタログを維持する。
 
-移行は `d84b9a6e2f10 → f31a8d7c620e → 7c19d8ab502e`。既存の設計行・版・リンク・指摘は書き換えない。配備時に事前バックアップと権限・件数の照合を行う。新構造への書き込み開始後はバックエンド・フロントエンドの稼働版を戻し、DBの追加表を保全する。
+共通部品は案件ごとに版を追加する。画面には部品・版の識別子、配置元と画面内のレイヤーID対応、実体のレイアウトを保存する。画面項目やイベントは各画面で関連付ける。新版を登録しても配置済みの別画面と過去版はそのまま読み出せる。配置に新版を適用すると、残るレイヤーは画面内のIDと関連を引き継ぐ。
+
+移行は `d84b9a6e2f10 → f31a8d7c620e → 7c19d8ab502e → 4ce61bd208af`。既存の設計行・版・リンク・指摘は書き換えない。配備時に事前バックアップと権限・件数の照合を行う。部品を含む画面が保存された後は、切り戻し時も部品の版情報を読めるバックエンドと追加表を保全する。
 
 参照資料 [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1.html) ・ [PostgreSQL 17の制約](https://www.postgresql.org/docs/17/ddl-constraints.html) ・ [HTMLのsandbox属性](https://html.spec.whatwg.org/multipage/iframe-embed-object.html#attr-iframe-sandbox)

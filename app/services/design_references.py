@@ -18,6 +18,7 @@ from app.schemas.specification import (
 )
 from app.services.design_openapi import validate_operation
 from app.services.design_paths import design_field
+from app.services.wireframe_part import check_part_pins
 
 
 def check_design_references(
@@ -28,6 +29,7 @@ def check_design_references(
     namespaces: dict[str, UUID] = {}
     flows: list[list[ProcessingStep]] = []
     if isinstance(content, ScreenSpecification):
+        check_part_pins(db, project_id, content.artboards)
         targets["screen"].update(item.target_id for item in content.transitions)
         flows = [event.steps for event in content.actions]
     if isinstance(content, ApiSpecification):

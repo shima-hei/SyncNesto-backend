@@ -25,6 +25,7 @@ from app.models.design_workspace import (
     DesignImpactDecision,
     DesignMembership,
     DesignPlacement,
+    WireframePartRevision,
 )
 from app.models.document import (
     DocumentAttachment,
@@ -221,6 +222,7 @@ __all__ = [
     "BoardColumn",
     "DesignCollection",
     "DesignImpactDecision",
+    "WireframePartRevision",
     "DesignMembership",
     "DesignPlacement",
     "Draft",

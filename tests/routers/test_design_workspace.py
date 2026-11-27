@@ -134,6 +134,145 @@ def test_design_project_permissions_and_references(
     assert client.get(f"{workspace(other)}/overview").status_code in {403, 404}
 
 
+def test_wireframe_part_revisions_preserve_approved_screen_layout(client, context):
+    _, project, specs = context
+    library = f"{workspace(project)}/wireframe-parts"
+    layer_id = str(uuid4())
+    content = {
+        "width": 320,
+        "height": 80,
+        "layers": [{"id": layer_id, "kind": "heading", "name": "受付"}],
+    }
+    response = client.post(library, json={"name": "ヘッダー", "content": content})
+    assert response.status_code == 201, response.text
+    original = response.json()
+    part_url = f"{library}/{original['part_id']}"
+    screens = [create(client, specs, "screen") for _ in range(2)]
+    approved = []
+    for screen in screens:
+        data = update_data(screen)
+        root, layer, field = [str(uuid4()) for _ in range(3)]
+        data["content"]["fields"] = [{"id": field, "name": "ローカル項目"}]
+        data["content"]["artboards"] = [
+            {
+                "components": [
+                    {
+                        "id": root,
+                        "kind": "container",
+                        "part_pin": {
+                            "part_id": original["part_id"],
+                            "version": 1,
+                            "layer_ids": {layer_id: layer},
+                        },
+                    },
+                    {
+                        "id": layer,
+                        "parent_id": root,
+                        "kind": "heading",
+                        "name": "受付",
+                        "field_id": field,
+                    },
+                ]
+            }
+        ]
+        url = f"{specs}/{screen['id']}"
+        saved = client.patch(url, json=data)
+        assert saved.status_code == 200, saved.text
+        fixed = client.patch(
+            f"{url}/status",
+            json={"version": saved.json()["version"], "status": "approved"},
+        )
+        assert fixed.status_code == 200, fixed.text
+        approved.append(fixed.json())
+
+    content["layers"][0]["name"] = "総合受付"
+    changed = {"version": 1, "name": "共通ヘッダー", "content": content}
+    updated = client.patch(part_url, json=changed)
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["version"] == 2
+    conflict = client.patch(part_url, json=changed)
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.json()["current"]["version"] == 2
+    assert client.get(part_url, params={"version": 1}).json() == original
+    assert client.get(library).json() == [
+        {"part_id": original["part_id"], "name": "共通ヘッダー", "version": 2}
+    ]
+
+    first, second = approved
+    first_url = f"{specs}/{first['id']}"
+    data = update_data(first)
+    root, layer = data["content"]["artboards"][0]["components"]
+    field_id = layer["field_id"]
+    root["part_pin"]["version"] = 2
+    layer["name"] = "総合受付"
+    refreshed = client.patch(first_url, json=data)
+    assert refreshed.status_code == 200, refreshed.text
+    first_now = refreshed.json()
+    assert first_now["status"] == "draft"
+    assert first_now["content"]["artboards"][0]["components"][1]["field_id"] == field_id
+    for screen in approved:
+        url = f"{specs}/{screen['id']}/revisions/{screen['version']}"
+        fixed_layers = client.get(url).json()["snapshot"]["content"]["artboards"][0][
+            "components"
+        ]
+        assert fixed_layers[0]["part_pin"]["version"] == 1
+        assert fixed_layers[1]["name"] == "受付"
+    other_now = client.get(f"{specs}/{second['id']}").json()
+    assert other_now["content"] == second["content"]
+
+
+def test_wireframe_parts_enforce_project_and_write_permissions(
+    client, context, create_test_project, create_test_user, assign_project_role
+):
+    user, project, _ = context
+    library = f"{workspace(project)}/wireframe-parts"
+    other = create_test_project()
+    assign_project_role(user=user, project=other, role_key="project_admin")
+    payload = {
+        "name": "検索フォーム",
+        "content": {"width": 140, "height": 60, "layers": [{"kind": "input"}]},
+    }
+    original = client.post(library, json=payload).json()
+    part_url = f"{library}/{original['part_id']}"
+    foreign = f"{workspace(other)}/wireframe-parts/{original['part_id']}"
+    assert client.get(foreign).status_code == 404
+    assert client.patch(foreign, json={**payload, "version": 1}).status_code == 404
+    screen = client.post(
+        f"/projects/{other.id}/specifications",
+        json={
+            "title": "別案件の画面",
+            "content": {
+                "type": "screen",
+                "artboards": [
+                    {
+                        "components": [
+                            {
+                                "kind": "container",
+                                "part_pin": {
+                                    "part_id": original["part_id"],
+                                    "version": 1,
+                                    "layer_ids": {},
+                                },
+                            }
+                        ]
+                    }
+                ],
+            },
+        },
+    )
+    assert screen.status_code == 400, screen.text
+    payload["content"]["layers"][0]["field_id"] = str(uuid4())
+    assert client.post(library, json=payload).status_code == 422
+    del payload["content"]["layers"][0]["field_id"]
+
+    viewer = create_test_user(email="wireframe-viewer@example.com")
+    assign_project_role(user=viewer, project=project, role_key="viewer")
+    authorize_as(client, viewer)
+    assert client.get(part_url).status_code == 200
+    assert client.post(library, json=payload).status_code == 403
+    assert client.patch(part_url, json={**payload, "version": 1}).status_code == 403
+
+
 def test_openapi_import_selected_version_and_fixed_export(client, context):
     _, project, specs = context
     base = workspace(project)

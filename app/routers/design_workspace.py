@@ -24,10 +24,17 @@ from app.schemas.design_workspace import (
     PlacementUpdate,
 )
 from app.schemas.specification import SpecificationRead
+from app.schemas.wireframe_part import (
+    WireframePartCreate,
+    WireframePartRead,
+    WireframePartSummary,
+    WireframePartUpdate,
+)
 from app.services.design_formats import export_ddl, export_openapi, import_specification
 from app.services.design_impact import analyze_impact, save_impact
 from app.services.design_mockup import mockup_document
 from app.services.design_workspace import DesignWorkspaceService
+from app.services.wireframe_part import create_part, list_parts, read_part, update_part
 
 router = APIRouter(
     prefix="/projects/{project_id}/design-workspace", tags=["design-workspace"]
@@ -104,6 +111,40 @@ def preview_design_mockup(project_id: int, data: HtmlMockup, user: Reader):
     """下書き原本を許可リストで変換し、iframe専用文書を返す。"""
     document, css_blocked = mockup_document(data)
     return MockupPreviewRead(document=document, css_blocked=css_blocked)
+
+
+@router.get("/wireframe-parts", response_model=list[WireframePartSummary])
+def design_wireframe_parts(project_id: int, db: Db, user: Reader):
+    """案件の共通部品一覧を取得する。"""
+    return list_parts(db, project_id)
+
+
+@router.get("/wireframe-parts/{part_id}", response_model=WireframePartRead)
+def read_design_wireframe_part(
+    project_id: int,
+    part_id: UUID,
+    db: Db,
+    user: Reader,
+    version: int | None = Query(default=None, ge=1, le=2_147_483_647),
+):
+    """共通部品の最新または指定の固定版を取得する。"""
+    return read_part(db, project_id, part_id, version)
+
+
+@router.post("/wireframe-parts", status_code=201, response_model=WireframePartRead)
+def create_design_wireframe_part(
+    project_id: int, data: WireframePartCreate, db: Db, user: Creator
+):
+    """選んだレイアウトを案件共通部品として登録する。"""
+    return create_part(db, project_id, data)
+
+
+@router.patch("/wireframe-parts/{part_id}", response_model=WireframePartRead)
+def update_design_wireframe_part(
+    project_id: int, part_id: UUID, data: WireframePartUpdate, db: Db, user: Editor
+):
+    """共通部品の新しい版を作成する。"""
+    return update_part(db, project_id, part_id, data)
 
 
 @router.post("/openapi/import", response_model=OpenApiResult)
