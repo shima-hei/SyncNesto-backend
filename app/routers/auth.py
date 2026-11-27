@@ -12,6 +12,7 @@ from app.db.session import get_db, get_normal_db
 from app.models.rbac import Role
 from app.models.user import User
 from app.presenters.user import build_current_user_response
+from app.repositories.tenant import TenantRepository
 from app.schemas.account_action import AccountActionMessage
 from app.schemas.file_upload import (
     FileUploadComplete,
@@ -54,6 +55,8 @@ def current_user_response(
         result.demo = DemoService().status(demo)
     elif review := ReviewAccountService().validate(db, user):
         result.review_access_expires_at = review.expires_at
+    elif user.user_type == "guest":
+        result.guest_workspace_only = not TenantRepository().choices(db, user.id)
     return result
 
 

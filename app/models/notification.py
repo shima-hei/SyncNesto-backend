@@ -16,6 +16,7 @@ class NotificationType(StrEnum):
 
     ASSIGNED = "assigned"
     MENTIONED = "mentioned"
+    SHARED_COMMENT_REPLIED = "shared_comment_replied"
     TASK_RETURNED = "task_returned"
     FIXED_APPROVAL_REQUESTED = "fixed_approval_requested"
     FIXED_APPROVAL_DECIDED = "fixed_approval_decided"
@@ -33,6 +34,7 @@ class NotificationTargetType(StrEnum):
     REQUIREMENT_TARGET_COMMENT = "requirement_target_comment"
     TEST_DESIGN_COMMENT = "test_design_comment"
     FIXED_APPROVAL = "fixed_approval"
+    SHARED_PUBLICATION_COMMENT = "shared_publication_comment"
 
 
 class Notification(Base):

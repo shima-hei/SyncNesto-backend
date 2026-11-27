@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 
-from app.core.exceptions import ConflictError, TokenExpiredError
+from app.core.exceptions import ConflictError, NotFoundError, TokenExpiredError
 from app.models.session import UserSession
 from app.repositories.publication_download import PublicationDownloadRepository
 from app.schemas.publication_download import SharedFileDownload
@@ -25,13 +25,31 @@ class PublicationDownloadService:
         self.storage_factory = PublicationDeliveryStorage
 
     @retry_publication_operation
-    def _resolve(self, original, user, identity, file_id, expected):
+    def _resolve(self, original, user, identity, file_id, expected, *, mode="legacy"):
         """ネットワークの前に対象と現在の許可を確定する。"""
         with self.shared.context.transaction(original, user) as (db, actor):
             row, revision = self.shared._get(db, original, actor, identity)
             if revision != expected:
                 raise ConflictError()
-            return self.repository.resolve(db, row, file_id)
+            return self._source(db, row, file_id, mode)
+
+    def _source(self, db, row, file_id, mode):
+        """旧配信・ダウンロード・画像表示の許可を区別する。"""
+        allowed = row["download_allowed"]
+        if (mode == "legacy" and allowed is not None) or (
+            mode == "download" and allowed is False
+        ):
+            raise NotFoundError()
+        source = self.repository.resolve(db, row, file_id)
+        if mode == "image" and source.content_type not in {
+            "image/png",
+            "image/jpeg",
+            "image/gif",
+            "image/webp",
+            "image/avif",
+        }:
+            raise NotFoundError()
+        return source
 
     @retry_publication_operation
     def _issue(self, original, user, identity, file_id, expected, source, storage, key):
@@ -50,7 +68,7 @@ class PublicationDownloadService:
             row, revision = self.shared._get(db, original, actor, identity)
             if (
                 revision != expected
-                or self.repository.resolve(db, row, file_id) != source
+                or self._source(db, row, file_id, "legacy") != source
             ):
                 raise ConflictError()
             value = original.info.get("auth_token_exp")
@@ -111,3 +129,25 @@ class PublicationDownloadService:
             },
         )
         return response
+
+    def content(self, original, user, identity, file_id, revision, *, inline=False):
+        """転送前後で現在の許可を照合し、Storage URLを発行しない。"""
+        mode = "image" if inline else "download"
+        source = self._resolve(original, user, identity, file_id, revision, mode=mode)
+        storage = self.storage_factory()
+        content = storage.read(source, storage.ensure_copy(source))
+        current = self._resolve(original, user, identity, file_id, revision, mode=mode)
+        if current != source:
+            raise ConflictError()
+        AuditLogService().record(
+            original,
+            event_type="shared_attachment.read"
+            if inline
+            else "shared_attachment.download",
+            tenant_id=source.tenant_id,
+            actor_user_id=user.id,
+            project_id=source.project_id,
+            resource_type="artifact_publication",
+            metadata={"publication_id": str(identity), "file_id": str(file_id)},
+        )
+        return content, source

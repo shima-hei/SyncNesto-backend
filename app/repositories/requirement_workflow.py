@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import Select, and_, case, exists, func, or_, select, tuple_
 from sqlalchemy.orm import Session
@@ -15,6 +16,8 @@ from app.models.requirement_workflow import (
     RequirementWorkflowRequest,
 )
 from app.models.user import User, UserType
+
+GUEST_DUE_ZONE = ZoneInfo("Asia/Tokyo")
 
 
 def includes_requirement_node():

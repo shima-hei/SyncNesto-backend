@@ -235,8 +235,22 @@ class ArtifactPublicationService:
         with self.access(original, user, project_id) as (db, actor):
             return self._read(self._get(db, actor, project_id, identity))
 
-    def list(self, original, user, project_id, release_id, page, page_size):
+    def list(
+        self,
+        original,
+        user,
+        project_id,
+        release_id,
+        page,
+        page_size,
+        *,
+        source_kind=None,
+        source_id=None,
+        states=None,
+    ):
         """全種類と添付のreadを一覧・COUNTにも適用する。"""
+        if (source_kind is None) != (source_id is None):
+            raise BadRequestError("資料の種類とIDを両方指定してください。")
         with self.access(original, user, project_id) as (db, actor):
             auth = self.releases.authorization
             kinds = [
@@ -252,7 +266,14 @@ class ArtifactPublicationService:
             document_read = auth.has_project_permission(
                 db, user=actor, project_id=project_id, permission_code="document:read"
             )
-            query = self.repository.visible(project_id, kinds, document_read)
+            query = self.repository.visible(
+                project_id,
+                kinds,
+                document_read,
+                source_kind=source_kind,
+                source_id=source_id,
+                states=states,
+            )
             if release_id is not None:
                 query = query.where(ArtifactPublication.release_id == release_id)
             total = db.scalar(select(func.count()).select_from(query.subquery())) or 0

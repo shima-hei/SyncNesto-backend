@@ -230,6 +230,7 @@ class RequirementWorkflowRead(BaseModel):
     participants: list[RequirementWorkflowParticipantRead]
     approval_basis: RequirementFormalApprovalBasis | None = None
     external_review: bool = False
+    external_approval: bool = Field(default=False, exclude_if=lambda value: not value)
 
 
 class RequirementFormalApprovalDecisionPreview(BaseModel):

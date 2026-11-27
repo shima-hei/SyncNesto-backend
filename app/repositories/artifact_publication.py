@@ -2,10 +2,11 @@
 
 from uuid import UUID
 
-from sqlalchemy import insert, select
+from sqlalchemy import and_, insert, select
 from sqlalchemy.orm import Session
 
 from app.models.artifact_publication import ArtifactPublication, ArtifactPublicationNode
+from app.models.artifact_release import ArtifactRelease
 
 
 class ArtifactPublicationRepository:
@@ -32,7 +33,9 @@ class ArtifactPublicationRepository:
             )
         )
 
-    def visible(self, project_id, kinds, document_read):
+    def visible(
+        self, project_id, kinds, document_read, *, source_kind, source_id, states
+    ):
         """件数と一覧へ全構成のread条件を適用する。"""
         query = select(ArtifactPublication).where(
             ArtifactPublication.project_id == project_id,
@@ -41,6 +44,20 @@ class ArtifactPublicationRepository:
         )
         if not document_read:
             query = query.where(ArtifactPublication.preservation_id.is_(None))
+        if source_kind is not None:
+            query = query.join(
+                ArtifactRelease,
+                and_(
+                    ArtifactRelease.id == ArtifactPublication.release_id,
+                    ArtifactRelease.project_id == ArtifactPublication.project_id,
+                ),
+            ).where(
+                ArtifactRelease.sealed.is_(True),
+                ArtifactRelease.source_kind == source_kind,
+                ArtifactRelease.source_id == source_id,
+            )
+        if states is not None:
+            query = query.where(ArtifactPublication.publication_state.in_(states))
         return query
 
     def create(self, db: Session, header: dict, nodes: list[dict]):

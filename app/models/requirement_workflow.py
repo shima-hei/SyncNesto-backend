@@ -174,6 +174,7 @@ class RequirementWorkflowGuestBinding(Base):
             ],
         ),
         Index("ix_requirement_workflow_guest_inbox", "user_id", "request_id"),
+        Index("ix_requirement_workflow_guest_grant", "grant_id"),
     )
     request_id: Mapped[UUID] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(primary_key=True)

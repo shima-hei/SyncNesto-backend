@@ -1,6 +1,7 @@
 """現在の公開世代と実MFAを必須にした共有通知・既読管理。"""
 
 from contextlib import contextmanager
+from datetime import datetime
 
 from sqlalchemy import func, select, text, update
 
@@ -52,6 +53,11 @@ class SharedNotificationService:
         revision = self.approvals.shared.revision(
             db, actor, {**item, "id": item["publication_id"]}
         )
+        expires_at = item["effective_expiry"]
+        if item["current_status"] == "requested" and public.get("decision_expires_at"):
+            expires_at = min(
+                expires_at, datetime.fromisoformat(public["decision_expires_at"])
+            )
         return SharedNotificationRead(
             id=item["event_id"],
             type=item["type"],
@@ -66,7 +72,7 @@ class SharedNotificationService:
             is_read=item["read_at"] is not None,
             read_at=item["read_at"],
             created_at=item["created_at"],
-            expires_at=item["effective_expiry"],
+            expires_at=expires_at,
             authorization_revision=revision,
         )
 

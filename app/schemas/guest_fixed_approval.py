@@ -4,8 +4,9 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.artifact_publication_access import PublicationShareInput
 from app.schemas.fixed_approval import ApprovalExceptionInput
 
 ApprovalKind = Literal[
@@ -34,8 +35,10 @@ class GuestApprovalBasisInput(GuestApprovalTarget):
 class GuestApprovalInput(GuestApprovalTarget):
     """現在許可済みの相手と、相手に示す依頼文・例外。"""
 
-    grant_id: UUID
+    grant_id: UUID | None = None
+    sharing: PublicationShareInput | None = None
     request_note: str | None = Field(default=None, max_length=2000)
+    decision_expires_at: AwareDatetime | None = None
     exceptions: list[ApprovalExceptionInput] = Field(
         default_factory=list, max_length=1000
     )
@@ -47,6 +50,12 @@ class GuestApprovalInput(GuestApprovalTarget):
             raise ValueError("例外の要件が重複しています")
         if any(not item.reason.strip() for item in self.exceptions):
             raise ValueError("例外理由を入力してください")
+        if (self.grant_id is None) == (self.sharing is None):
+            raise ValueError("既存の共有許可または共有する承認者を指定してください")
+        if self.sharing is not None and (
+            len(self.sharing.recipients) != 1 or self.decision_expires_at is None
+        ):
+            raise ValueError("共有先1名と承認の回答期限を指定してください")
         return self
 
 
@@ -62,6 +71,7 @@ class GuestApprovalCandidate(BaseModel):
     """公開許可を持つ候補。メールやUser IDを返さない。"""
 
     grant_id: UUID
+    participation_id: UUID
     name: str
     expires_at: datetime
 
@@ -104,6 +114,9 @@ class GuestApprovalPreview(BaseModel):
     approver_name: str
     requester_name: str
     request_note: str | None
+    decision_expires_at: datetime | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     exception_count: int
     basis_counts: dict[str, int]
     public_scope_digest: str
@@ -131,6 +144,9 @@ class SharedApprovalRead(BaseModel):
     expires_at: datetime
     authorization_revision: str
     public_scope_digest: str
+    public_project_name: str | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class SharedApprovalPage(BaseModel):
