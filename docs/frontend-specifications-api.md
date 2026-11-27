@@ -96,7 +96,7 @@ OpenAPI GUIと出力は操作オブジェクトを共有する。旧項目は原
 
 プレビューのHTMLはサーバーの許可リストを通し、空のsandbox属性を持つiframeで表示する。CSSの外部参照は除外し、CSPで読み込みを制限する。PNG・JPEG・WebPの小さな埋め込み画像だけを表示する。原本のダウンロードはプレーンテキスト拡張子を使う。
 
-MCPの `list_design_artifacts` と `get_design_artifact` は一覧、必要な構成、履歴、出力を取得する。原本は `section=mockups` の明示指定で取得する。下書きの作成・更新は `create_design_artifact`、`update_design_artifact` を使い、既存の認可・再送防止・版競合検出を適用する。
+MCPの `list_design_artifacts` と `get_design_artifact` は一覧、必要な構成、履歴、出力を取得する。原本は `section=mockups` の明示指定で取得する。下書きの作成・更新は `create_design_artifact`、`update_design_artifact` を使い、既存の認可・再送防止・版競合検出を適用する。`list_design_collections` と `get_design_diagram` でコレクションと図を取得する。追加ツールは `MCP_DESIGN_TOOLS_ENABLED` のローカルOAuthクライアントに限定し、公開プラグインの既存カタログを維持する。
 
 移行は `d84b9a6e2f10 → f31a8d7c620e → 7c19d8ab502e`。既存の設計行・版・リンク・指摘は書き換えない。配備時に事前バックアップと権限・件数の照合を行う。新構造への書き込み開始後はバックエンド・フロントエンドの稼働版を戻し、DBの追加表を保全する。
 

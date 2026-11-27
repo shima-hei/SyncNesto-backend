@@ -1,6 +1,7 @@
 """画面・API・DBの設計を扱うMCP入力。"""
 
 from typing import Literal
+from uuid import UUID
 
 from pydantic import Field
 
@@ -14,6 +15,13 @@ class DesignListInput(PageInput):
 
     kind: ArtifactKind | None = None
     q: str = Field(default="", max_length=200)
+
+
+class DesignDiagramInput(DesignListInput):
+    """設計図の対象を指定する。"""
+
+    kind: ArtifactKind
+    group_id: UUID | None = None
 
 
 class DesignArtifactInput(ToolInput):
