@@ -352,3 +352,20 @@ def test_change_impact_records_acknowledgement_without_editing_target(client, co
     assert client.get(url).json()["items"][0]["status"] == "confirmed"
     assert client.put(url, json={**decision, "source_version": 2}).status_code == 409
     assert client.get(f"{specs}/{screen['id']}").json()["version"] == 1
+
+
+def test_draft_api_requires_an_explicit_method_for_export(client, context):
+    _, project, specs = context
+    draft = client.post(
+        specs,
+        json={"title": "メソッド未定", "content": {"type": "api", "method": None}},
+    )
+    assert draft.status_code == 201, draft.text
+    row = draft.json()
+    assert row["content"]["method"] is None
+    row["content"]["path"] = "/loans"
+    edit = client.patch(f"{specs}/{row['id']}", json=update_data(row))
+    assert edit.status_code == 200, edit.text
+    output = client.get(f"{workspace(project)}/openapi").json()
+    assert output["document"]["paths"] == {}
+    assert "メソッド" in output["warnings"][0]

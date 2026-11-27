@@ -81,9 +81,10 @@ class ApiSpecification(BaseModel):
     operation: dict | None = None
     mappings: list[DesignMapping] = Field(default_factory=list, max_length=100)
     processing_steps: list[ProcessingStep] = Field(default_factory=list, max_length=100)
-    method: Literal[
-        "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE"
-    ] = "GET"
+    method: (
+        Literal["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE"]
+        | None
+    ) = "GET"
     path: str = Field(default="", max_length=1000)
     authentication: str = Field(default="", max_length=5000)
     authorization: str = Field(default="", max_length=5000)

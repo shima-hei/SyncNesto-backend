@@ -66,7 +66,7 @@ def import_specification(
     by_path = {
         (content.method, content.path): row
         for row in rows
-        if (content := legacy[row.id]).path
+        if (content := legacy[row.id]).path and content.method
     }
     by_name = {
         content.operation["operationId"]: row
@@ -109,7 +109,7 @@ def import_specification(
             )
         )
     for row in rows:
-        if row.id not in seen and legacy[row.id].path:
+        if row.id not in seen and legacy[row.id].path and legacy[row.id].method:
             report.append(
                 OpenApiChange(
                     key=f"{legacy[row.id].method} {legacy[row.id].path}",
@@ -232,8 +232,8 @@ def export_openapi(
         if raw["type"] != "api":
             raise BadRequestError("API設計を指定してください")
         content = ApiSpecification.model_validate(raw)
-        if not content.path.strip():
-            warnings.append(f"{title}: パス未確定のため出力から除外")
+        if not content.path.strip() or content.method is None:
+            warnings.append(f"{title}: メソッドまたはパスが未確定のため出力から除外")
             continue
         path = document["paths"].setdefault(content.path, {})
         method = content.method.lower()

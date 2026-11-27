@@ -205,8 +205,13 @@ class SpecificationService:
             without_route = isinstance(
                 content, ScreenSpecification
             ) and content.screen_kind in {"modal", "drawer", "layout"}
-            if not row.summary.strip() or (
-                not identifier.strip() and not without_route
+            method_missing = (
+                isinstance(content, ApiSpecification) and content.method is None
+            )
+            if (
+                method_missing
+                or not row.summary.strip()
+                or (not identifier.strip() and not without_route)
             ):
                 raise SpecificationReviewFieldsError()
         reviewed = (
