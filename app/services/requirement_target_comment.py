@@ -296,9 +296,11 @@ class RequirementTargetCommentService:
             data.anchor,
         )
         before = self._build_comment_snapshot(comment)
-        comment.target_anchor = data.anchor.model_dump(exclude_none=True)
         # 未分類の要件ブロックを明示するnullはアンカー契約に含まれる。
-        comment.target_anchor["preview_target_id"] = data.anchor.preview_target_id
+        comment.target_anchor = {
+            **data.anchor.model_dump(exclude_none=True),
+            "preview_target_id": data.anchor.preview_target_id,
+        }
         comment.version += 1
         db.flush()
         self._record_change_log(

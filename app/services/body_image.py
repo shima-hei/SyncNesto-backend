@@ -53,7 +53,7 @@ class BodyImageService(CommentImageService):
         try:
             with Image.open(BytesIO(content)) as image:
                 if (
-                    MEDIA_TYPES.get(image.format) != content_type
+                    MEDIA_TYPES.get(image.format or "") != content_type
                     or image.width * image.height > MAX_IMAGE_PIXELS
                     or getattr(image, "is_animated", False)
                 ):
@@ -96,7 +96,10 @@ def image_references(*values: object) -> set[UUID]:
         for token in PARSER.parse(value):
             for child in token.children or ():
                 if child.type == "image":
-                    match = IMAGE_REFERENCE.fullmatch(child.attrGet("src") or "")
+                    src = child.attrGet("src")
+                    match = (
+                        IMAGE_REFERENCE.fullmatch(src) if isinstance(src, str) else None
+                    )
                     if match:
                         references.add(UUID(match[1]))
     return references
