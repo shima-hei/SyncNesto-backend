@@ -270,6 +270,9 @@ def build_projection(
             }
             content.pop("collection_id", None)
             content.pop("mappings", None)
+            for board in content.get("artboards", []):
+                for layer in board.get("components", []):
+                    layer.pop("part_pin", None)
             if "transitions" in content:
                 content["transitions"] = [
                     item

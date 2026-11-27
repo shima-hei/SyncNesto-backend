@@ -119,3 +119,49 @@ def test_exact_capacity_and_node_boundaries(monkeypatch):
     )
     assert set(json.loads(raw)).isdisjoint({"id", "project_id", "updated_at"})
     assert all(len(canonical_bytes(n)) <= 256 * 1024 for n in value.nodes)
+
+
+def test_public_screen_materializes_wireframe_without_internal_catalog_references():
+    """画面の固定レイアウトを維持し、共通部品の内部IDと版は公開しない。"""
+    release, nodes = fixture()
+    part_id, root_id, source_layer, target_layer = (str(uuid4()) for _ in range(4))
+    release.node_count += 1
+    release.source_refs.append(dict(kind="specification", id=10, version=3))
+    components = [
+        {
+            "id": root_id,
+            "kind": "container",
+            "name": "ヘッダー",
+            "part_pin": {
+                "part_id": part_id,
+                "version": 1,
+                "layer_ids": {source_layer: target_layer},
+            },
+        },
+        {"id": target_layer, "parent_id": root_id, "name": "受付"},
+    ]
+    nodes.append(
+        SimpleNamespace(
+            id=uuid4(),
+            parent_id=None,
+            node_kind="specification",
+            position=1,
+            source_id=10,
+            source_version=3,
+            payload={
+                "title": "受付画面",
+                "kind": "screen",
+                "summary": "受付用の画面",
+                "status": "approved",
+                "content": {
+                    "type": "screen",
+                    "artboards": [{"id": str(uuid4()), "components": components}],
+                },
+            },
+        )
+    )
+    value = build_projection(release, nodes, identity=uuid4())
+    projected = value.nodes[-1]["payload"]["content"]["artboards"][0]["components"]
+    assert "part_pin" not in projected[0]
+    assert projected[1] == components[1]
+    assert components[0]["part_pin"]["part_id"] == part_id
