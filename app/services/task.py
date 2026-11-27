@@ -45,6 +45,7 @@ from app.schemas.task import (
 from app.schemas.task_phase import PhaseScope
 from app.services.audit_log import AuditLogService
 from app.services.authorization import AuthorizationService
+from app.services.body_image import retain_body_images
 from app.services.change_log_formatter import (
     ChangeLogFormatConfig,
     ChangeLogFormatter,
@@ -333,6 +334,9 @@ class TaskService:
                 }
             )
             try:
+                retain_body_images(
+                    db, project_id, "task", actor_id, task_in.description
+                )
                 task = self.task_repository.create(
                     db,
                     project_id=project_id,
@@ -609,6 +613,9 @@ class TaskService:
             normalized = task_in
         before_snapshot = self._task_snapshot(task, db)
         try:
+            retain_body_images(
+                db, task.project_id, "task", actor_id, normalized.description
+            )
             task = self.task_repository.update(
                 db,
                 task=task,

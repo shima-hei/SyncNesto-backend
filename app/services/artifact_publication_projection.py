@@ -154,6 +154,8 @@ def _test_graph(root, parts, project_id: int) -> dict:
 
 
 def _graph_nodes(root, graph: dict, identity: UUID) -> list[dict]:
+    from app.services.body_image import image_references
+
     """公開graphを再分割する。内部chunkを転送しない。"""
     text = canonical_bytes(graph).decode()
     parent = str(uuid5(identity, str(root.id)))
@@ -182,6 +184,7 @@ def _graph_nodes(root, graph: dict, identity: UUID) -> list[dict]:
                 high = mid - 1
         parts.append(part(len(parts), text[offset : offset + low]))
         offset += low
+    image_ids = image_references(graph.get("description"))
     return [
         dict(
             id=parent,
@@ -195,6 +198,9 @@ def _graph_nodes(root, graph: dict, identity: UUID) -> list[dict]:
                 graph_digest=hashlib.sha256(text.encode()).hexdigest(),
                 part_count=len(parts),
                 counts={k: len(graph[k]) for k in GRAPH_COLLECTIONS},
+                **(
+                    {"body_image_ids": sorted(map(str, image_ids))} if image_ids else {}
+                ),
             ),
         ),
         *parts,

@@ -22,6 +22,7 @@ from app.schemas.requirement import (
     RequirementSectionItemCount,
     RequirementUpdate,
 )
+from app.services.body_image import retain_body_images
 from app.services.change_log_formatter import (
     build_changed_field_snapshots,
     build_update_change_log_entry,
@@ -169,6 +170,15 @@ class RequirementService:
                 update={"requirement_code": requirement_code}
             )
             try:
+                retain_body_images(
+                    db,
+                    project_id,
+                    "requirement",
+                    actor_id,
+                    normalized.description,
+                    normalized.rationale,
+                    normalized.acceptance_criteria,
+                )
                 requirement = self.repository.create(
                     db,
                     requirement_in=normalized,
@@ -393,6 +403,15 @@ class RequirementService:
         before_value = self._build_revision_snapshot(requirement)
         previous_owner_id = requirement.owner_id
         try:
+            retain_body_images(
+                db,
+                project_id,
+                "requirement",
+                actor_id,
+                requirement_in.description,
+                requirement_in.rationale,
+                requirement_in.acceptance_criteria,
+            )
             updated_requirement = self.repository.update(
                 db,
                 requirement=requirement,

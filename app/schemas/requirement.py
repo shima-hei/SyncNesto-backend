@@ -4,7 +4,7 @@ from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.change_log import (
     ChangeLogUserRead,
@@ -426,6 +426,53 @@ class RequirementTargetCommentUpdate(BaseModel):
     version: int
     body: str
     reason: str | None = None
+
+
+class DocumentPreviewQuote(BaseModel):
+    """表示テキストに対する半開区間とその前後文脈。"""
+
+    model_config = {"extra": "forbid"}
+
+    anchor_format: Literal["rendered-text-v1"]
+    scope: Literal["document_preview"]
+    source_view: Literal["requirement_document_overview_tab"]
+    preview_target_type: Literal["document", "section", "unassigned_requirements"]
+    preview_target_id: int | None
+    document_id: int = Field(gt=0)
+    document_version: int = Field(gt=0)
+    section_id: int | None = None
+    section_version: int | None = None
+    field: Literal["purpose", "section"]
+    label: str = Field(max_length=1000)
+    quote: str = Field(min_length=1, max_length=1000)
+    source_value: str = Field(min_length=1, max_length=150_000)
+    start_offset: int = Field(ge=0)
+    end_offset: int = Field(gt=0)
+    offset_unit: Literal["unicode_code_point"]
+    prefix: str = Field(max_length=48)
+    suffix: str = Field(max_length=48)
+
+    @model_validator(mode="after")
+    def check_offsets(self):
+        """前後文脈と引用範囲が同じテキストから得られたことを確認する。"""
+        start, end, text = self.start_offset, self.end_offset, self.source_value
+        if (
+            end - start != len(self.quote)
+            or end > len(text)
+            or not self.quote.strip()
+            or text[start:end] != self.quote
+            or self.prefix != text[max(0, start - 48) : start]
+            or self.suffix != text[end : end + 48]
+        ):
+            raise ValueError("引用範囲と本文が一致しません。")
+        return self
+
+
+class RequirementTargetCommentReanchor(BaseModel):
+    """最新版の本文上で引用だけを更新する。"""
+
+    version: int = Field(gt=0)
+    anchor: DocumentPreviewQuote
 
 
 class RequirementTargetCommentStateUpdate(BaseModel):

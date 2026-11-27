@@ -9,6 +9,16 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.models.comments import db_comment
 
+COMMENT_KINDS = ("task", "requirement", "specification", "test_design")
+BODY_KINDS = (
+    "body_task",
+    "body_requirement",
+    "body_specification",
+    "body_test_design",
+    "body_document",
+)
+IMAGE_KINDS_SQL = ", ".join(f"'{kind}'" for kind in (*COMMENT_KINDS, *BODY_KINDS))
+
 
 class CommentImage(Base):
     """画像は下書き中か、いずれか一つのコメントに所属する。"""
@@ -23,7 +33,7 @@ class CommentImage(Base):
             name="ck_comment_images_one_owner",
         ),
         CheckConstraint(
-            "kind IN ('task','requirement','specification','test_design') AND "
+            f"kind IN ({IMAGE_KINDS_SQL}) AND "
             "(task_comment_id IS NULL OR kind = 'task') AND "
             "(requirement_comment_id IS NULL OR kind = 'requirement') AND "
             "(specification_comment_id IS NULL OR kind = 'specification') AND "
@@ -49,6 +59,9 @@ class CommentImage(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), comment="アップロード日時"
+    )
+    retained_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), comment="本文で初めて確定した日時"
     )
     task_comment_id: Mapped[int | None] = mapped_column(
         ForeignKey("task_comments.id", ondelete="CASCADE"),

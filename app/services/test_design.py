@@ -21,6 +21,7 @@ from app.schemas.test_design import (
     TestDesignUpdate,
 )
 from app.services.audit_log import AuditLogService
+from app.services.body_image import retain_body_images
 from app.services.conflict import (
     raise_duplicate_after_rollback,
     raise_if_version_conflict,
@@ -95,6 +96,7 @@ class TestDesignService:
     ) -> TestDesignRead:
         """空の設計書を作成する。"""
         self.require_project(db, project_id)
+        retain_body_images(db, project_id, "test_design", actor_id, data.description)
         design = TestDesign(
             project_id=project_id,
             created_by=actor_id,
@@ -134,6 +136,9 @@ class TestDesignService:
         ):
             raise BadRequestError(error_messages.TEST_DESIGN_LINK_IMMUTABLE)
         try:
+            retain_body_images(
+                db, project_id, "test_design", actor_id, data.description
+            )
             self.repository.replace_graph(db, design.id, data.model_dump())
             design.name = data.name
             design.description = data.description

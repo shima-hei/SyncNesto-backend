@@ -1051,3 +1051,4 @@ read/submit/prepareの詳細、既存Cookie/CSRFを使う9操作と排他・失�
 [固定要件の確認表・証拠](frontend-requirement-verifications.md#v1b-証拠の提出と保全)を参照。
 コピー完了とDL発行時に本人資格を再確認し、元ファイルへの迂回経路は追加しない。
 初期はLOCAL限定で、公開環境・MCPやゲストの対象に含めない。
+本文画像の閲覧条件と公開範囲は [本文画像と文書の引用コメント](markdown-body-images-and-quotes.md) を参照。

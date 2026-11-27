@@ -3,7 +3,7 @@
 import hashlib
 import hmac
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from app.core.config import settings
 from app.core.exceptions import (
@@ -206,3 +206,43 @@ class SharedPublicationService:
             return SharedPublicationFiles(
                 items=self._metadata(row).files, authorization_revision=revision
             )
+
+    @retry_publication_operation
+    def body_image(self, original, user, identity, node_id, image_id):
+        """現在の共有許可と固定本文の両方が一致する画像だけを返す。"""
+        from app.models.artifact_publication import ArtifactPublicationNode
+        from app.models.comment_image import CommentImage
+        from app.services.body_image import snapshot_references
+        from app.services.storage import StorageService
+
+        with self.context.transaction(original, user) as (db, actor):
+            row, _ = self._get(db, original, actor, identity)
+            nodes = ArtifactPublicationNode.__table__
+            node = db.execute(
+                select(nodes.c.node_kind, nodes.c.payload).where(
+                    nodes.c.publication_id == identity, nodes.c.id == node_id
+                )
+            ).first()
+            if node is None:
+                raise NotFoundError()
+            kind, references = snapshot_references(node.node_kind, node.payload)
+            if image_id not in references:
+                raise NotFoundError()
+            images = CommentImage.__table__
+            image = db.execute(
+                select(
+                    images.c.storage_key, images.c.content_type, images.c.byte_size
+                ).where(
+                    images.c.project_id == row["project_id"],
+                    images.c.id == image_id,
+                    images.c.kind == f"body_{kind}",
+                    images.c.retained_at.is_not(None),
+                )
+            ).first()
+            if image is None:
+                raise NotFoundError()
+            return StorageService().for_demo(db).read_uploaded_object(
+                key=image.storage_key,
+                content_type=image.content_type,
+                byte_size=image.byte_size,
+            ), image.content_type

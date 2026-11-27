@@ -12,6 +12,7 @@ from app.schemas.requirement import (
     RequirementDocumentCreate,
     RequirementDocumentUpdate,
 )
+from app.services.body_image import retain_body_images
 from app.services.change_log_formatter import (
     build_changed_field_snapshots,
     build_update_change_log_entry,
@@ -126,6 +127,9 @@ class RequirementDocumentService:
             )
 
         try:
+            retain_body_images(
+                db, project_id, "requirement", actor_id, document_in.purpose
+            )
             document = self.repository.create(
                 db,
                 project_id=project_id,
@@ -271,6 +275,9 @@ class RequirementDocumentService:
 
         before_value = self._build_document_snapshot(document)
         try:
+            retain_body_images(
+                db, project_id, "requirement", actor_id, document_in.purpose
+            )
             updated_document = self.repository.update(
                 db,
                 document=document,

@@ -3,7 +3,7 @@
 from sqlalchemy.orm import Session
 
 from app.core import error_messages
-from app.core.exceptions import ForbiddenError, NotFoundError
+from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.models.requirement import (
     Requirement,
     RequirementDocument,
@@ -22,6 +22,7 @@ from app.repositories.user import UserRepository
 from app.schemas.requirement import (
     RequirementTargetCommentCreate,
     RequirementTargetCommentRead,
+    RequirementTargetCommentReanchor,
     RequirementTargetCommentStateUpdate,
     RequirementTargetCommentUpdate,
 )
@@ -254,6 +255,62 @@ class RequirementTargetCommentService:
             changed_by=actor_id,
         )
         return updated_comment
+
+    def reanchor_comment(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        comment_id: int,
+        data: RequirementTargetCommentReanchor,
+        actor_id: int,
+        can_moderate: bool,
+    ) -> RequirementTargetComment:
+        """レビュー本文を保持し、最新版への引用更新だけを履歴に残す。"""
+        comment = self.get_comment(db, project_id=project_id, comment_id=comment_id)
+        db.refresh(comment, with_for_update=True)
+        if comment.deleted_at is not None:
+            raise NotFoundError()
+        self._ensure_comment_owner_or_moderator(
+            comment, actor_id=actor_id, can_moderate=can_moderate
+        )
+        raise_if_version_conflict(
+            current_version=comment.version,
+            requested_version=data.version,
+            current=build_conflict_current(
+                comment, REQUIREMENT_TARGET_COMMENT_CONFLICT_CURRENT_FIELDS
+            ),
+        )
+        original = comment.target_anchor or {}
+        if (
+            comment.parent_comment_id is not None
+            or original.get("scope") != "document_preview"
+            or not original.get("quote")
+            or original.get("release_id") is not None
+        ):
+            raise BadRequestError("このコメントの引用箇所は再指定できません。")
+        self.anchor_validator.validate_preview_quote(
+            db,
+            project_id,
+            CommentTarget(comment.document_id, comment.target_type, comment.target_id),
+            data.anchor,
+        )
+        before = self._build_comment_snapshot(comment)
+        comment.target_anchor = data.anchor.model_dump(exclude_none=True)
+        # 未分類の要件ブロックを明示するnullはアンカー契約に含まれる。
+        comment.target_anchor["preview_target_id"] = data.anchor.preview_target_id
+        comment.version += 1
+        db.flush()
+        self._record_change_log(
+            db,
+            comment=comment,
+            action=RequirementChangeLogAction.COMMENT_UPDATED,
+            old_value=before,
+            new_value=self._build_comment_snapshot(comment),
+            reason="引用箇所を再指定",
+            changed_by=actor_id,
+        )
+        return comment
 
     def resolve_comment(
         self,

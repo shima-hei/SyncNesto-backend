@@ -2,14 +2,18 @@
 
 from dataclasses import dataclass
 
+from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core import error_messages
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.models.requirement import (
     RequirementDetail,
+    RequirementDocument,
     RequirementLink,
     RequirementRelation,
+    RequirementSection,
 )
 from app.models.task import RequirementTaskRelation
 from app.repositories.requirement_child import (
@@ -19,6 +23,7 @@ from app.repositories.requirement_child import (
 )
 from app.repositories.task_item import TaskRepository
 from app.repositories.task_requirement import RequirementTaskRelationRepository
+from app.schemas.requirement import DocumentPreviewQuote
 
 
 class RequirementCommentTargetType:
@@ -91,6 +96,14 @@ class RequirementCommentAnchorValidator:
         if not target_anchor:
             return
 
+        if "anchor_format" in target_anchor:
+            try:
+                anchor = DocumentPreviewQuote.model_validate(target_anchor)
+            except ValidationError:
+                raise BadRequestError("引用箇所を選び直してください。") from None
+            self.validate_preview_quote(db, project_id, target, anchor)
+            return
+
         kind = target_anchor.get("kind")
         if kind is None:
             return
@@ -125,6 +138,66 @@ class RequirementCommentAnchorValidator:
             return
 
         raise NotFoundError(error_messages.REQUIREMENT_COMMENT_TARGET_NOT_FOUND)
+
+    @staticmethod
+    def validate_preview_quote(
+        db, project_id, target, anchor: DocumentPreviewQuote
+    ) -> None:
+        """文書・章の所属と選択時点の版を保存直前に照合する。"""
+        if target.target_type != "document" or target.document_id != anchor.document_id:
+            raise NotFoundError()
+        document = db.scalar(
+            select(RequirementDocument)
+            .where(
+                RequirementDocument.id == anchor.document_id,
+                RequirementDocument.project_id == project_id,
+                RequirementDocument.deleted_at.is_(None),
+            )
+            .with_for_update(read=True)
+            .execution_options(populate_existing=True)
+        )
+        if document is None:
+            raise NotFoundError()
+        if document.version != anchor.document_version:
+            raise ConflictError("本文が更新されました。引用箇所を選び直してください。")
+        if anchor.preview_target_type == "section":
+            if (
+                anchor.field != "section"
+                or anchor.section_id is None
+                or anchor.section_id != anchor.preview_target_id
+            ):
+                raise NotFoundError()
+            section = db.scalar(
+                select(RequirementSection)
+                .where(
+                    RequirementSection.id == anchor.section_id,
+                    RequirementSection.document_id == document.id,
+                    RequirementSection.deleted_at.is_(None),
+                )
+                .with_for_update(read=True)
+                .execution_options(populate_existing=True)
+            )
+            if section is None:
+                raise NotFoundError()
+            if section.version != anchor.section_version:
+                raise ConflictError(
+                    "章本文が更新されました。引用箇所を選び直してください。"
+                )
+        elif (
+            anchor.section_id is not None
+            or anchor.section_version is not None
+            or (
+                anchor.preview_target_type == "document"
+                and (
+                    anchor.field != "purpose" or anchor.preview_target_id != document.id
+                )
+            )
+            or (
+                anchor.preview_target_type == "unassigned_requirements"
+                and (anchor.field != "section" or anchor.preview_target_id is not None)
+            )
+        ):
+            raise NotFoundError()
 
     def _validate_requirement_detail_anchor(
         self,
