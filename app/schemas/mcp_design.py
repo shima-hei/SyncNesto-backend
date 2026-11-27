@@ -17,10 +17,11 @@ class DesignListInput(PageInput):
     q: str = Field(default="", max_length=200)
 
 
-class DesignDiagramInput(DesignListInput):
+class DesignDiagramInput(PageInput):
     """設計図の対象を指定する。"""
 
     kind: ArtifactKind
+    q: str = Field(default="", max_length=200)
     group_id: UUID | None = None
 
 
