@@ -104,6 +104,8 @@ MCPの `list_design_artifacts` と `get_design_artifact` は一覧、必要な�
 
 公開版の画面遷移図・ER図は同じ公開資料に含まれる承認済みの設計から作る。接続の `target_ordinal` はその公開資料内の表示順を指す。閲覧時は公開済みの本文から読み出し、元設計や内部の共通部品カタログは参照しない。公開済みの既存資料は従来の本文・内容ハッシュを保持する。
 
+共有画面のHTMLプレビューには `GET /shared/publications/{publication_id}/nodes/{node_id}/mockups/{mockup_id}/preview?revision=...` を使う。現在の閲覧許可と認可版が一致した場合に、公開固定本文のHTML・CSSから生成した隔離プレビューを返す。
+
 移行は `d84b9a6e2f10 → f31a8d7c620e → 7c19d8ab502e → 4ce61bd208af`。既存の設計行・版・リンク・指摘は書き換えない。配備時に事前バックアップと権限・件数の照合を行う。部品を含む画面が保存された後は、切り戻し時も部品の版情報を読めるバックエンドと追加表を保全する。
 
 参照資料 [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1.html) ・ [PostgreSQL 17の制約](https://www.postgresql.org/docs/17/ddl-constraints.html) ・ [HTMLのsandbox属性](https://html.spec.whatwg.org/multipage/iframe-embed-object.html#attr-iframe-sandbox)

@@ -28,6 +28,7 @@ from app.schemas.artifact_publication_access import (
     SharedPublicationRead,
 )
 from app.schemas.artifact_release import SourceKind
+from app.schemas.design_workspace import MockupPreviewRead
 from app.schemas.file_upload import (
     FileUploadComplete,
     FileUploadPlan,
@@ -319,6 +320,26 @@ def shared_publication_nodes(
 ):
     """現在の本人・sessionに結び付いた本文ページを返す。"""
     return shared_service.nodes(db, user, publication_id, cursor, page_size)
+
+
+@shared_router.get(
+    "/{publication_id}/nodes/{node_id}/mockups/{mockup_id}/preview",
+    response_model=MockupPreviewRead,
+)
+def shared_design_mockup_preview(
+    publication_id: UUID,
+    node_id: UUID,
+    mockup_id: UUID,
+    revision: Annotated[str, Query(pattern=r"^[a-f0-9]{64}$")],
+    response: Response,
+    db: Db,
+    user: SharedReader,
+):
+    """現在の共有許可に束縛した固定モックのプレビューを取得する。"""
+    response.headers["Cache-Control"] = "private, no-store"
+    return shared_service.mockup_preview(
+        db, user, publication_id, node_id, mockup_id, revision
+    )
 
 
 @shared_router.get("/{publication_id}/files", response_model=SharedPublicationFiles)

@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 
+from pydantic import ValidationError
 from sqlalchemy import func, literal, select, text
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 
@@ -13,6 +14,7 @@ from app.core.exceptions import (
     FixedApprovalScopeConflictError,
     NotFoundError,
 )
+from app.models.artifact_publication import ArtifactPublicationNode
 from app.repositories.artifact_publication_access import PublicationAccessRepository
 from app.repositories.shared_decision_status import shared_decision_status
 from app.schemas.artifact_publication import (
@@ -27,7 +29,10 @@ from app.schemas.artifact_publication_access import (
     SharedPublicationRead,
     SharedPublicationSummary,
 )
+from app.schemas.design_content import HtmlMockup
+from app.schemas.design_workspace import MockupPreviewRead
 from app.services.artifact_release_snapshot import MAX_PAGE_BYTES, canonical_bytes
+from app.services.design_mockup import mockup_document
 from app.services.fixed_approval_cursor import decode_cursor, encode_cursor
 from app.services.guest_invitation import GuestInvitationService
 from app.services.publication_access_context import (
@@ -300,9 +305,42 @@ class SharedPublicationService:
             )
 
     @retry_publication_operation
+    def mockup_preview(self, original, user, identity, node_id, mockup_id, revision):
+        """共有中の固定本文に含まれるHTMLだけを隔離表示用に変換する。"""
+        with self.context.transaction(original, user) as (db, actor):
+            _, current = self._get(db, original, actor, identity)
+            if not hmac.compare_digest(current, revision):
+                raise ConflictError()
+            nodes = ArtifactPublicationNode.__table__
+            payload = db.scalar(
+                select(nodes.c.payload).where(
+                    nodes.c.publication_id == identity,
+                    nodes.c.id == node_id,
+                    nodes.c.node_kind == "specification",
+                )
+            )
+            if payload is None or payload.get("kind") != "screen":
+                raise NotFoundError()
+            selected = next(
+                (
+                    item
+                    for item in payload["content"].get("mockups", [])
+                    if item.get("id") == str(mockup_id)
+                ),
+                None,
+            )
+            if selected is None:
+                raise NotFoundError()
+            try:
+                mockup = HtmlMockup.model_validate(selected)
+            except ValidationError:
+                raise NotFoundError() from None
+            document, css_blocked = mockup_document(mockup)
+            return MockupPreviewRead(document=document, css_blocked=css_blocked)
+
+    @retry_publication_operation
     def body_image(self, original, user, identity, node_id, image_id):
         """現在の共有許可と固定本文の両方が一致する画像だけを返す。"""
-        from app.models.artifact_publication import ArtifactPublicationNode
         from app.models.comment_image import CommentImage
         from app.services.body_image import snapshot_references
         from app.services.storage import StorageService
