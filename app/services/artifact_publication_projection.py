@@ -223,6 +223,7 @@ def build_projection(
         raise invalid_projection()
     version = release.projection_version.replace("internal-", "public-", 1)
     nodes, consumed, id_map = [], set(), {}
+    design_nodes: dict[int, dict] = {}
     for row in source_nodes:
         if row.id in consumed:
             continue
@@ -296,20 +297,23 @@ def build_projection(
                         step.pop("specification_id", None)
         node_id = str(uuid5(identity, str(row.id)))
         id_map[node_id] = str(row.id)
-        nodes.append(
-            dict(
-                id=node_id,
-                parent_id=str(uuid5(identity, str(row.parent_id)))
-                if row.parent_id
-                else None,
-                position=row.position,
-                node_kind=row.node_kind,
-                source_version=row.source_version,
-                payload=payload,
-            )
+        node = dict(
+            id=node_id,
+            parent_id=str(uuid5(identity, str(row.parent_id)))
+            if row.parent_id
+            else None,
+            position=row.position,
+            node_kind=row.node_kind,
+            source_version=row.source_version,
+            payload=payload,
         )
+        nodes.append(node)
+        if row.node_kind == "specification" and payload["status"] == "approved":
+            design_nodes[row.source_id] = node
     for ordinal, node in enumerate(nodes):
         node["ordinal"] = ordinal
+    _add_design_diagram_links(design_nodes)
+    for node in nodes:
         node["content_digest"] = digest(node)
     ids = {n["id"] for n in nodes}
     if any(n["parent_id"] and n["parent_id"] not in ids for n in nodes):
@@ -372,3 +376,43 @@ def build_projection(
         size,
         version,
     )
+
+
+def _add_design_diagram_links(nodes: dict[int, dict]) -> None:
+    """同じ公開版に含まれる承認済み同種ノードへの接続のみを投影する。"""
+    for node in nodes.values():
+        payload = node["payload"]
+        kind, content = payload["kind"], payload["content"]
+        if kind == "screen":
+            groups = (("transition", content.get("transitions", [])),)
+        elif kind == "database":
+            groups = (
+                (
+                    "foreign_key",
+                    [
+                        constraint
+                        for constraint in content.get("constraints", [])
+                        if constraint.get("kind") == "foreign_key"
+                    ],
+                ),
+                ("logical", content.get("relationships", [])),
+            )
+        else:
+            continue
+        links = []
+        for relation, entries in groups:
+            for item in entries:
+                target = nodes.get(item.get("target_id"))
+                if target is None or target["payload"]["kind"] != kind:
+                    continue
+                links.append(
+                    dict(
+                        target_ordinal=target["ordinal"],
+                        kind=relation,
+                        name=item.get("name", ""),
+                        detail=item.get("condition", "")
+                        if relation == "transition"
+                        else item.get("cardinality", ""),
+                    )
+                )
+        payload["diagram_links"] = links

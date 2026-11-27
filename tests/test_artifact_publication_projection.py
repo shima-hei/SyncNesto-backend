@@ -165,3 +165,83 @@ def test_public_screen_materializes_wireframe_without_internal_catalog_reference
     assert "part_pin" not in projected[0]
     assert projected[1] == components[1]
     assert components[0]["part_pin"]["part_id"] == part_id
+
+
+def test_public_design_diagrams_only_link_approved_nodes_in_same_fixed_bundle():
+    """元の設計IDを使わず、公開する固定版のノードを接続する。"""
+    release, nodes = fixture()
+    count = len(nodes)
+
+    def add(source_id, title, kind="screen", status="approved", **content):
+        release.source_refs.append(dict(kind="specification", id=source_id, version=3))
+        nodes.append(
+            SimpleNamespace(
+                id=uuid4(),
+                parent_id=None,
+                node_kind="specification",
+                position=len(nodes),
+                source_id=source_id,
+                source_version=3,
+                payload={
+                    "title": title,
+                    "kind": kind,
+                    "summary": "",
+                    "status": status,
+                    "content": {"type": kind, **content},
+                },
+            )
+        )
+
+    add(
+        10,
+        "受付",
+        transitions=[
+            {"target_id": 11, "name": "表示する接続", "condition": "入力済み"},
+            {"target_id": 12, "name": "下書きへの接続"},
+            {"target_id": 99, "name": "公開していない画面への接続"},
+        ],
+    )
+    add(11, "完了")
+    add(12, "作業中", status="draft")
+    add(
+        20,
+        "台帳",
+        kind="database",
+        constraints=[{"kind": "foreign_key", "target_id": 21, "name": "担当ID"}],
+        relationships=[
+            {"target_id": 21, "name": "担当", "cardinality": "one_to_many"},
+            {"target_id": 10, "name": "画面はER図のノードにしない"},
+        ],
+    )
+    add(21, "担当テーブル", kind="database")
+    release.node_count = len(nodes)
+
+    value = build_projection(release, nodes, identity=uuid4())
+    source, _, draft, table, _ = value.nodes[count:]
+    assert source["payload"]["diagram_links"] == [
+        {
+            "target_ordinal": count + 1,
+            "kind": "transition",
+            "name": "表示する接続",
+            "detail": "入力済み",
+        }
+    ]
+    assert "diagram_links" not in draft["payload"]
+    assert table["payload"]["diagram_links"] == [
+        {
+            "target_ordinal": count + 4,
+            "kind": "foreign_key",
+            "name": "担当ID",
+            "detail": "",
+        },
+        {
+            "target_ordinal": count + 4,
+            "kind": "logical",
+            "name": "担当",
+            "detail": "one_to_many",
+        },
+    ]
+    assert (
+        build_projection(release, nodes, identity=uuid4()).public_digest
+        == value.public_digest
+    )
