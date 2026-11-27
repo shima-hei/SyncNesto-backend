@@ -320,14 +320,31 @@ class SpecificationService:
         snapshot = field_value(row, data.field_path)
         if snapshot is None or not data.body.strip():
             raise BadRequestError(error_messages.SPECIFICATION_COMMENT_TARGET_INVALID)
+        excerpt = snapshot[:800]
+        if data.quote is not None and data.quote_start is not None:
+            parts = data.field_path.split("/")
+            if (
+                row.kind != "screen"
+                or len(parts) != 4
+                or parts[:2] != ["content", "mockups"]
+                or parts[-1] not in {"html", "css"}
+                or not data.quote.strip()
+                or snapshot[data.quote_start : data.quote_start + len(data.quote)]
+                != data.quote
+            ):
+                raise BadRequestError(
+                    error_messages.SPECIFICATION_COMMENT_TARGET_INVALID
+                )
+            excerpt = data.quote
         if self.repository.comment_count(db, row.id) >= 500:
             raise BadRequestError(error_messages.SPECIFICATION_COMMENT_LIMIT)
         comment = SpecificationComment(
             specification_id=row.id,
             author_id=user.id,
             field_path=data.field_path,
-            field_snapshot=snapshot[:800],
+            field_snapshot=excerpt,
             field_digest=sha256(snapshot.encode("utf-8")).hexdigest(),
+            quote_start=data.quote_start,
             specification_version=row.version,
             body=data.body.strip(),
         )

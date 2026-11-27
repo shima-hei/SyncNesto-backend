@@ -85,6 +85,7 @@ class SpecificationComment(Base):
     field_path: Mapped[str] = mapped_column(String(300))
     field_snapshot: Mapped[str] = mapped_column(Text)
     field_digest: Mapped[str] = mapped_column(String(64))
+    quote_start: Mapped[int | None]
     specification_version: Mapped[int]
     body: Mapped[str] = mapped_column(Text)
     is_resolved: Mapped[bool] = mapped_column(default=False)

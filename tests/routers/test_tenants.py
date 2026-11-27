@@ -48,6 +48,10 @@ SHARED_IDENTITY_OPERATIONS = {
     ("get", "/shared/publications/{publication_id}/nodes"),
     (
         "get",
+        "/shared/publications/{publication_id}/nodes/{node_id}/mockups/{mockup_id}/preview",
+    ),
+    (
+        "get",
         "/shared/publications/{publication_id}/nodes/{node_id}/body-images/{image_id}",
     ),
     ("get", "/shared/publications/{publication_id}/files"),

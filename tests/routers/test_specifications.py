@@ -49,9 +49,7 @@ def test_review_fix_reopen_and_history(client, context):
         },
     )
     assert comment.status_code == 201, comment.text
-    blocked = client.patch(
-        url + "/status", json={"version": 1, "status": "approved"}
-    )
+    blocked = client.patch(url + "/status", json={"version": 1, "status": "approved"})
     assert blocked.status_code == 409
     assert blocked.json()["code"] == "SPECIFICATION_UNRESOLVED_COMMENTS"
     data = update_data(row)
@@ -78,6 +76,55 @@ def test_review_fix_reopen_and_history(client, context):
         client.get(url + "/revisions/1").json()["snapshot"]["content"]["path"]
         == "/login"
     )
+
+
+def test_mockup_review_keeps_the_selected_unicode_range_and_source_version(
+    client, context
+):
+    """本文だけの既存指摘を維持し、HTML・CSSの範囲は元版と照合する。"""
+    _, _, base = context
+    screen = create(client, base, "screen")
+    url = f"{base}/{screen['id']}"
+    identifier = str(uuid4())
+    html = "<h1>🧪受付</h1>\n<p>選択した説明</p>"
+    field_path = f"content/mockups/{identifier}/html"
+    body = update_data(screen)
+    body["content"]["mockups"] = [{"id": identifier, "html": html}]
+    first = client.patch(url, json=body).json()
+    quote = "選択した説明"
+    start = html.index(quote)
+    request = {
+        "specification_version": first["version"],
+        "field_path": field_path,
+        "body": "説明を見直してください",
+        "quote": quote,
+        "quote_start": start,
+    }
+    response = client.post(
+        url + "/comments", json={**request, "quote_start": start + 1}
+    )
+    assert response.status_code == 400, response.text
+    assert (
+        client.post(
+            url + "/comments", json={**request, "quote_start": None}
+        ).status_code
+        == 422
+    )
+    response = client.post(url + "/comments", json=request)
+    assert response.status_code == 201, response.text
+    before = response.json()
+    assert before["field_snapshot"] == quote
+    assert before["quote_start"] == start
+
+    body = update_data(first)
+    body["content"]["mockups"][0]["html"] = "<h1>差し替えた受付</h1>"
+    assert client.patch(url, json=body).status_code == 200
+    comment = client.get(url + "/comments").json()[0]
+    assert comment["anchor_changed"] is True
+    assert (comment["field_snapshot"], comment["quote_start"]) == (quote, start)
+    version = comment["specification_version"]
+    past = client.get(f"{url}/revisions/{version}").json()["snapshot"]
+    assert past["content"]["mockups"][0]["html"][start : start + len(quote)] == quote
 
 
 def test_uuid_anchor_survives_reordering_and_flags_removal(client, context):

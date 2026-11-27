@@ -216,6 +216,15 @@ class SpecificationCommentCreate(CommentImageCreateFields):
     specification_version: int = Field(ge=1)
     field_path: str = Field(min_length=1, max_length=300)
     body: str = Field(min_length=1, max_length=5000)
+    quote: str | None = Field(default=None, min_length=1, max_length=800)
+    quote_start: int | None = Field(default=None, ge=0, le=100000)
+
+    @model_validator(mode="after")
+    def validate_quote(self):
+        """引用とUnicode code pointで数えた開始位置を同時に指定する。"""
+        if (self.quote is None) != (self.quote_start is None):
+            raise ValueError("選択範囲の引用と開始位置を両方指定してください")
+        return self
 
 
 class SpecificationCommentUpdate(BaseModel):
@@ -231,6 +240,7 @@ class SpecificationCommentRead(CommentImageReadFields):
     author_avatar_url: str | None = None
     field_path: str
     field_snapshot: str
+    quote_start: int | None = None
     specification_version: int
     body: str
     is_resolved: bool
