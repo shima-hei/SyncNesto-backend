@@ -44,7 +44,7 @@ from app.services.body_image import MAX_MOCKUP_IMAGES, retain_body_images
 from app.services.comment_image import bind_comment_images
 from app.services.conflict import raise_if_version_conflict
 from app.services.design_mockup import mockup_image_references
-from app.services.design_paths import design_field as field_value
+from app.services.design_paths import review_snapshot
 from app.services.design_references import check_design_references
 from app.services.storage import StorageService
 
@@ -58,7 +58,7 @@ TARGET_PERMISSIONS = {
 
 
 def anchor_digest(row: Specification, path: str) -> str | None:
-    value = field_value(row, path)
+    value = review_snapshot(row, path)
     return sha256(value.encode("utf-8")).hexdigest() if value is not None else None
 
 
@@ -367,10 +367,15 @@ class SpecificationService:
     ):
         row = self.get(db, project_id, specification_id, lock=True)
         self.check_version(row, data.specification_version)
-        snapshot = field_value(row, data.field_path)
+        snapshot = review_snapshot(row, data.field_path)
         if snapshot is None or not data.body.strip():
             raise BadRequestError(error_messages.SPECIFICATION_COMMENT_TARGET_INVALID)
-        excerpt = snapshot[:800]
+        excerpt = (
+            snapshot.rsplit("\n", 1)[0][:800]
+            if "/area/" in data.field_path
+            and data.field_path.startswith("content/artboards/")
+            else snapshot[:800]
+        )
         if data.quote is not None and data.quote_start is not None:
             parts = data.field_path.split("/")
             if (

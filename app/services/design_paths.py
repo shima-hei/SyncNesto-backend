@@ -1,8 +1,13 @@
 """設計の版・指摘・項目関連が共有する参照パス。"""
 
 import json
+import re
+from hashlib import sha256
 
 MISSING = object()
+WIREFRAME_AREA = re.compile(
+    r"^(content/artboards/[^/]+)/area/([0-9]{1,4})/([0-9]{1,4})/([0-9]{1,4})/([0-9]{1,4})$"
+)
 
 
 def design_value(row, path: str):
@@ -60,3 +65,24 @@ def design_field(row, path: str) -> str | None:
         if isinstance(value, str)
         else json.dumps(value, ensure_ascii=False, sort_keys=True)
     )
+
+
+def review_snapshot(row, path: str) -> str | None:
+    """アートボード上の領域を検証し、対象版と照合できる指摘値を返す。"""
+    area = WIREFRAME_AREA.fullmatch(path)
+    if area is None:
+        return design_field(row, path)
+    board = design_value(row, area[1])
+    if not isinstance(board, dict):
+        return None
+    x, y, width, height = map(int, area.groups()[1:])
+    if (
+        width < 1
+        or height < 1
+        or x + width > board.get("width", 1024)
+        or y + height > board.get("height", 650)
+    ):
+        return None
+    body = json.dumps(board, ensure_ascii=False, sort_keys=True).encode()
+    digest = sha256(body).hexdigest()
+    return f"{board.get('name', '')}（X {x}・Y {y}、{width} × {height}）\n{digest}"

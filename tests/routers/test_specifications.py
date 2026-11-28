@@ -160,6 +160,41 @@ def test_mockup_review_keeps_the_selected_unicode_range_and_source_version(
     assert past["content"]["mockups"][0]["html"][start : start + len(quote)] == quote
 
 
+def test_wireframe_review_preserves_board_and_area_in_original_version(client, context):
+    _, _, base = context
+    screen = create(client, base, "screen")
+    url = f"{base}/{screen['id']}"
+    board_id = str(uuid4())
+    data = update_data(screen)
+    data["content"]["artboards"] = [
+        {"id": board_id, "name": "入力確認", "width": 480, "height": 300}
+    ]
+    saved = client.patch(url, json=data).json()
+    request = {
+        "specification_version": saved["version"],
+        "field_path": f"content/artboards/{board_id}/area/40/24/140/64",
+        "body": "入力欄を確認してください",
+    }
+    out_of_bounds = f"content/artboards/{board_id}/area/370/24/140/64"
+    assert (
+        client.post(
+            url + "/comments", json={**request, "field_path": out_of_bounds}
+        ).status_code
+        == 400
+    )
+    added = client.post(url + "/comments", json=request)
+    assert added.status_code == 201, added.text
+    assert added.json()["field_snapshot"] == "入力確認（X 40・Y 24、140 × 64）"
+    change = update_data(saved)
+    change["content"]["artboards"] = []
+    assert client.patch(url, json=change).status_code == 200
+    comment = client.get(url + "/comments").json()[0]
+    assert comment["anchor_changed"] is True
+    assert comment["field_path"] == request["field_path"]
+    history = client.get(f"{url}/revisions/{comment['specification_version']}")
+    assert history.json()["snapshot"]["content"]["artboards"][0]["id"] == board_id
+
+
 def test_uuid_anchor_survives_reordering_and_flags_removal(client, context):
     """並べ替えで指摘を別の項目に付け替えず、削除時は変更済みと示す。"""
     _, _, base = context
