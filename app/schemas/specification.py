@@ -31,6 +31,25 @@ class SpecificationField(BaseModel):
     ui_component: str = Field(default="", max_length=100)
     default_value: str = Field(default="", max_length=1000)
     constraints: str = Field(default="", max_length=3000)
+    minimum: float | None = Field(
+        default=None, allow_inf_nan=False, exclude_if=lambda value: value is None
+    )
+    maximum: float | None = Field(
+        default=None, allow_inf_nan=False, exclude_if=lambda value: value is None
+    )
+    min_length: int | None = Field(
+        default=None, ge=0, le=100000, exclude_if=lambda value: value is None
+    )
+    max_length: int | None = Field(
+        default=None, ge=0, le=100000, exclude_if=lambda value: value is None
+    )
+    format: str = Field(default="", max_length=100, exclude_if=lambda value: not value)
+    pattern: str = Field(
+        default="", max_length=1000, exclude_if=lambda value: not value
+    )
+    choices: list[Annotated[str, Field(min_length=1, max_length=200)]] = Field(
+        default_factory=list, max_length=100, exclude_if=lambda value: not value
+    )
     visibility: str = Field(default="", max_length=1000)
     enabled_when: str = Field(default="", max_length=1000)
     error_message: str = Field(default="", max_length=1000)
@@ -42,6 +61,22 @@ class SpecificationField(BaseModel):
     location: Literal[
         "path", "query", "header", "cookie", "body", "display", "action"
     ] = "body"
+
+    @model_validator(mode="after")
+    def validate_bounds(self):
+        if (
+            self.minimum is not None
+            and self.maximum is not None
+            and self.minimum > self.maximum
+        ):
+            raise ValueError("最小値は最大値以下にしてください")
+        if (
+            self.min_length is not None
+            and self.max_length is not None
+            and self.min_length > self.max_length
+        ):
+            raise ValueError("最小文字数は最大文字数以下にしてください")
+        return self
 
 
 class SpecificationRule(BaseModel):

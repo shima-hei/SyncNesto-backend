@@ -54,6 +54,9 @@ def _contract(row, path: str) -> dict:
         values["type"] = raw["data_type"]
     if raw.get("length") is not None:
         values["maxLength"] = raw["length"]
+    for key, normalized in (("min_length", "minLength"), ("max_length", "maxLength")):
+        if raw.get(key) is not None:
+            values[normalized] = raw[key]
     if "/properties/" in parent:
         owner, prop = parent.rsplit("/properties/", 1)
         schema = design_value(row, owner)

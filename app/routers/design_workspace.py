@@ -163,6 +163,14 @@ def update_design_collection(
     return service.save_collection(db, project_id, collection_id, data)
 
 
+@router.get("/memberships/{specification_id}", response_model=MembershipUpdate)
+def read_design_memberships(
+    project_id: int, specification_id: int, db: Db, user: Reader
+):
+    """設計の現在版と同じ案件の所属グループを返す。"""
+    return service.memberships(db, project_id, specification_id)
+
+
 @router.put("/memberships/{specification_id}", response_model=SpecificationRead)
 def update_design_memberships(
     project_id: int, specification_id: int, data: MembershipUpdate, db: Db, user: Editor

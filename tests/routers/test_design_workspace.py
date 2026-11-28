@@ -59,7 +59,22 @@ def test_graph_is_projection_and_layout_is_per_group(client, context):
     )
     assert membership.status_code == 200, membership.text
     first = membership.json()
+    assert client.get(f"{base}/memberships/{first['id']}").json() == {
+        "group_ids": [group["id"]],
+        "version": first["version"],
+    }
     content = first["content"]
+    field_id = str(uuid4())
+    content["fields"] = [
+        {
+            "id": field_id,
+            "name": "備品名",
+            "min_length": 2,
+            "max_length": 10,
+            "pattern": "[A-Z]+",
+            "choices": ["A", "B"],
+        }
+    ]
     transition = {
         "id": str(uuid4()),
         "target_id": second["id"],
@@ -69,6 +84,11 @@ def test_graph_is_projection_and_layout_is_per_group(client, context):
     content["transitions"] = [transition]
     updated = client.patch(f"{specs}/{first['id']}", json=update_data(first))
     assert updated.status_code == 200, updated.text
+    updated_content = updated.json()
+    assert updated_content["content"]["fields"][0]["choices"] == ["A", "B"]
+    bad = update_data(updated_content)
+    bad["content"]["fields"][0]["min_length"] = 15
+    assert client.patch(f"{specs}/{first['id']}", json=bad).status_code == 422
     assert diagram(client, project, "screen")["edges"] == [
         {
             "id": transition["id"],

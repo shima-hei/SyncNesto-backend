@@ -154,6 +154,29 @@ class DesignWorkspaceService:
         db.commit()
         return row
 
+    def memberships(
+        self, db: Session, project_id: int, specification_id: int
+    ) -> MembershipUpdate:
+        rows = db.execute(
+            select(Specification.version, DesignMembership.group_id)
+            .outerjoin(
+                DesignMembership,
+                (DesignMembership.project_id == Specification.project_id)
+                & (DesignMembership.specification_id == Specification.id),
+            )
+            .where(
+                Specification.id == specification_id,
+                Specification.project_id == project_id,
+                Specification.deleted_at.is_(None),
+            )
+        ).all()
+        if not rows:
+            raise NotFoundError("設計書が見つかりません")
+        return MembershipUpdate(
+            version=rows[0].version,
+            group_ids={group_id for _, group_id in rows if group_id is not None},
+        )
+
     def save_memberships(
         self,
         db: Session,
