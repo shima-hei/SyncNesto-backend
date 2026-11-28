@@ -500,6 +500,89 @@ def test_openapi_import_selected_version_and_fixed_export(client, context):
     assert fixed.json()["document"] == document
 
 
+def test_openapi_preserves_path_item_and_checks_inherited_parameters(client, context):
+    _, project, specs = context
+    base = workspace(project)
+    group = client.post(
+        f"{base}/collections", json={"kind": "api_set", "name": "契約"}
+    ).json()
+    path = "/equipment/{id}"
+    parameter = {
+        "name": "id",
+        "in": "path",
+        "required": True,
+        "schema": {"type": "integer"},
+    }
+    document = {
+        "openapi": "3.1.1",
+        "info": {"title": "契約", "version": "1.0"},
+        "paths": {
+            "x-category": ["設備"],
+            "/reserved": {},
+            path: {
+                "summary": "備品",
+                "description": "共通の説明",
+                "servers": [{"url": "https://test.example.invalid"}],
+                "parameters": [{"$ref": "#/components/parameters/Identifier"}],
+                "x-owner": "設備管理",
+                "get": {
+                    "summary": "備品取得",
+                    "responses": {"200": {"description": "OK"}},
+                },
+                "delete": {
+                    "summary": "備品削除",
+                    "responses": {"204": {"description": "Removed"}},
+                    "parameters": [{**parameter, "description": "削除対象"}],
+                },
+            },
+        },
+        "components": {"parameters": {"Identifier": parameter}},
+    }
+    payload = {
+        "collection_id": group["id"],
+        "collection_version": 1,
+        "document": document,
+    }
+    selected = {f"GET {path}": 0, f"DELETE {path}": 0}
+    imported = client.post(
+        f"{base}/openapi/import", json={**payload, "selections": selected}
+    )
+    assert imported.status_code == 200, imported.text
+    assert (
+        client.get(f"{base}/openapi", params={"collection_id": group["id"]}).json()[
+            "document"
+        ]
+        == document
+    )
+    operations = diagram(client, project, "api")["nodes"]
+    design_id = next(row["id"] for row in operations if row["subtype"] == "GET")
+    design_url = f"{specs}/{design_id}"
+    row = client.get(design_url).json()
+    edited = client.patch(
+        design_url, json={**update_data(row), "summary": "備品を読む"}
+    )
+    assert edited.status_code == 200, edited.text
+    approved = client.patch(
+        design_url + "/status", json={"version": 2, "status": "approved"}
+    )
+    assert approved.status_code == 200, approved.text
+    fixed = client.get(
+        f"{base}/openapi", params={"design_id": design_id, "revision": 3}
+    )
+    assert fixed.status_code == 200, fixed.text
+    assert fixed.json()["document"]["paths"][path] == {
+        key: value for key, value in document["paths"][path].items() if key != "delete"
+    }
+    assert "parameters" not in fixed.json()["document"]["paths"][path]["get"]
+    document["components"]["parameters"]["Identifier"]["name"] = "incorrect"
+    assert (
+        client.post(
+            f"{base}/openapi/import", json={**payload, "collection_version": 2}
+        ).status_code
+        == 400
+    )
+
+
 def test_database_ddl_executes_in_disposable_database(client, context, db):
     _, project, specs = context
     name = "design_test_" + uuid4().hex[:10]

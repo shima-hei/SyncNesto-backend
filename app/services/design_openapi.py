@@ -2,6 +2,7 @@
 
 import re
 from typing import Any
+from urllib.parse import unquote
 
 from app.core.exceptions import BadRequestError
 from app.schemas.design_content import json_size, validate_document_tree
@@ -12,42 +13,86 @@ PATH_KEY = re.compile(r"^/[^?#\s]*$")
 TEMPLATE = re.compile(r"\{([^{}]+)\}")
 
 
-def validate_operation(path: str, operation: dict) -> None:
-    """操作とパス変数の整合性を確認する。"""
+def _pointer(document: dict, reference: object):
+    if not isinstance(reference, str) or not reference.startswith("#/"):
+        raise BadRequestError("外部参照・アンカー参照は取り込み対象外です")
+    target = document
+    try:
+        for part in unquote(reference[2:]).split("/"):
+            key = part.replace("~1", "/").replace("~0", "~")
+            if isinstance(target, list):
+                if not re.fullmatch(r"0|[1-9][0-9]*", key):
+                    raise ValueError("invalid array index")
+                target = target[int(key)]
+            else:
+                target = target[key]
+    except (ValueError, IndexError, TypeError, KeyError) as error:
+        raise BadRequestError("解決できないローカル参照があります") from error
+    return target
+
+
+def _parameters(parameters: object, document: dict | None):
+    if not isinstance(parameters, list):
+        raise BadRequestError("OpenAPI parametersは配列にしてください")
+    names: set[tuple[str, str]] = set()
+    unresolved = False
+    for parameter in parameters:
+        seen = set()
+        while (
+            document is not None and isinstance(parameter, dict) and "$ref" in parameter
+        ):
+            pointer = parameter["$ref"]
+            parameter = _pointer(document, pointer)
+            if pointer in seen:
+                raise BadRequestError("パラメータの参照が循環しています")
+            seen.add(pointer)
+        if not isinstance(parameter, dict):
+            raise BadRequestError("OpenAPIパラメータはオブジェクトにしてください")
+        if "$ref" in parameter:
+            unresolved = True
+            continue
+        name, location = parameter.get("name"), parameter.get("in")
+        if (
+            not isinstance(name, str)
+            or not name
+            or location
+            not in (
+                "path",
+                "query",
+                "header",
+                "cookie",
+            )
+        ):
+            raise BadRequestError("OpenAPIパラメータに名前と配置場所を指定してください")
+        if (name, location) in names:
+            raise BadRequestError("OpenAPIパラメータ名が重複しています")
+        names.add((name, location))
+        if location == "path" and parameter.get("required") is not True:
+            raise BadRequestError("パスパラメータは必須にしてください")
+    return names, unresolved
+
+
+def validate_operation(
+    path: str,
+    operation: dict,
+    *,
+    path_item: dict | None = None,
+    document: dict | None = None,
+) -> None:
+    """Path Itemから継承するパラメータと操作の定義を照合する。"""
     if not PATH_KEY.fullmatch(path):
         raise BadRequestError(
             "APIパスはスラッシュから始め、クエリや空白を含めないでください"
         )
-    parameters = operation.get("parameters", [])
     responses = operation.get("responses")
     if not isinstance(responses, dict) or not responses:
         raise BadRequestError("OpenAPIレスポンスを1件以上設定してください")
-    if not isinstance(parameters, list):
-        raise BadRequestError("OpenAPI parametersは配列にしてください")
-    used = set()
-    variables = set()
-    for parameter in parameters:
-        if not isinstance(parameter, dict):
-            raise BadRequestError("OpenAPIパラメータはオブジェクトにしてください")
-        if "$ref" in parameter:
-            continue
-        name, location = parameter.get("name"), parameter.get("in")
-        if not isinstance(name, str) or location not in {
-            "path",
-            "query",
-            "header",
-            "cookie",
-        }:
-            raise BadRequestError("OpenAPIパラメータに名前と配置場所を指定してください")
-        if (name, location) in used:
-            raise BadRequestError("OpenAPIパラメータ名が重複しています")
-        used.add((name, location))
-        if location == "path":
-            if parameter.get("required") is not True:
-                raise BadRequestError("パスパラメータは必須にしてください")
-            variables.add(name)
-    if variables != set(TEMPLATE.findall(path)) and not any(
-        "$ref" in record for record in parameters
+    common, common_ref = _parameters((path_item or {}).get("parameters", []), document)
+    local, local_ref = _parameters(operation.get("parameters", []), document)
+    variables = {name for name, location in common | local if location == "path"}
+    expected = set(TEMPLATE.findall(path))
+    if variables - expected or (
+        variables != expected and not (common_ref or local_ref)
     ):
         raise BadRequestError("APIパスとパスパラメータが一致しません")
 
@@ -154,39 +199,67 @@ def check_document(document: dict) -> None:
         for ref_key in ("$ref", "$dynamicRef"):
             if ref_key not in value:
                 continue
-            pointer = value[ref_key]
-            if not isinstance(pointer, str) or not pointer.startswith("#/"):
-                raise BadRequestError("外部参照・アンカー参照は取り込み対象外です")
-            target = document
-            try:
-                for part in pointer[2:].split("/"):
-                    key = part.replace("~1", "/").replace("~0", "~")
-                    target = (
-                        target[int(key)] if isinstance(target, list) else target[key]
-                    )
-            except (ValueError, IndexError, TypeError, KeyError) as error:
-                raise BadRequestError("解決できないローカル参照があります") from error
+            _pointer(document, value[ref_key])
         stack.extend(value.values())
 
 
+def path_metadata(document: dict) -> dict[str, Any]:
+    """Path Itemの共通定義をAPI操作と分離し、拡張も保持する。"""
+    result = {}
+    paths = document.get("paths", {})
+    if not isinstance(paths, dict):
+        raise BadRequestError("OpenAPI pathsはオブジェクトにしてください")
+    for path, definitions in paths.items():
+        if path.startswith("x-"):
+            result[path] = definitions
+            continue
+        if not PATH_KEY.fullmatch(path) or not isinstance(definitions, dict):
+            raise BadRequestError("OpenAPI pathsに有効なパス項目を指定してください")
+        metadata = {
+            key: value for key, value in definitions.items() if key not in METHODS
+        }
+        allowed = {"parameters", "description", "summary", "servers"}
+        if any(key not in allowed and not key.startswith("x-") for key in metadata):
+            raise BadRequestError(
+                "Path Itemの参照または未対応の共通定義を展開してください"
+            )
+        if any(
+            key in metadata and not isinstance(metadata[key], str)
+            for key in ("summary", "description")
+        ):
+            raise BadRequestError(
+                "パス項目のsummary・descriptionは文字列にしてください"
+            )
+        if "servers" in metadata and not isinstance(metadata["servers"], list):
+            raise BadRequestError("パス項目のserversは配列にしてください")
+        if metadata or not definitions:
+            result[path] = metadata
+    return result
+
+
 def operations(document: dict) -> list[tuple[str, str, dict]]:
-    """パス項目を分解しても、表現できない定義を黙って落とさない。"""
+    """操作の分解前に、パス項目からの継承とローカル参照を検証する。"""
     check_document(document)
+    shared = path_metadata(document)
     result = []
     ids: set[str] = set()
-    paths: set[tuple[str, str]] = set()
+    paths: set[str] = set()
     for path, definitions in document.get("paths", {}).items():
-        if not isinstance(definitions, dict):
-            raise BadRequestError("OpenAPI pathsの各項目はオブジェクトにしてください")
-        unsupported = set(definitions) - METHODS
-        if unsupported:
-            raise BadRequestError(
-                "パス項目共通の定義はAPI操作に展開してから取り込んでください"
-            )
+        if path.startswith("x-"):
+            continue
+        template = TEMPLATE.sub("{}", path)
+        if template in paths:
+            raise BadRequestError("同じ構造のAPIパスが重複しています")
+        paths.add(template)
+        _parameters(shared.get(path, {}).get("parameters", []), document)
         for method, operation in definitions.items():
+            if method not in METHODS:
+                continue
             if not isinstance(operation, dict):
                 raise BadRequestError("OpenAPI操作はオブジェクトにしてください")
-            validate_operation(path, operation)
+            validate_operation(
+                path, operation, path_item=shared.get(path), document=document
+            )
             operation_id = operation.get("operationId")
             if operation_id is not None:
                 if (
@@ -198,10 +271,6 @@ def operations(document: dict) -> list[tuple[str, str, dict]]:
                         "OpenAPI operationIdを重複なく指定してください"
                     )
                 ids.add(operation_id)
-            key = (method, TEMPLATE.sub("{}", path))
-            if key in paths:
-                raise BadRequestError("同じ構造のAPIパスが重複しています")
-            paths.add(key)
             result.append((method.upper(), path, operation))
     if len(result) > 100:
         raise BadRequestError("一度に取り込めるAPI操作は100件までです")

@@ -16,7 +16,7 @@ from app.schemas.specification import (
     ScreenSpecification,
     SpecificationContent,
 )
-from app.services.design_openapi import validate_operation
+from app.services.design_openapi import path_metadata, validate_operation
 from app.services.design_paths import design_field
 from app.services.wireframe_part import check_part_pins
 
@@ -27,15 +27,13 @@ def check_design_references(
     """変更した定義の参照先を同じ案件と設計種別に限定する。"""
     targets: dict[str, set[int]] = defaultdict(set)
     namespaces: dict[str, UUID] = {}
+    configurations: dict[str, dict] = {}
     flows: list[list[ProcessingStep]] = []
     if isinstance(content, ScreenSpecification):
         check_part_pins(db, project_id, content.artboards)
         targets["screen"].update(item.target_id for item in content.transitions)
         flows = [event.steps for event in content.actions]
     if isinstance(content, ApiSpecification):
-        if content.operation is not None:
-            if content.path:
-                validate_operation(content.path, content.operation)
         flows = [content.processing_steps]
         if content.collection_id is not None:
             namespaces["api_set"] = content.collection_id
@@ -99,17 +97,23 @@ def check_design_references(
     ):
         raise BadRequestError("参照先は同じ案件にある有効な設計から選択してください")
     for kind, identifier in namespaces.items():
-        if (
-            db.scalar(
-                select(DesignCollection.id).where(
-                    DesignCollection.project_id == project_id,
-                    DesignCollection.id == identifier,
-                    DesignCollection.kind == kind,
-                )
+        configuration = db.scalar(
+            select(DesignCollection.configuration).where(
+                DesignCollection.project_id == project_id,
+                DesignCollection.id == identifier,
+                DesignCollection.kind == kind,
             )
-            is None
-        ):
+        )
+        if configuration is None:
             raise BadRequestError("仕様セット・DBモデルは同じ案件から選択してください")
+        configurations[kind] = configuration
+    if (
+        isinstance(content, ApiSpecification)
+        and content.operation is not None
+        and content.path
+    ):
+        inherited = path_metadata(configurations.get("api_set", {})).get(content.path)
+        validate_operation(content.path, content.operation, path_item=inherited)
     if isinstance(content, DatabaseSpecification):
         for constraint in content.constraints:
             if constraint.kind != "foreign_key" or constraint.target_id is None:

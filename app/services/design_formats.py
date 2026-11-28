@@ -22,7 +22,12 @@ from app.schemas.specification import (
 )
 from app.services.conflict import raise_if_version_conflict
 from app.services.design_ddl import generate_ddl
-from app.services.design_openapi import check_document, legacy_operation, operations
+from app.services.design_openapi import (
+    check_document,
+    legacy_operation,
+    operations,
+    path_metadata,
+)
 from app.services.design_workspace import collection, lock_project
 from app.services.specification import SpecificationService
 
@@ -51,9 +56,11 @@ def import_specification(
 ) -> OpenApiResult:
     """差分を再計算し、明示選択した操作だけを一括で下書きへ反映する。"""
     parsed = operations(data.document)
+    incoming_paths = path_metadata(data.document)
     if data.selections is not None:
         lock_project(db, project_id)
     target = collection(db, project_id, data.collection_id, "api_set")
+    saved_paths = path_metadata(target.configuration)
     raise_if_version_conflict(
         current_version=target.version,
         requested_version=data.collection_version,
@@ -98,6 +105,7 @@ def import_specification(
             row is not None
             and legacy[row.id].operation == operation
             and (method, path) == (legacy[row.id].method, legacy[row.id].path)
+            and incoming_paths.get(path, {}) == saved_paths.get(path, {})
         )
         report.append(
             OpenApiChange(
@@ -176,9 +184,25 @@ def import_specification(
             row.updated_by = user.id
         service.repository.revision(db, row, user.id)
         updated.append(row)
+    input_operation_paths = {path for _, path, _ in parsed}
+    selected_paths = {candidates[key][1] for key in data.selections}
+    saving_paths = {
+        **{
+            path: metadata
+            for path, metadata in saved_paths.items()
+            if path not in selected_paths
+        },
+        **{
+            path: metadata
+            for path, metadata in incoming_paths.items()
+            if path in selected_paths or path not in input_operation_paths
+        },
+    }
     target.configuration = {
         key: value for key, value in data.document.items() if key != "paths"
     }
+    if saving_paths:
+        target.configuration["paths"] = saving_paths
     from app.schemas.design_workspace import CollectionInput
 
     CollectionInput(
@@ -226,7 +250,13 @@ def export_openapi(
         document = dict(target.configuration)
     document.setdefault("openapi", "3.1.1")
     document.setdefault("info", {"title": "API設計", "version": "0.1.0"})
-    document["paths"] = {}
+    shared = path_metadata(document)
+    emitted_paths = {raw.get("path") for _, raw in rows}
+    document["paths"] = {
+        path: metadata if path.startswith("x-") else dict(metadata)
+        for path, metadata in shared.items()
+        if design_id is None or path.startswith("x-") or path in emitted_paths
+    }
     warnings = []
     for title, raw in rows:
         if raw["type"] != "api":
