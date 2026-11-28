@@ -180,6 +180,7 @@ def design_diagram(
     group_id: UUID | None = None,
     collection_id: UUID | None = None,
     include_references: bool = False,
+    namespace: str = Query(default="", max_length=63),
     q: str = Query(default="", max_length=200),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=100),
@@ -195,6 +196,7 @@ def design_diagram(
         page_size,
         collection_id=collection_id,
         include_references=include_references,
+        namespace=namespace,
     )
 
 

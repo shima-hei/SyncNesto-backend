@@ -448,7 +448,7 @@ def _add_design_diagram_links(nodes: dict[int, dict]) -> None:
                         name=item.get("name", ""),
                         detail=item.get("condition", "")
                         if relation == "transition"
-                        else item.get("cardinality", ""),
+                        else (item.get("cardinality") or ""),
                     )
                 )
         payload["diagram_links"] = links

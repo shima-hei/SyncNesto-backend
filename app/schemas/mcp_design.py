@@ -30,6 +30,7 @@ class DesignDiagramInput(PageInput):
     group_id: UUID | None = None
     collection_id: UUID | None = None
     include_references: bool = False
+    namespace: str = Field(default="", max_length=63)
 
 
 class DesignArtifactInput(ToolInput):

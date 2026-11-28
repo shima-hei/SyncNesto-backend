@@ -658,6 +658,12 @@ def test_database_ddl_executes_in_disposable_database(client, context, db):
                             "physical_name": "related",
                             "data_type": "bigint",
                         },
+                        {
+                            "name": "計算済みID",
+                            "physical_name": "calculated",
+                            "data_type": "bigint",
+                            "generated_expression": '"id" * 2',
+                        },
                     ],
                     "constraints": [
                         {
@@ -688,8 +694,20 @@ def test_database_ddl_executes_in_disposable_database(client, context, db):
         assert result.status_code == 200, result.text
     sql = client.get(f"{workspace(project)}/ddl").json()["sql"]
     assert sql.count("ALTER TABLE") == 2
-    assert len(diagram(client, project, "database")["edges"]) == 2
+    graph = diagram(client, project, "database", namespace=name)
+    assert graph["total"] == 2 and len(graph["edges"]) == 2
+    assert "PK" in graph["nodes"][0]["field_labels"][0]
+    assert "FK" in graph["nodes"][0]["field_labels"][1]
+    assert diagram(client, project, "database", namespace="empty")["total"] == 0
     db.execute(text(sql))
+    assert (
+        db.scalar(
+            text(
+                f'INSERT INTO "{name}"."equipment" (id) VALUES (4) RETURNING calculated'
+            )
+        )
+        == 8
+    )
     assert (
         db.scalar(
             text("SELECT count(*) FROM pg_tables WHERE schemaname=:namespace"),

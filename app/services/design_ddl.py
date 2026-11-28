@@ -32,6 +32,30 @@ def expression(value: str) -> str:
     return value
 
 
+def generation_expression(value: str) -> str:
+    """生成式の外側にSQLを続けられないよう、引用符と括弧を照合する。"""
+    value = expression(value.strip())
+    if not value or any(token in value for token in ("\\", "$")):
+        raise ValueError("生成式を確認してください")
+    quote = ""
+    depth = 0
+    for character in value:
+        if quote:
+            if character == quote:
+                quote = ""
+        elif character in {"'", '"'}:
+            quote = character
+        elif character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+            if depth < 0:
+                break
+    if depth or quote:
+        raise ValueError("生成式の括弧・引用符を確認してください")
+    return value
+
+
 def generate_ddl(
     tables: dict[int, DatabaseSpecification],
     *,
@@ -79,7 +103,12 @@ def generate_ddl(
                     scale = f", {column.scale}" if column.scale is not None else ""
                     data_type = f"numeric({column.precision}{scale})"
                 piece = f"  {quoted} {data_type}"
-                if column.identity is not None:
+                if column.generated_expression is not None:
+                    if column.identity or column.default_value:
+                        raise ValueError("生成列にはIDENTITY・既定値を指定できません")
+                    generated = generation_expression(column.generated_expression)
+                    piece += f" GENERATED ALWAYS AS ({generated}) STORED"
+                elif column.identity is not None:
                     if (
                         column.data_type not in {"smallint", "integer", "bigint"}
                         or column.default_value

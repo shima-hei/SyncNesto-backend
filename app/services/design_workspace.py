@@ -374,6 +374,7 @@ class DesignWorkspaceService:
         *,
         collection_id: UUID | None = None,
         include_references: bool = False,
+        namespace: str = "",
     ) -> DesignDiagram:
         """設計書から画面遷移・外部キーを投影し、配置と統合する。"""
         if group_id is not None:
@@ -432,6 +433,12 @@ class DesignWorkspaceService:
         if collection_id is not None:
             requested = requested.where(
                 Specification.content["collection_id"].as_string() == str(collection_id)
+            )
+        if namespace:
+            if kind != "database":
+                raise BadRequestError("スキーマはDB設計に指定してください")
+            requested = requested.where(
+                Specification.content["namespace"].as_string() == namespace
             )
         if q:
             escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -524,6 +531,16 @@ class DesignWorkspaceService:
         edges: list[DesignEdge] = []
         for row in rows:
             source = row["id"]
+            column_keys: dict[str, list[str]] = defaultdict(list)
+            if kind == "database":
+                for constraint in row["transitions"] or []:
+                    code = {"primary_key": "PK", "foreign_key": "FK"}.get(
+                        constraint.get("kind")
+                    )
+                    if code:
+                        for column_id in constraint.get("column_ids", []):
+                            if code not in column_keys[column_id]:
+                                column_keys[column_id].append(code)
             nodes.append(
                 DesignNode.model_validate(
                     {
@@ -533,7 +550,12 @@ class DesignWorkspaceService:
                         "group_ids": memberships[source],
                         "placement": placements.get(source),
                         "field_labels": [
-                            self._column_label(item)
+                            " · ".join(
+                                [
+                                    self._column_label(item),
+                                    *column_keys.get(item["id"], []),
+                                ]
+                            )
                             for item in (row["columns"] or [])[:8]
                         ],
                         "tags": [
@@ -555,7 +577,7 @@ class DesignWorkspaceService:
                             id=item["id"],
                             source_id=source,
                             target_id=target_id,
-                            name=item["name"] or item.get("cardinality", ""),
+                            name=item["name"] or item.get("cardinality") or "",
                             kind="logical"
                             if logical
                             else "transition"

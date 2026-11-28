@@ -197,6 +197,9 @@ class DatabaseColumn(DesignItem):
 
     physical_name: str = Field(default="", max_length=63)
     logical_type: str = Field(default="", max_length=100)
+    logical_constraint: str = Field(
+        default="", max_length=3000, exclude_if=lambda value: not value
+    )
     data_type: DatabaseType = "text"
     length: int | None = Field(default=None, ge=1, le=10485760)
     precision: int | None = Field(default=None, ge=1, le=1000)
@@ -204,6 +207,9 @@ class DatabaseColumn(DesignItem):
     nullable: bool = True
     default_value: str | None = Field(default=None, max_length=1000)
     identity: Literal["always", "by_default"] | None = None
+    generated_expression: str | None = Field(
+        default=None, max_length=3000, exclude_if=lambda value: value is None
+    )
 
 
 class DatabaseConstraint(DesignItem):
@@ -232,7 +238,9 @@ class DatabaseRelationship(DesignItem):
     """物理外部キーから独立した論理リレーション。"""
 
     target_id: int = Field(ge=1)
-    cardinality: Literal["one_to_one", "one_to_many", "many_to_many"] = "one_to_many"
+    cardinality: Literal["one_to_one", "one_to_many", "many_to_many"] | None = (
+        "one_to_many"
+    )
     optional: bool = False
     constraint_id: UUID | None = None
 
