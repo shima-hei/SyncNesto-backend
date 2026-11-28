@@ -32,7 +32,11 @@ def expression(value: str) -> str:
     return value
 
 
-def generate_ddl(tables: dict[int, DatabaseSpecification]) -> tuple[str, list[str]]:
+def generate_ddl(
+    tables: dict[int, DatabaseSpecification],
+    *,
+    external_tables: dict[int, DatabaseSpecification] | None = None,
+) -> tuple[str, list[str]]:
     """テーブルを先に作り、循環する外部キーも後から追加する。"""
     definitions: list[str] = []
     auxiliary: list[str] = []
@@ -40,6 +44,7 @@ def generate_ddl(tables: dict[int, DatabaseSpecification]) -> tuple[str, list[st
     warnings: list[str] = []
     namespaces: set[str] = set()
     relation_names: set[tuple[str, str]] = set()
+    targets = {**(external_tables or {}), **tables}
     for identifier, table in tables.items():
         try:
             if not all(map(valid_identifier, (table.namespace, table.physical_name))):
@@ -167,7 +172,7 @@ def generate_ddl(tables: dict[int, DatabaseSpecification]) -> tuple[str, list[st
         for constraint in table.constraints:
             if constraint.kind != "foreign_key":
                 continue
-            target = tables.get(constraint.target_id or 0)
+            target = targets.get(constraint.target_id or 0)
             if (
                 target is None
                 or not valid_identifier(constraint.name)
@@ -175,6 +180,11 @@ def generate_ddl(tables: dict[int, DatabaseSpecification]) -> tuple[str, list[st
             ):
                 warnings.append(
                     f"DB-{identifier}: 参照先・対象カラム・外部キー名を指定してください"
+                )
+                continue
+            if not all(map(valid_identifier, (target.namespace, target.physical_name))):
+                warnings.append(
+                    f"DB-{identifier}: 外部キーの参照先名を確定してください"
                 )
                 continue
             target_columns = {

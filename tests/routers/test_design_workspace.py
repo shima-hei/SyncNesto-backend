@@ -568,6 +568,84 @@ def test_database_ddl_executes_in_disposable_database(client, context, db):
     )
 
 
+def test_review_pins_design_dependencies_and_fixed_ddl_uses_them(client, context):
+    _, project, specs = context
+    parent_col, child_col = str(uuid4()), str(uuid4())
+    parent = client.post(
+        specs,
+        json={
+            "title": "元の親テーブル",
+            "content": {
+                "type": "database",
+                "physical_name": "parent_table",
+                "columns": [{"id": parent_col, "physical_name": "original_id"}],
+            },
+        },
+    ).json()
+    child = client.post(
+        specs,
+        json={
+            "title": "参照元テーブル",
+            "summary": "親を参照する",
+            "content": {
+                "type": "database",
+                "physical_name": "child_table",
+                "columns": [{"id": child_col, "physical_name": "parent_id"}],
+                "constraints": [
+                    {
+                        "kind": "foreign_key",
+                        "name": "child_parent_fk",
+                        "target_id": parent["id"],
+                        "column_ids": [child_col],
+                        "target_column_ids": [parent_col],
+                    }
+                ],
+            },
+        },
+    )
+    assert child.status_code == 201, child.text
+    child_url, parent_url = f"{specs}/{child.json()['id']}", f"{specs}/{parent['id']}"
+    placements = f"{workspace(project)}/placements"
+    initial_place = {"specification_id": parent["id"], "x": 32, "y": 64}
+    assert (
+        client.put(placements, json={"placements": [initial_place]}).status_code == 200
+    )
+    review = client.patch(
+        child_url + "/status", json={"version": 1, "status": "in_review"}
+    )
+    assert review.status_code == 200, review.text
+    parent["content"]["physical_name"] = "changed_parent"
+    parent["content"]["columns"][0]["physical_name"] = "changed_id"
+    assert client.patch(parent_url, json=update_data(parent)).status_code == 200
+    assert (
+        client.put(
+            placements, json={"placements": [{**initial_place, "x": 256, "version": 1}]}
+        ).status_code
+        == 200
+    )
+    approved = client.patch(
+        child_url + "/status", json={"version": 2, "status": "approved"}
+    )
+    assert approved.status_code == 200, approved.text
+    snapshot = client.get(child_url + "/revisions/3").json()["snapshot"]
+    [pinned] = snapshot["dependencies"]
+    assert pinned["version"] == 1 and pinned["title"] == "元の親テーブル"
+    assert pinned["placements"] == [{"view": "all", "x": 32, "y": 64, "hidden": False}]
+    assert (
+        snapshot["dependencies"]
+        == client.get(child_url + "/revisions/2").json()["snapshot"]["dependencies"]
+    )
+    exported = client.get(
+        f"{workspace(project)}/ddl",
+        params={"design_id": child.json()["id"], "revision": 3},
+    )
+    assert exported.status_code == 200, exported.text
+    assert exported.json()["warnings"] == []
+    ddl = exported.json()["sql"]
+    assert 'REFERENCES "public"."parent_table" ("original_id")' in ddl
+    assert 'CREATE TABLE "public"."parent_table"' not in ddl
+
+
 def test_mockup_is_transformed_before_preview(client, context):
     _, project, _ = context
     preview = client.post(

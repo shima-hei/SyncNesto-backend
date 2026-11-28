@@ -2,11 +2,11 @@
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BadRequestError
-from app.models.specification import Specification
+from app.models.specification import Specification, SpecificationRevision
 from app.models.user import User
 from app.schemas.design_content import DatabaseSpecification
 from app.schemas.design_workspace import (
@@ -272,8 +272,33 @@ def export_ddl(
         data = snapshot["content"]
         if data["type"] != "database":
             raise BadRequestError("DB設計を指定してください")
+        fixed_table = DatabaseSpecification.model_validate(data)
+        referenced_ids = {
+            item.target_id
+            for item in fixed_table.constraints
+            if item.kind == "foreign_key"
+        }
+        pins = [
+            (item["id"], item["version"])
+            for item in snapshot.get("dependencies", [])
+            if item["kind"] == "database" and item["id"] in referenced_ids
+        ]
+        external_tables = {}
+        if pins:
+            stored = SpecificationRevision
+            external_tables = {
+                identifier: DatabaseSpecification.model_validate(content)
+                for identifier, content in db.execute(
+                    select(stored.specification_id, stored.snapshot["content"])
+                    .join(Specification, Specification.id == stored.specification_id)
+                    .where(
+                        Specification.project_id == project_id,
+                        tuple_(stored.specification_id, stored.number).in_(pins),
+                    )
+                )
+            }
         sql, warnings = generate_ddl(
-            {design_id: DatabaseSpecification.model_validate(data)}
+            {design_id: fixed_table}, external_tables=external_tables
         )
     else:
         if design_id is not None:
