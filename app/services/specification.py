@@ -72,6 +72,11 @@ def retain_specification_images(
     """設計本文とモックアップで参照する画像を同じ保存で確定する。"""
     references = set()
     if isinstance(content, ScreenSpecification):
+        if (
+            content.representative_preview is not None
+            and content.representative_preview.kind == "image"
+        ):
+            references.add(content.representative_preview.target_id)
         for mockup in content.mockups:
             images = mockup_image_references(mockup.html)
             if len(images) > MAX_MOCKUP_IMAGES:
@@ -204,9 +209,27 @@ class SpecificationService:
         if row.kind != data.content.type:
             raise BadRequestError(error_messages.SPECIFICATION_KIND_IMMUTABLE)
         # 旧クライアントが送信を省いた追加項目を保存済み本文から補う。
-        content = type(data.content).model_validate(
-            {**row.content, **data.content.model_dump(mode="json", exclude_unset=True)}
-        )
+        changes = data.content.model_dump(mode="json", exclude_unset=True)
+        merged = {**row.content, **changes}
+        preview = merged.get("representative_preview")
+        if (
+            isinstance(data.content, ScreenSpecification)
+            and preview
+            and "representative_preview" not in changes
+        ):
+            source_key = {"wireframe": "artboards", "html": "mockups"}.get(
+                preview["kind"]
+            )
+            if (
+                source_key is not None
+                and source_key in changes
+                and all(
+                    item.get("id") != preview["target_id"]
+                    for item in changes[source_key]
+                )
+            ):
+                merged["representative_preview"] = None
+        content = type(data.content).model_validate(merged)
         check_design_references(db, row.project_id, content, row.id)
         retain_specification_images(db, row.project_id, user.id, data.summary, content)
         row.title, row.summary, row.content = (

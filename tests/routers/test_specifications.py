@@ -78,6 +78,39 @@ def test_review_fix_reopen_and_history(client, context):
     )
 
 
+def test_representative_preview_stays_in_approved_history_when_legacy_client_removes_it(
+    client, context
+):
+    _, _, base = context
+    row = create(client, base, "screen")
+    url = f"{base}/{row['id']}"
+    board = str(uuid4())
+    row["content"].update(
+        {
+            "artboards": [{"id": board, "name": "受付"}],
+            "representative_preview": {"kind": "wireframe", "target_id": board},
+        }
+    )
+    saved = client.patch(url, json=update_data(row))
+    assert saved.status_code == 200, saved.text
+    approved = client.patch(url + "/status", json={"version": 2, "status": "approved"})
+    assert approved.status_code == 200, approved.text
+    edit = update_data(approved.json())
+    edit["content"].pop("representative_preview")
+    edit["content"]["artboards"] = []
+    removed = client.patch(url, json=edit)
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["content"]["representative_preview"] is None
+    assert client.get(url + "/revisions/3").json()["snapshot"]["content"][
+        "representative_preview"
+    ] == {"kind": "wireframe", "target_id": board}
+    edit = update_data(removed.json())
+    edit["content"]["representative_preview"] = {"kind": "html", "target_id": board}
+    assert client.patch(url, json=edit).status_code == 422
+    edit["content"]["representative_preview"] = {"kind": "image", "target_id": board}
+    assert client.patch(url, json=edit).status_code == 400
+
+
 def test_mockup_review_keeps_the_selected_unicode_range_and_source_version(
     client, context
 ):

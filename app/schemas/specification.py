@@ -98,6 +98,14 @@ class ApiSpecification(BaseModel):
     notes: str = Field(default="", max_length=20000)
 
 
+class RepresentativePreview(BaseModel):
+    """保存済みのモックアップ、ワイヤーフレーム、参考画像を指す。"""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["wireframe", "html", "image"]
+    target_id: UUID
+
+
 class ScreenSpecification(BaseModel):
     """画面項目、振る舞い、遷移、例外時の表示。"""
 
@@ -108,6 +116,7 @@ class ScreenSpecification(BaseModel):
     artboards: list[WireframeArtboard] = Field(default_factory=list, max_length=20)
     mappings: list[DesignMapping] = Field(default_factory=list, max_length=100)
     mockups: list[HtmlMockup] = Field(default_factory=list, max_length=15)
+    representative_preview: RepresentativePreview | None = None
     route: str = Field(default="", max_length=1000)
     audience: str = Field(default="", max_length=5000)
     reference_url: HttpUrl | None = None
@@ -119,6 +128,11 @@ class ScreenSpecification(BaseModel):
     @model_validator(mode="after")
     def validate_item_references(self):
         """画面内で消失した項目への参照を検出する。"""
+        preview = self.representative_preview
+        if preview is not None and preview.kind != "image":
+            candidates = self.artboards if preview.kind == "wireframe" else self.mockups
+            if all(item.id != preview.target_id for item in candidates):
+                raise ValueError("代表プレビューのアートボード・HTMLが見つかりません")
         field_ids = {item.id for item in self.fields}
         event_ids = {item.id for item in self.actions}
         state_ids = {item.id for item in self.states}

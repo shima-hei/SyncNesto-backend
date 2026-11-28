@@ -162,7 +162,11 @@ def snapshot_references(node_kind: str, payload: dict) -> tuple[str, set[UUID]]:
         return kind, {UUID(value) for value in payload["body_image_ids"]}
     references = image_references(*(payload.get(field) for field in fields))
     if node_kind == "specification" and payload.get("kind") == "screen":
-        for item in payload["content"].get("mockups", []):
+        content = payload["content"]
+        preview = content.get("representative_preview")
+        if preview and preview.get("kind") == "image":
+            references.add(UUID(preview["target_id"]))
+        for item in content.get("mockups", []):
             references.update(mockup_image_references(item.get("html", "")))
     return kind, references
 

@@ -151,6 +151,12 @@ def test_mockup_upload_uses_private_storage_and_keeps_fixed_image(
     )
     assert upload.status_code == 201, upload.text
     image_id = upload.json()["id"]
+    reference_upload = client.post(
+        f"{root}/body-images/specification/upload",
+        files={"file": ("reference.png", body_storage, "image/png")},
+    )
+    assert reference_upload.status_code == 201, reference_upload.text
+    representative = {"kind": "image", "target_id": reference_upload.json()["id"]}
     markup = f'<img src="/api/body-images/{image_id}" alt="モックの画像">'
     mockup = {"id": str(uuid4()), "name": "受付", "html": markup}
     preview_path = f"{root}/design-workspace/mockup-preview"
@@ -176,11 +182,25 @@ def test_mockup_upload_uses_private_storage_and_keeps_fixed_image(
         client.post(f"/projects/{other.id}/specifications", json=body).status_code
         == 400
     )
+    assert (
+        client.post(
+            f"/projects/{other.id}/specifications",
+            json={
+                **body,
+                "content": {"type": "screen", "representative_preview": representative},
+            },
+        ).status_code
+        == 400
+    )
     path = f"{root}/specifications/{ctx['spec'].id}"
     editor = client.get(path).json()
     original = {
         **{key: editor[key] for key in ("title", "summary", "content", "version")},
-        "content": {**editor["content"], "mockups": [mockup]},
+        "content": {
+            **editor["content"],
+            "mockups": [mockup],
+            "representative_preview": representative,
+        },
     }
     saved = client.patch(path, json=original)
     assert saved.status_code == 200, saved.text
@@ -196,7 +216,11 @@ def test_mockup_upload_uses_private_storage_and_keeps_fixed_image(
         json={
             **original,
             "version": saved.json()["version"],
-            "content": {**original["content"], "mockups": []},
+            "content": {
+                **original["content"],
+                "mockups": [],
+                "representative_preview": None,
+            },
         },
     )
     assert changed.status_code == 200, changed.text
@@ -211,3 +235,10 @@ def test_mockup_upload_uses_private_storage_and_keeps_fixed_image(
     assert image_id not in preview.json()["document"]
     image = client.get(shared_path(ctx, f"/nodes/{node['id']}/body-images/{image_id}"))
     assert image.status_code == 200 and image.content == body_storage
+    assert node["payload"]["content"]["representative_preview"] == representative
+    reference = client.get(
+        shared_path(
+            ctx, f"/nodes/{node['id']}/body-images/{representative['target_id']}"
+        )
+    )
+    assert reference.status_code == 200 and reference.content == body_storage
