@@ -149,6 +149,8 @@ class DesignOverview(BaseModel):
     counts: list[DesignCount]
     recent: list[SpecificationListItem]
     pending: list[SpecificationListItem]
+    unresolved_reviews: list[SpecificationListItem] = Field(default_factory=list)
+    impact_candidates: list[SpecificationListItem] = Field(default_factory=list)
     groups: list[CollectionRead]
     group_counts: dict[str, dict[str, int]]
     linked_requirements: int

@@ -10,11 +10,17 @@ from sqlalchemy.orm import Session, load_only
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.models.design_workspace import (
     DesignCollection,
+    DesignImpactDecision,
     DesignMembership,
     DesignPlacement,
 )
 from app.models.project import Project
-from app.models.specification import Specification, SpecificationLink
+from app.models.specification import (
+    Specification,
+    SpecificationComment,
+    SpecificationLink,
+    SpecificationRevision,
+)
 from app.models.user import User
 from app.repositories.specification import SUMMARY_COLUMNS
 from app.schemas.design_content import ArtifactKind
@@ -256,6 +262,61 @@ class DesignWorkspaceService:
             .order_by(Specification.updated_at.desc())
             .limit(15)
         )
+        attention = (
+            select(Specification)
+            .options(load_only(*SUMMARY_COLUMNS))
+            .where(*active)
+            .order_by(Specification.updated_at.desc(), Specification.id.desc())
+            .limit(8)
+        )
+        open_comments = (
+            select(SpecificationComment.id)
+            .where(
+                SpecificationComment.specification_id == Specification.id,
+                SpecificationComment.is_resolved.is_(False),
+            )
+            .exists()
+        )
+        unresolved = db.scalars(attention.where(open_comments)).all()
+        decisions = select(DesignImpactDecision.key).where(
+            DesignImpactDecision.project_id == project_id,
+            DesignImpactDecision.specification_id == Specification.id,
+            DesignImpactDecision.source_version == Specification.version,
+        )
+        prior_content = (
+            select(SpecificationRevision.id)
+            .where(
+                SpecificationRevision.specification_id == Specification.id,
+                SpecificationRevision.number < Specification.version,
+                SpecificationRevision.snapshot["content"] != Specification.content,
+            )
+            .exists()
+        )
+        links = select(SpecificationLink.id).where(
+            or_(
+                SpecificationLink.specification_id == Specification.id,
+                SpecificationLink.related_specification_id == Specification.id,
+            )
+        )
+        if not can_read_requirements:
+            links = links.where(SpecificationLink.requirement_id.is_(None))
+        impact = db.scalars(
+            attention.where(
+                or_(
+                    decisions.where(
+                        DesignImpactDecision.status == "needs_action"
+                    ).exists(),
+                    ~decisions.exists()
+                    & prior_content
+                    & or_(
+                        links.exists(),
+                        Specification.content["mappings"][0]["target_id"]
+                        .as_integer()
+                        .is_not(None),
+                    ),
+                )
+            )
+        ).all()
         group_counts: dict[str, dict[str, int]] = defaultdict(dict)
         for group_id, kind, count in db.execute(
             select(DesignMembership.group_id, Specification.kind, func.count())
@@ -287,6 +348,12 @@ class DesignWorkspaceService:
             counts=counts,
             recent=recent,
             pending=[SpecificationListItem.model_validate(row) for row in pending],
+            unresolved_reviews=[
+                SpecificationListItem.model_validate(row) for row in unresolved
+            ],
+            impact_candidates=[
+                SpecificationListItem.model_validate(row) for row in impact
+            ],
             groups=[
                 CollectionRead.model_validate(group)
                 for group in self.collections(db, project_id, "group")

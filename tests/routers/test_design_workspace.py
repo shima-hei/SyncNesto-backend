@@ -818,6 +818,20 @@ def test_change_impact_records_acknowledgement_without_editing_target(client, co
     mapped["content"]["path"] = "/v2/login"
     changed = client.patch(f"{specs}/{api['id']}", json=update_data(mapped))
     assert changed.status_code == 200, changed.text
+    overview_url = f"{workspace(project)}/overview"
+    changed_id = changed.json()["id"]
+    comment = client.post(
+        f"{specs}/{changed_id}/comments",
+        json={
+            "field_path": "content/path",
+            "body": "変更後のパスを確認してください",
+            "specification_version": changed.json()["version"],
+        },
+    )
+    assert comment.status_code == 201, comment.text
+    overview = client.get(overview_url).json()
+    assert [row["id"] for row in overview["unresolved_reviews"]] == [changed_id]
+    assert [row["id"] for row in overview["impact_candidates"]] == [changed_id]
     url = f"{workspace(project)}/impact/{api['id']}"
     impact = client.get(url)
     assert impact.status_code == 200, impact.text
@@ -833,6 +847,7 @@ def test_change_impact_records_acknowledgement_without_editing_target(client, co
     }
     assert client.put(url, json=decision).status_code == 200
     assert client.get(url).json()["items"][0]["status"] == "confirmed"
+    assert client.get(overview_url).json()["impact_candidates"] == []
     assert client.put(url, json={**decision, "source_version": 2}).status_code == 409
     assert client.get(f"{specs}/{screen['id']}").json()["version"] == 1
 
