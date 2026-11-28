@@ -199,6 +199,10 @@ def test_wireframe_part_revisions_preserve_approved_screen_layout(client, contex
     ]
 
     first, second = approved
+    newer = client.get(f"{workspace(project)}/impact/{second['id']}").json()["items"]
+    assert any(
+        item["level"] == "review" and "新版 2" in item["detail"] for item in newer
+    )
     first_url = f"{specs}/{first['id']}"
     data = update_data(first)
     root, layer = data["content"]["artboards"][0]["components"]
@@ -498,6 +502,12 @@ def test_openapi_import_selected_version_and_fixed_export(client, context):
         params={"design_id": design["id"], "revision": approved.json()["version"]},
     )
     assert fixed.json()["document"] == document
+    affected = client.get(f"{base}/impact/{design['id']}").json()
+    assert affected["source_version"] == approved.json()["version"]
+    assert any(
+        item["level"] == "review" and "schemas / Equipment" in item["detail"]
+        for item in affected["items"]
+    )
 
 
 def test_openapi_preserves_path_item_and_checks_inherited_parameters(client, context):
@@ -787,6 +797,81 @@ def test_change_impact_records_acknowledgement_without_editing_target(client, co
     assert client.get(url).json()["items"][0]["status"] == "confirmed"
     assert client.put(url, json={**decision, "source_version": 2}).status_code == 409
     assert client.get(f"{specs}/{screen['id']}").json()["version"] == 1
+
+
+def test_impact_identifies_reverse_mapping_with_unchanged_item_name(client, context):
+    _, project, specs = context
+    column, schema_id = str(uuid4()), str(uuid4())
+    table = client.post(
+        specs,
+        json={
+            "title": "備品",
+            "content": {
+                "type": "database",
+                "physical_name": "equipment",
+                "columns": [
+                    {
+                        "id": column,
+                        "name": "名称",
+                        "physical_name": "name",
+                        "data_type": "varchar",
+                        "length": 100,
+                    }
+                ],
+            },
+        },
+    ).json()
+    api = client.post(
+        specs,
+        json={
+            "title": "備品登録",
+            "content": {
+                "type": "api",
+                "method": "POST",
+                "path": "/equipment",
+                "operation": {
+                    "responses": {"201": {"description": "OK"}},
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {
+                                            "x-syncnesto-id": schema_id,
+                                            "type": "string",
+                                            "maxLength": 100,
+                                        }
+                                    },
+                                },
+                            }
+                        }
+                    },
+                },
+                "mappings": [
+                    {
+                        "name": "備品名の保存",
+                        "source_path": (
+                            "content/operation/requestBody/content/application~1json/"
+                            f"schema/properties/{schema_id}/type"
+                        ),
+                        "target_id": table["id"],
+                        "target_path": f"content/columns/{column}/physical_name",
+                    }
+                ],
+            },
+        },
+    )
+    assert api.status_code == 201, api.text
+    table["content"]["columns"][0]["length"] = 50
+    changed = client.patch(f"{specs}/{table['id']}", json=update_data(table))
+    assert changed.status_code == 200, changed.text
+    impact = client.get(f"{workspace(project)}/impact/{table['id']}")
+    assert impact.status_code == 200, impact.text
+    [item] = impact.json()["items"]
+    assert item["level"] == "error" and "最大文字数" in item["detail"]
+    assert item["target_id"] == str(api.json()["id"]) and item["target_version"] == 1
+    assert client.get(f"{specs}/{api.json()['id']}").json()["version"] == 1
 
 
 def test_draft_api_requires_an_explicit_method_for_export(client, context):

@@ -4,7 +4,7 @@ from hashlib import sha256
 from types import SimpleNamespace
 from typing import Literal, cast
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
@@ -16,7 +16,8 @@ from app.schemas.design_workspace import (
     DesignImpactRead,
     DesignImpactUpdate,
 )
-from app.services.design_paths import design_field
+from app.services.design_impact_checks import mapping_change
+from app.services.design_impact_shared import shared_changes
 from app.services.specification import SpecificationService
 
 SPECIFICATIONS = SpecificationService()
@@ -26,7 +27,12 @@ def _flatten(value, path="content"):
     """項目がUUIDを持つ場合、順番を除いて差分を比較する。"""
     if isinstance(value, dict):
         for key, child in value.items():
-            if key in {"mappings", "id"}:
+            if key in {
+                "mappings",
+                "id",
+                "x-syncnesto-id",
+                "x-syncnesto-property-order",
+            }:
                 continue
             yield from _flatten(child, f"{path}/{key}")
     elif isinstance(value, list) and all(
@@ -40,6 +46,89 @@ def _flatten(value, path="content"):
 
 def _key(value: str) -> str:
     return sha256(value.encode()).hexdigest()
+
+
+def _mapping_result(before, source, other, mapping, *, reverse):
+    change = mapping_change(before, source, other, mapping, reverse=reverse)
+    if change is None:
+        return None
+    level, detail = change
+    return DesignImpactItem(
+        key=_key(f"mapping/{mapping['id']}"),
+        level=level,
+        detail=detail[:500],
+        title=other.title,
+        target_type="specification",
+        target_id=str(other.id),
+        target_version=other.version,
+    )
+
+
+def _dependent_designs(db: Session, row: Specification):
+    document = Specification.content
+    referenced = [{"target_id": row.id}]
+    step = [{"specification_id": row.id}]
+    conditions = [
+        document[key].contains(referenced)
+        for key in ("mappings", "constraints", "relationships", "transitions")
+    ]
+    return db.scalars(
+        select(Specification)
+        .where(
+            Specification.project_id == row.project_id,
+            Specification.id != row.id,
+            Specification.deleted_at.is_(None),
+            or_(
+                *conditions,
+                document["processing_steps"].contains(step),
+                document["actions"].contains([{"steps": step}]),
+            ),
+        )
+        .order_by(Specification.id)
+    )
+
+
+def _reference_impact(source: Specification, other: Specification):
+    own = source.content
+    content = other.content
+    related_keys = ("constraints", "relationships", "transitions")
+    relations = [
+        item
+        for kind in related_keys
+        for item in content.get(kind, [])
+        if item.get("target_id") == source.id
+    ]
+    processes = [
+        step
+        for steps in (
+            content.get("processing_steps", []),
+            *(item.get("steps", []) for item in content.get("actions", [])),
+        )
+        for step in steps
+        if step.get("specification_id") == source.id
+    ]
+    if not relations and not processes:
+        return None
+    columns = {item["id"] for item in own.get("columns", [])}
+    missing = any(
+        item.get("kind") == "foreign_key"
+        and not set(item.get("target_column_ids", [])) <= columns
+        for item in relations
+    )
+    detail = (
+        "外部キーが存在しない参照カラムを指しています。"
+        if missing
+        else "更新された画面・API・テーブルを処理または図の接続から参照しています。"
+    )
+    return DesignImpactItem(
+        key=_key(f"reference/{other.id}"),
+        level="error" if missing else "review",
+        title=other.title,
+        target_type="specification",
+        target_id=str(other.id),
+        target_version=other.version,
+        detail=detail,
+    )
 
 
 def analyze_impact(
@@ -69,8 +158,20 @@ def analyze_impact(
         base_version=past.number if past is not None else None,
         items=[],
     )
+    result.items = [
+        DesignImpactItem(
+            key=_key(key),
+            title=row.title,
+            target_type="specification",
+            target_id=str(row.id),
+            target_version=row.version,
+            level=level,
+            detail=detail[:500],
+        )
+        for key, level, detail in shared_changes(db, row)
+    ]
     if past is None:
-        return result
+        return _with_decisions(db, row, result)
 
     before_content = past.snapshot.get("content", {})
     before, after = dict(_flatten(before_content)), dict(_flatten(row.content))
@@ -78,9 +179,9 @@ def analyze_impact(
         key for key in before.keys() | after.keys() if before.get(key) != after.get(key)
     )
     if not changes:
-        return result
+        return _with_decisions(db, row, result)
     count = len(changes)
-    entries = []
+    entries = result.items
     for target in SPECIFICATIONS.links(db, project_id, row.id, user):
         entries.append(
             DesignImpactItem(
@@ -121,44 +222,44 @@ def analyze_impact(
     }
     original = SimpleNamespace(content=before_content)
     for mapping in mappings:
-        path = mapping["source_path"]
-        old_value, new_value = design_field(original, path), design_field(row, path)
-        if old_value == new_value:
-            continue
         target = targets.get(mapping["target_id"])
         if target is None:
             continue
-        target_value = design_field(target, mapping["target_path"])
-        incompatible = new_value is None or target_value is None
-        label = mapping["name"] or path
-        detail = f"{label}: {old_value or 'なし'} → {new_value or 'なし'}"
-        entries.append(
-            DesignImpactItem(
-                key=_key(f"mapping/{mapping['id']}"),
-                level="error" if incompatible else "warning",
-                title=target.title,
-                target_type="specification",
-                target_id=str(target.id),
-                target_version=target.version,
-                detail=detail[:500],
-            )
-        )
+        impact = _mapping_result(original, row, target, mapping, reverse=False)
+        if impact:
+            entries.append(impact)
+    for dependent in _dependent_designs(db, row):
+        for mapping in dependent.content.get("mappings", []):
+            if mapping["target_id"] == row.id:
+                impact = _mapping_result(
+                    original, row, dependent, mapping, reverse=True
+                )
+                if impact:
+                    entries.append(impact)
+        reference = _reference_impact(row, dependent)
+        if reference:
+            entries.append(reference)
+    return _with_decisions(db, row, result)
+
+
+def _with_decisions(db: Session, row: Specification, result: DesignImpactRead):
+    if not result.items:
+        return result
     states = {
         item.key: item.status
         for item in db.scalars(
             select(DesignImpactDecision).where(
-                DesignImpactDecision.project_id == project_id,
+                DesignImpactDecision.project_id == row.project_id,
                 DesignImpactDecision.specification_id == row.id,
                 DesignImpactDecision.source_version == row.version,
             )
         )
     }
-    for item in entries:
+    for item in result.items:
         item.status = cast(
             "Literal['confirmed', 'needs_action', 'pending']",
             states.get(item.key, "pending"),
         )
-    result.items = entries
     return result
 
 
