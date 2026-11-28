@@ -224,6 +224,15 @@ def build_projection(
     version = release.projection_version.replace("internal-", "public-", 1)
     nodes, consumed, id_map = [], set(), {}
     design_nodes: dict[int, dict] = {}
+    selected_designs = {
+        node.source_id for node in source_nodes if node.node_kind == "specification"
+    }
+    approved_versions = {
+        node.source_id: node.source_version
+        for node in source_nodes
+        if node.node_kind == "specification"
+        and node.payload.get("status") == "approved"
+    }
     for row in source_nodes:
         if row.id in consumed:
             continue
@@ -238,7 +247,12 @@ def build_projection(
         fields = PAYLOAD_FIELDS.get(row.node_kind)
         if row.node_kind == "requirement_document" and version == "public-preview-v2":
             fields = (*PAYLOAD_FIELDS["requirement_document"], *OBJECTIVE_FIELDS)
-        if fields is None or set(row.payload) != set(fields):
+        interior = (
+            set(row.payload) & {"design_dependencies", "design_placement"}
+            if row.node_kind == "specification"
+            else set()
+        )
+        if fields is None or set(row.payload) != (set(fields) | interior):
             raise invalid_projection()
         payload = {k: copy.deepcopy(row.payload[k]) for k in fields}
         if row.node_kind == "specification":
@@ -264,11 +278,33 @@ def build_projection(
             except (KeyError, TypeError, ValidationError):
                 raise invalid_projection() from None
             # 公開対象に含まれない設計IDを接続や処理ステップから取り除く。
-            visible_designs = {
-                node.source_id
-                for node in source_nodes
-                if node.node_kind == "specification"
-            }
+            visible_designs = selected_designs
+            if "design_dependencies" in interior:
+                try:
+                    visible_designs = {
+                        dependency["id"]
+                        for dependency in row.payload["design_dependencies"]
+                        if approved_versions.get(dependency["id"])
+                        == dependency["version"]
+                    }
+                except (KeyError, TypeError):
+                    raise invalid_projection() from None
+                if row.source_id in approved_versions:
+                    visible_designs.add(row.source_id)
+            if placement := row.payload.get("design_placement"):
+                if not (
+                    isinstance(placement, dict)
+                    and isinstance(placement.get("hidden"), bool)
+                    and all(
+                        type(placement.get(axis)) is int
+                        and 0 <= placement[axis] <= 100000
+                        for axis in ("x", "y")
+                    )
+                ):
+                    raise invalid_projection()
+                payload["diagram_position"] = {
+                    key: placement[key] for key in ("x", "y", "hidden")
+                }
             content.pop("collection_id", None)
             content.pop("mappings", None)
             for board in content.get("artboards", []):

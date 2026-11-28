@@ -114,6 +114,8 @@ MCPの `list_design_artifacts` と `get_design_artifact` は一覧、必要な�
 
 公開版の画面遷移図・ER図は同じ公開資料に含まれる承認済みの設計から作る。接続の `target_ordinal` はその公開資料内の表示順を指す。閲覧時は公開済みの本文から読み出し、元設計や内部の共通部品カタログは参照しない。公開済みの既存資料は従来の本文・内容ハッシュを保持する。
 
+承認後に下書きを改訂した設計も、元の承認版番号を指定して固定公開用に準備できる。新しい固定版では、参照先として同じ資料内に含めた設計の版が固定した参照版と一致する場合に接続線を投影する。承認時の全体図配置を公開図に使う。
+
 共有画面のHTMLプレビューには `GET /shared/publications/{publication_id}/nodes/{node_id}/mockups/{mockup_id}/preview?revision=...` を使う。現在の閲覧許可と認可版が一致した場合に、公開固定本文のHTML・CSSから生成した隔離プレビューを返す。
 
 HTML・CSSのコード範囲を指摘する場合、設計のコメント作成に `quote` と Unicode code point 単位の `quote_start` を渡す。応答の `field_snapshot` は選択した原文で、`specification_version` は照合した設計の版を指す。
