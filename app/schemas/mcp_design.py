@@ -28,6 +28,8 @@ class DesignDiagramInput(PageInput):
     kind: ArtifactKind
     q: str = Field(default="", max_length=200)
     group_id: UUID | None = None
+    collection_id: UUID | None = None
+    include_references: bool = False
 
 
 class DesignArtifactInput(ToolInput):

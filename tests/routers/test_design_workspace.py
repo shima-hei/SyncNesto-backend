@@ -99,6 +99,33 @@ def test_graph_is_projection_and_layout_is_per_group(client, context):
     assert whole["nodes"][0]["placement"]["hidden"] is True
     assert scoped["nodes"][0]["placement"]["x"] == 84
     assert scoped["nodes"][0]["group_ids"] == [group["id"]]
+    assert scoped["total"] == 1 and len(scoped["nodes"]) == 1
+    selected_page = diagram(
+        client,
+        project,
+        "screen",
+        group_id=group["id"],
+        page_size=1,
+        include_references=True,
+    )
+    assert selected_page["total"] == 1
+    assert selected_page["reference_ids"] == [second["id"]]
+    assert [node["id"] for node in selected_page["nodes"]] == [
+        first["id"],
+        second["id"],
+    ]
+    assert selected_page["edges"][0]["target_id"] == second["id"]
+    inbound = diagram(
+        client,
+        project,
+        "screen",
+        q=second["title"],
+        page_size=1,
+        page=2,
+        include_references=True,
+    )
+    assert inbound["reference_ids"] == [first["id"]]
+    assert inbound["edges"][0]["source_id"] == first["id"]
     assert (
         client.get(f"{specs}/{first['id']}").json()["content"]["transitions"][0]["id"]
         == transition["id"]

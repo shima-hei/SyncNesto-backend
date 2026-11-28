@@ -235,6 +235,8 @@ def read_design(db: Session, actor: User, name: str, data) -> dict:
             data.q,
             data.page,
             data.page_size,
+            collection_id=data.collection_id,
+            include_references=data.include_references,
         ).model_dump(mode="json")
     if name == "get_design_links":
         return _page(

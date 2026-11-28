@@ -304,10 +304,22 @@ class DesignWorkspaceService:
         q: str,
         page: int,
         page_size: int,
+        *,
+        collection_id: UUID | None = None,
+        include_references: bool = False,
     ) -> DesignDiagram:
         """設計書から画面遷移・外部キーを投影し、配置と統合する。"""
         if group_id is not None:
             collection(db, project_id, group_id, "group")
+        if collection_id is not None:
+            if kind == "screen":
+                raise BadRequestError("画面には仕様セット・DBモデルを指定できません")
+            collection(
+                db,
+                project_id,
+                collection_id,
+                "api_set" if kind == "api" else "db_model",
+            )
         projection = select(
             Specification.id,
             Specification.kind,
@@ -340,25 +352,83 @@ class DesignWorkspaceService:
             Specification.deleted_at.is_(None),
             Specification.kind == kind,
         )
+        requested = projection
+        if group_id is not None:
+            requested = requested.where(
+                Specification.id.in_(
+                    select(DesignMembership.specification_id).where(
+                        DesignMembership.project_id == project_id,
+                        DesignMembership.group_id == group_id,
+                    )
+                )
+            )
+        if collection_id is not None:
+            requested = requested.where(
+                Specification.content["collection_id"].as_string() == str(collection_id)
+            )
         if q:
             escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            projection = projection.where(
+            requested = requested.where(
                 or_(
                     Specification.title.ilike(f"%{escaped}%", escape="\\"),
                     Specification.summary.ilike(f"%{escaped}%", escape="\\"),
                 )
             )
-        total = db.scalar(select(func.count()).select_from(projection.subquery())) or 0
-        rows = (
+        total = (
+            db.scalar(
+                requested.with_only_columns(func.count(), maintain_column_froms=True)
+            )
+            or 0
+        )
+        rows = list(
             db.execute(
-                projection.order_by(Specification.id)
+                requested.order_by(Specification.id)
                 .offset((page - 1) * page_size)
                 .limit(page_size)
             )
             .mappings()
             .all()
         )
-        ids = [row["id"] for row in rows]
+        primary_ids = {row["id"] for row in rows}
+        references: list[int] = []
+        has_more = False
+        if include_references and primary_ids and kind != "api":
+            outgoing = {
+                item["target_id"]
+                for row in rows
+                for item in self._diagram_relations(row, kind)
+                if item.get("target_id") is not None
+            }
+            content = Specification.content
+            keys = (
+                ("transitions",)
+                if kind == "screen"
+                else ("constraints", "relationships")
+            )
+            inbound = [
+                content[key].contains([{"target_id": identifier}])
+                for key in keys
+                for identifier in sorted(primary_ids)
+            ]
+            # 一度に描画する参照を制限し、続きの有無を返す。
+            limit = 200
+            neighbours = (
+                db.execute(
+                    projection.where(
+                        Specification.id.not_in(primary_ids),
+                        or_(Specification.id.in_(outgoing), *inbound),
+                    )
+                    .order_by(Specification.id)
+                    .limit(limit + 1)
+                )
+                .mappings()
+                .all()
+            )
+            has_more = len(neighbours) > limit
+            for neighbour in neighbours[:limit]:
+                references.append(neighbour["id"])
+                rows.append(neighbour)
+        ids = primary_ids | set(references)
         memberships: dict[int, list[UUID]] = defaultdict(list)
         for spec_id, member_group in db.execute(
             select(
@@ -407,33 +477,41 @@ class DesignWorkspaceService:
             )
             if kind == "api":
                 continue
-            for item in row["transitions"] or []:
-                if kind == "database" and item["kind"] != "foreign_key":
-                    continue
+            for item in self._diagram_relations(row, kind):
                 target_id = item.get("target_id")
-                if target_id in ids:
+                if target_id in ids and (
+                    source in primary_ids or target_id in primary_ids
+                ):
+                    logical = "cardinality" in item
                     edges.append(
                         DesignEdge(
                             id=item["id"],
                             source_id=source,
                             target_id=target_id,
-                            name=item["name"],
-                            kind="transition" if kind == "screen" else "foreign_key",
+                            name=item["name"] or item.get("cardinality", ""),
+                            kind="logical"
+                            if logical
+                            else "transition"
+                            if kind == "screen"
+                            else "foreign_key",
                             condition=item.get("condition", ""),
                         )
                     )
-            for item in row["relationships"] or []:
-                if item["target_id"] in ids:
-                    edges.append(
-                        DesignEdge(
-                            id=item["id"],
-                            source_id=source,
-                            target_id=item["target_id"],
-                            name=item["name"] or item["cardinality"],
-                            kind="logical",
-                        )
-                    )
-        return DesignDiagram(kind=kind, nodes=nodes, edges=edges, total=total)
+        return DesignDiagram(
+            kind=kind,
+            nodes=nodes,
+            edges=edges,
+            total=total,
+            reference_ids=references,
+            has_more_references=has_more,
+        )
+
+    @staticmethod
+    def _diagram_relations(row, kind: ArtifactKind):
+        for item in row["transitions"] or []:
+            if kind == "screen" or item["kind"] == "foreign_key":
+                yield item
+        yield from row["relationships"] or []
 
     @staticmethod
     def _column_label(item: dict) -> str:

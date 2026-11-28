@@ -178,12 +178,24 @@ def design_diagram(
     db: Db,
     user: Reader,
     group_id: UUID | None = None,
+    collection_id: UUID | None = None,
+    include_references: bool = False,
     q: str = Query(default="", max_length=200),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=100),
 ):
     """図と一覧の共通データを本文なしで取得する。"""
-    return service.diagram(db, project_id, kind, group_id, q, page, page_size)
+    return service.diagram(
+        db,
+        project_id,
+        kind,
+        group_id,
+        q,
+        page,
+        page_size,
+        collection_id=collection_id,
+        include_references=include_references,
+    )
 
 
 @router.put("/placements", response_model=list[PlacementRead])

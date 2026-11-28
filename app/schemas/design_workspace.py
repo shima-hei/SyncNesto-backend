@@ -131,6 +131,8 @@ class DesignDiagram(BaseModel):
     nodes: list[DesignNode]
     edges: list[DesignEdge]
     total: int
+    reference_ids: list[int] = Field(default_factory=list)
+    has_more_references: bool = False
 
 
 class DesignCount(BaseModel):
