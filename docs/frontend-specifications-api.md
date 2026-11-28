@@ -81,6 +81,9 @@ Migration `e5a9c2f7b103`（親 `d4f8b1e6a902`）は4表と索引・FKを追加�
 | 方法 | `/projects/{project_id}/design-workspace` 配下 | 用途 |
 | --- | --- | --- |
 | GET | `/overview` | 種類・状態、グループ、最近の更新 |
+| GET / POST | `/review-requests` | 自分宛てと送った依頼の一覧 / 対象版を束ねて依頼 |
+| GET | `/review-requests/candidates` | 案件内のレビュー・設計権限を持つ依頼先 |
+| POST | `/review-requests/{request_id}/decision` | 固定版の確認・一括承認・修正依頼・取消 |
 | GET / POST / PATCH | `/collections` / `/collections/{id}` | 機能グループ・API仕様セット・DBモデル |
 | PUT | `/memberships/{specification_id}` | 設計の版を指定してグループ所属を置換 |
 | GET | `/diagram` | 本文を除いた図・一覧の共通データ。画面遷移、外部キー、論理関連を投影 |
@@ -108,6 +111,8 @@ MCPの `list_design_artifacts` と `get_design_artifact` は一覧、必要な�
 
 HTML・CSSのコード範囲を指摘する場合、設計のコメント作成に `quote` と Unicode code point 単位の `quote_start` を渡す。応答の `field_snapshot` は選択した原文で、`specification_version` は照合した設計の版を指す。
 
-移行は `d84b9a6e2f10 → f31a8d7c620e → 7c19d8ab502e → 4ce61bd208af → 714f7bb23d31`。既存の設計行・版・リンク・指摘は書き換えない。配備時に事前バックアップと権限・件数の照合を行う。部品を含む画面が保存された後は、切り戻し時も部品の版情報を読めるバックエンドと追加表を保全する。
+レビュー・承認依頼は最大30件の固定版を保存する。レビューは対象の下書きを提出してから版を固定する。承認はレビュー中の対象を固定する。依頼された本人が判断し、対象に版競合があれば同じ依頼の全対象を未反映のまま保持する。
+
+移行は `d84b9a6e2f10 → f31a8d7c620e → 7c19d8ab502e → 4ce61bd208af → 714f7bb23d31 → 18a73641dbe5`。既存の設計行・版・リンク・指摘は書き換えない。配備時に事前バックアップと権限・件数の照合を行う。部品を含む画面が保存された後は、切り戻し時も部品の版情報を読めるバックエンドと追加表を保全する。
 
 参照資料 [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1.html) ・ [PostgreSQL 17の制約](https://www.postgresql.org/docs/17/ddl-constraints.html) ・ [HTMLのsandbox属性](https://html.spec.whatwg.org/multipage/iframe-embed-object.html#attr-iframe-sandbox)

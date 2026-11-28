@@ -211,11 +211,21 @@ class SpecificationService:
     ):
         row = self.get(db, project_id, specification_id, lock=True)
         self.check_version(row, version)
+        self.stage_status(db, row, status, user)
+        db.commit()
+        self.audit(db, row, user.id, "status_changed")
+        return row
+
+    def stage_status(self, db: Session, row: Specification, status: str, user: User):
+        """同じルールで版を追加し、呼び出し側のトランザクション内に留める。"""
         if status in {
             "approved",
             "changes_requested",
         } and not self.authorization.has_project_permission(
-            db, user=user, project_id=project_id, permission_code="requirement:review"
+            db,
+            user=user,
+            project_id=row.project_id,
+            permission_code="requirement:review",
         ):
             raise ForbiddenError()
         if status == "approved" and self.repository.has_unresolved_comments(db, row.id):
@@ -253,9 +263,6 @@ class SpecificationService:
             user.id,
             reviewed=reviewed.snapshot if reviewed is not None else None,
         )
-        db.commit()
-        self.audit(db, row, user.id, "status_changed")
-        return row
 
     def delete(
         self,

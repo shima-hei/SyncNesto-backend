@@ -273,6 +273,73 @@ def test_wireframe_parts_enforce_project_and_write_permissions(
     assert client.patch(part_url, json={**payload, "version": 1}).status_code == 403
 
 
+def test_batch_review_and_approval_apply_only_to_locked_target_versions(
+    client, context, create_test_user, assign_project_role
+):
+    requester, project, specs = context
+    reviewer = create_test_user(email="design-reviewer@example.com")
+    assign_project_role(user=reviewer, project=project, role_key="project_admin")
+    base = f"{workspace(project)}/review-requests"
+    targets = [create(client, specs, "screen"), create(client, specs, "screen")]
+    assert [member["id"] for member in client.get(base + "/candidates").json()] == [
+        reviewer.id
+    ]
+
+    def submit(kind, rows):
+        payload = {
+            "request_id": str(uuid4()),
+            "kind": kind,
+            "reviewer_id": reviewer.id,
+            "targets": [
+                {
+                    "specification_id": row.get("specification_id", row.get("id")),
+                    "version": row["version"],
+                }
+                for row in rows
+            ],
+        }
+        response = client.post(base, json=payload)
+        assert response.status_code == 201, response.text
+        assert client.post(base, json=payload).json()["id"] == response.json()["id"]
+        return response.json()
+
+    review = submit("review", targets)
+    assert [target["version"] for target in review["targets"]] == [2, 2]
+    decision = f"{base}/{review['id']}/decision"
+    assert client.post(decision, json={"status": "reviewed"}).status_code == 403
+    authorize_as(client, reviewer)
+    assert client.get(base).json()[0]["assigned_to_me"] is True
+    assert client.post(decision, json={"status": "approved"}).status_code == 400
+    reply = client.post(decision, json={"status": "reviewed"})
+    assert reply.status_code == 200, reply.text
+    assert reply.json()["status"] == "reviewed"
+    assert client.get(base).json() == []
+    authorize_as(client, requester)
+
+    approval = submit("approval", review["targets"])
+    first, second = [client.get(f"{specs}/{row['id']}").json() for row in targets]
+    changed = client.patch(
+        f"{specs}/{first['id']}", json={**update_data(first), "title": "次の下書き"}
+    )
+    assert changed.status_code == 200, changed.text
+    authorize_as(client, reviewer)
+    decision = f"{base}/{approval['id']}/decision"
+    assert client.post(decision, json={"status": "approved"}).status_code == 409
+    assert client.get(f"{specs}/{second['id']}").json()["status"] == "in_review"
+    fixed = client.get(f"{specs}/{first['id']}/revisions/2").json()["snapshot"]
+    assert fixed["title"] == first["title"]
+    authorize_as(client, requester)
+    assert (
+        client.post(decision, json={"status": "cancelled"}).json()["status"]
+        == "cancelled"
+    )
+    repeat = submit("approval", [second])
+    authorize_as(client, reviewer)
+    reply = client.post(f"{base}/{repeat['id']}/decision", json={"status": "approved"})
+    assert reply.status_code == 200, reply.text
+    assert client.get(f"{specs}/{second['id']}").json()["status"] == "approved"
+
+
 def test_openapi_import_selected_version_and_fixed_export(client, context):
     _, project, specs = context
     base = workspace(project)

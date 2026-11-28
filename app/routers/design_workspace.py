@@ -7,6 +7,12 @@ from fastapi import APIRouter, Query
 from app.core.exceptions import ForbiddenError
 from app.routers.specifications import Creator, Db, Editor, Reader
 from app.schemas.design_content import ArtifactKind, HtmlMockup
+from app.schemas.design_review_request import (
+    DesignReviewCreate,
+    DesignReviewDecision,
+    DesignReviewer,
+    DesignReviewRead,
+)
 from app.schemas.design_workspace import (
     CollectionInput,
     CollectionKind,
@@ -33,6 +39,7 @@ from app.schemas.wireframe_part import (
 from app.services.body_image import stored_mockup_preview
 from app.services.design_formats import export_ddl, export_openapi, import_specification
 from app.services.design_impact import analyze_impact, save_impact
+from app.services.design_review_request import DesignReviewService
 from app.services.design_workspace import DesignWorkspaceService
 from app.services.wireframe_part import create_part, list_parts, read_part, update_part
 
@@ -40,6 +47,37 @@ router = APIRouter(
     prefix="/projects/{project_id}/design-workspace", tags=["design-workspace"]
 )
 service = DesignWorkspaceService()
+review = DesignReviewService()
+
+
+@router.get("/review-requests", response_model=list[DesignReviewRead])
+def design_review_requests(
+    project_id: int, db: Db, user: Reader, pending_only: bool = True
+):
+    """自分宛て、または自分が依頼したレビュー・承認を取得する。"""
+    return review.listing(db, project_id, user, pending_only)
+
+
+@router.get("/review-requests/candidates", response_model=list[DesignReviewer])
+def design_review_candidates(project_id: int, db: Db, user: Editor):
+    """レビューと設計編集権限を持つ案件内の依頼先を返す。"""
+    return review.candidates(db, project_id, user)
+
+
+@router.post("/review-requests", status_code=201, response_model=DesignReviewRead)
+def create_design_review_request(
+    project_id: int, data: DesignReviewCreate, db: Db, user: Editor
+):
+    """対象の版を照合して、まとめて1件の依頼にする。"""
+    return review.create(db, project_id, user, data)
+
+
+@router.post("/review-requests/{request_id}/decision", response_model=DesignReviewRead)
+def decide_design_review_request(
+    project_id: int, request_id: UUID, data: DesignReviewDecision, db: Db, user: Editor
+):
+    """指定された依頼先が固定した設計を確認・承認する。"""
+    return review.decide(db, project_id, request_id, user, data)
 
 
 @router.get("/overview", response_model=DesignOverview)
