@@ -1,5 +1,6 @@
 """設計ワークスペースの案件内API。"""
 
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Query
@@ -29,6 +30,13 @@ from app.schemas.design_workspace import (
     PlacementRead,
     PlacementUpdate,
 )
+from app.schemas.screen_list import (
+    ScreenListBatch,
+    ScreenListMember,
+    ScreenListQuery,
+    ScreenListRead,
+    ScreenListSaved,
+)
 from app.schemas.specification import SpecificationRead
 from app.schemas.wireframe_part import (
     WireframePartCreate,
@@ -41,6 +49,7 @@ from app.services.design_formats import export_ddl, export_openapi, import_speci
 from app.services.design_impact import analyze_impact, save_impact
 from app.services.design_review_request import DesignReviewService
 from app.services.design_workspace import DesignWorkspaceService
+from app.services.screen_list import ScreenListService
 from app.services.wireframe_part import create_part, list_parts, read_part, update_part
 
 router = APIRouter(
@@ -48,6 +57,29 @@ router = APIRouter(
 )
 service = DesignWorkspaceService()
 review = DesignReviewService()
+screens = ScreenListService()
+
+
+@router.get("/screen-list", response_model=ScreenListRead)
+def design_screen_list(
+    project_id: int, params: Annotated[ScreenListQuery, Query()], db: Db, user: Reader
+):
+    """案件の画面を関連、担当、表示条件とともに取得する。"""
+    return screens.listing(db, project_id, params, user)
+
+
+@router.get("/screen-list/members", response_model=list[ScreenListMember])
+def design_screen_list_members(project_id: int, db: Db, user: Editor):
+    """画面の担当者に指定できる案件内のメンバーを取得する。"""
+    return screens.members(db, project_id)
+
+
+@router.post("/screen-list/edits", response_model=list[ScreenListSaved])
+def edit_design_screen_list(
+    project_id: int, data: ScreenListBatch, db: Db, user: Editor
+):
+    """対象版と権限を照合して、新規行と既存行をまとめて保存する。"""
+    return screens.save(db, project_id, user, data)
 
 
 @router.get("/review-requests", response_model=list[DesignReviewRead])

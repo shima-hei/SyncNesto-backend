@@ -340,6 +340,74 @@ def test_batch_review_and_approval_apply_only_to_locked_target_versions(
     assert client.get(f"{specs}/{second['id']}").json()["status"] == "approved"
 
 
+def test_screen_list_batches_match_versions_and_do_not_duplicate_on_retry(
+    client, context, create_test_user
+):
+    actor, project, specifications = context
+    base = f"{workspace(project)}/screen-list"
+    group_response = client.post(
+        f"{workspace(project)}/collections", json={"kind": "group", "name": "受付"}
+    )
+    assert group_response.status_code == 201, group_response.text
+    group = group_response.json()
+    original = create(client, specifications, "screen")
+    api = create(client, specifications, "api")
+    details = update_data(original)
+    details["content"]["actions"] = [
+        {"steps": [{"kind": "api", "specification_id": api["id"]}]}
+    ]
+    edited = client.patch(f"{specifications}/{original['id']}", json=details)
+    assert edited.status_code == 200, edited.text
+    original = edited.json()
+    payload = {
+        "request_id": str(uuid4()),
+        "edits": [
+            {
+                "id": original["id"],
+                "version": original["version"],
+                "route": "/new",
+                "screen_kind": "list",
+                "assignee_id": actor.id,
+            },
+            {
+                "title": "新規の画面",
+                "screen_kind": "drawer",
+                "group_ids": [group["id"]],
+            },
+        ],
+    }
+    response = client.post(base + "/edits", json=payload)
+    assert response.status_code == 200, response.text
+    first, second = response.json()
+    assert client.post(base + "/edits", json=payload).json() == [first, second]
+    data = client.get(
+        base, params={"assignee_id": actor.id, "screen_kind": "list", "q": "/new"}
+    )
+    assert data.status_code == 200, data.text
+    (row,) = data.json()["items"]
+    assert row["id"] == first["id"]
+    assert row["assignee"]["id"] == actor.id
+    assert row["related_apis"][0]["id"] == api["id"]
+    assert (
+        client.get(base, params={"group_id": group["id"]}).json()["items"][0]["id"]
+        == second["id"]
+    )
+    assert client.get(base).json()["total"] == 2
+
+    stale = {
+        "request_id": str(uuid4()),
+        "edits": [{"title": "保存しない行"}, payload["edits"][0]],
+    }
+    assert client.post(base + "/edits", json=stale).status_code == 409
+    outsider = create_test_user(email="screen-assignee-outsider@example.com")
+    invalid = {
+        "request_id": str(uuid4()),
+        "edits": [{"title": "保存しない担当者", "assignee_id": outsider.id}],
+    }
+    assert client.post(base + "/edits", json=invalid).status_code == 400
+    assert client.get(base).json()["total"] == 2
+
+
 def test_openapi_import_selected_version_and_fixed_export(client, context):
     _, project, specs = context
     base = workspace(project)

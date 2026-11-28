@@ -38,6 +38,9 @@ class Specification(Base):
     version: Mapped[int] = mapped_column(default=1)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     updated_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    assignee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", name="fk_specifications_assignee"), index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -29,6 +29,7 @@ from app.models.design_workspace import (
     DesignImpactDecision,
     DesignMembership,
     DesignPlacement,
+    ScreenListEditReceipt,
     WireframePartRevision,
 )
 from app.models.document import (
@@ -231,6 +232,7 @@ __all__ = [
     "WireframePartRevision",
     "DesignMembership",
     "DesignPlacement",
+    "ScreenListEditReceipt",
     "Draft",
     "LoginAttempt",
     "Notification",

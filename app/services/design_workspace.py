@@ -61,6 +61,24 @@ def collection(
     return row
 
 
+def replace_memberships(
+    db: Session, project_id: int, specification_id: int, group_ids: set[UUID]
+) -> None:
+    """照合済みの機能グループ所属を同じトランザクションで置き換える。"""
+    db.execute(
+        delete(DesignMembership).where(
+            DesignMembership.project_id == project_id,
+            DesignMembership.specification_id == specification_id,
+        )
+    )
+    db.add_all(
+        DesignMembership(
+            project_id=project_id, specification_id=specification_id, group_id=group_id
+        )
+        for group_id in group_ids
+    )
+
+
 class DesignWorkspaceService:
     """設計書の基礎データを再利用し、設計項目を複製しない。"""
 
@@ -144,20 +162,7 @@ class DesignWorkspaceService:
         legal_groups = {item.id for item in self.collections(db, project_id, "group")}
         if not data.group_ids <= legal_groups:
             raise BadRequestError("機能グループは同じ案件内から選択してください")
-        db.execute(
-            delete(DesignMembership).where(
-                DesignMembership.project_id == project_id,
-                DesignMembership.specification_id == specification_id,
-            )
-        )
-        db.add_all(
-            DesignMembership(
-                project_id=project_id,
-                specification_id=specification_id,
-                group_id=group_id,
-            )
-            for group_id in data.group_ids
-        )
+        replace_memberships(db, project_id, specification_id, data.group_ids)
         if row.status in {"approved", "in_review"}:
             row.status = "draft"
         row.version += 1

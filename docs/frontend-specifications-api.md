@@ -87,6 +87,9 @@ Migration `e5a9c2f7b103`（親 `d4f8b1e6a902`）は4表と索引・FKを追加�
 | GET / POST / PATCH | `/collections` / `/collections/{id}` | 機能グループ・API仕様セット・DBモデル |
 | PUT | `/memberships/{specification_id}` | 設計の版を指定してグループ所属を置換 |
 | GET | `/diagram` | 本文を除いた図・一覧の共通データ。画面遷移、外部キー、論理関連を投影 |
+| GET | `/screen-list` | 検索・グループ・状態・担当者で絞り込める画面一覧と、関連要件・APIのリンク |
+| GET | `/screen-list/members` | 画面に割り当てられる案件内のメンバー |
+| POST | `/screen-list/edits` | 画面一覧の新規作成と既存行編集を最大100件まとめて保存 |
 | PUT | `/placements` | 全体・グループごとの配置。配置版0は新規、`hidden` は図からの配置解除 |
 | POST | `/mockup-preview` | HTML・CSS原本から許可リストを通した iframe 専用文書を生成 |
 | GET / POST | `/wireframe-parts` | 案件共通部品の最新メタデータ一覧 / 初版を登録 |
@@ -113,6 +116,8 @@ HTML・CSSのコード範囲を指摘する場合、設計のコメント作成�
 
 レビュー・承認依頼は最大30件の固定版を保存する。レビューは対象の下書きを提出してから版を固定する。承認はレビュー中の対象を固定する。依頼された本人が判断し、対象に版競合があれば同じ依頼の全対象を未反映のまま保持する。
 
-移行は `d84b9a6e2f10 → f31a8d7c620e → 7c19d8ab502e → 4ce61bd208af → 714f7bb23d31 → 18a73641dbe5`。既存の設計行・版・リンク・指摘は書き換えない。配備時に事前バックアップと権限・件数の照合を行う。部品を含む画面が保存された後は、切り戻し時も部品の版情報を読めるバックエンドと追加表を保全する。
+画面一覧の既存行を編集する時は、一覧で取得した設計版を指定する。名前・画面種別・URLや識別子・担当者・所属グループをまとめて更新できる。関連要件・APIは現在の関連を読み出す。保存では案件・操作者ごとに `idempotency_key` を記録し、同じ内容の再送には初回の結果を返す。版競合・所属不備があれば一括操作を取り消す。
+
+移行は `d84b9a6e2f10 → f31a8d7c620e → 7c19d8ab502e → 4ce61bd208af → 714f7bb23d31 → 18a73641dbe5 → 7e3a920bc5f4`。既存の設計行・版・リンク・指摘は書き換えない。配備時に事前バックアップと権限・件数の照合を行う。部品を含む画面が保存された後は、切り戻し時も部品の版情報を読めるバックエンドと追加表を保全する。
 
 参照資料 [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1.html) ・ [PostgreSQL 17の制約](https://www.postgresql.org/docs/17/ddl-constraints.html) ・ [HTMLのsandbox属性](https://html.spec.whatwg.org/multipage/iframe-embed-object.html#attr-iframe-sandbox)

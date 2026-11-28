@@ -106,6 +106,7 @@ OWNERS = {
         ("specification_id", "specifications", "id"),
     ],
     "specifications": [("project_id", "projects", "id")],
+    "screen_list_edit_receipts": [("project_id", "projects", "id")],
     "specification_revisions": [("specification_id", "specifications", "id")],
     "specification_comments": [("specification_id", "specifications", "id")],
     "specification_links": [("specification_id", "specifications", "id")],

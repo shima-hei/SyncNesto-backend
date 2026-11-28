@@ -149,6 +149,21 @@ class SpecificationService:
     def create(
         self, db: Session, project_id: int, data: SpecificationCreate, user: User
     ):
+        row = self.stage_create(db, project_id, data, user)
+        db.commit()
+        self.audit(db, row, user.id, "created")
+        return row
+
+    def stage_create(
+        self,
+        db: Session,
+        project_id: int,
+        data: SpecificationCreate,
+        user: User,
+        *,
+        assignee_id: int | None = None,
+    ):
+        """本文と版を作り、コミットは呼び出し側に任せる。"""
         check_design_references(db, project_id, data.content, None)
         retain_specification_images(db, project_id, user.id, data.summary, data.content)
         row = Specification(
@@ -159,13 +174,12 @@ class SpecificationService:
             content=data.content.model_dump(mode="json"),
             created_by=user.id,
             updated_by=user.id,
+            assignee_id=assignee_id,
             status="draft",
             version=1,
         )
         db.add(row)
         self.repository.revision(db, row, user.id)
-        db.commit()
-        self.audit(db, row, user.id, "created")
         return row
 
     def update(
@@ -178,14 +192,23 @@ class SpecificationService:
     ):
         row = self.get(db, project_id, specification_id, lock=True)
         self.check_version(row, data.version)
+        self.stage_update(db, row, data, user)
+        db.commit()
+        self.audit(db, row, user.id, "updated")
+        return row
+
+    def stage_update(
+        self, db: Session, row: Specification, data: SpecificationUpdate, user: User
+    ) -> None:
+        """版を照合済みの設計に、共通ルールで本文の変更を適用する。"""
         if row.kind != data.content.type:
             raise BadRequestError(error_messages.SPECIFICATION_KIND_IMMUTABLE)
         # 旧クライアントが送信を省いた追加項目を保存済み本文から補う。
         content = type(data.content).model_validate(
             {**row.content, **data.content.model_dump(mode="json", exclude_unset=True)}
         )
-        check_design_references(db, project_id, content, row.id)
-        retain_specification_images(db, project_id, user.id, data.summary, content)
+        check_design_references(db, row.project_id, content, row.id)
+        retain_specification_images(db, row.project_id, user.id, data.summary, content)
         row.title, row.summary, row.content = (
             data.title,
             data.summary,
@@ -196,9 +219,6 @@ class SpecificationService:
         row.version += 1
         row.updated_by = user.id
         self.repository.revision(db, row, user.id)
-        db.commit()
-        self.audit(db, row, user.id, "updated")
-        return row
 
     def status(
         self,

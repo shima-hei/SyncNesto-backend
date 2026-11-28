@@ -133,3 +133,17 @@ class WireframePartRevision(Base):
     version: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     content: Mapped[dict] = mapped_column(JSONB)
+
+
+class ScreenListEditReceipt(Base):
+    """貼り付けを再送しても新規画面を重複登録しない。"""
+
+    __tablename__ = "screen_list_edit_receipts"
+
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    request_id: Mapped[UUID] = mapped_column(primary_key=True)
+    request_digest: Mapped[str] = mapped_column(String(64))
+    result: Mapped[list[dict]] = mapped_column(JSONB)

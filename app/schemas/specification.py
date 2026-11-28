@@ -184,6 +184,7 @@ class SpecificationRead(SpecificationCreate):
     version: int
     created_by: int
     updated_by: int
+    assignee_id: int | None = None
     updated_at: datetime
 
 
