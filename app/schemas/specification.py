@@ -1,6 +1,5 @@
 """API・画面の項目型と設計レビュー契約。"""
 
-import json
 from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
@@ -8,6 +7,18 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 from app.schemas.comment_image import CommentImageCreateFields, CommentImageReadFields
+from app.schemas.design_content import (
+    ArtifactKind,
+    DatabaseSpecification,
+    DesignMapping,
+    HtmlMockup,
+    ProcessingStep,
+    ScreenKind,
+    ScreenTransition,
+    WireframeArtboard,
+    ensure_unique_design_ids,
+    json_size,
+)
 
 
 class SpecificationField(BaseModel):
@@ -16,12 +27,56 @@ class SpecificationField(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: UUID = Field(default_factory=uuid4)
     name: str = Field(default="", max_length=200)
+    logical_id: str = Field(default="", max_length=100)
+    ui_component: str = Field(default="", max_length=100)
+    default_value: str = Field(default="", max_length=1000)
+    constraints: str = Field(default="", max_length=3000)
+    minimum: float | None = Field(
+        default=None, allow_inf_nan=False, exclude_if=lambda value: value is None
+    )
+    maximum: float | None = Field(
+        default=None, allow_inf_nan=False, exclude_if=lambda value: value is None
+    )
+    min_length: int | None = Field(
+        default=None, ge=0, le=100000, exclude_if=lambda value: value is None
+    )
+    max_length: int | None = Field(
+        default=None, ge=0, le=100000, exclude_if=lambda value: value is None
+    )
+    format: str = Field(default="", max_length=100, exclude_if=lambda value: not value)
+    pattern: str = Field(
+        default="", max_length=1000, exclude_if=lambda value: not value
+    )
+    choices: list[Annotated[str, Field(min_length=1, max_length=200)]] = Field(
+        default_factory=list, max_length=100, exclude_if=lambda value: not value
+    )
+    visibility: str = Field(default="", max_length=1000)
+    enabled_when: str = Field(default="", max_length=1000)
+    error_message: str = Field(default="", max_length=1000)
     data_type: str = Field(default="string", max_length=100)
     required: bool = False
     description: str = Field(default="", max_length=5000)
     example: str = Field(default="", max_length=5000)
     validation: str = Field(default="", max_length=5000)
-    location: Literal["path", "query", "header", "body", "display"] = "body"
+    location: Literal[
+        "path", "query", "header", "cookie", "body", "display", "action"
+    ] = "body"
+
+    @model_validator(mode="after")
+    def validate_bounds(self):
+        if (
+            self.minimum is not None
+            and self.maximum is not None
+            and self.minimum > self.maximum
+        ):
+            raise ValueError("最小値は最大値以下にしてください")
+        if (
+            self.min_length is not None
+            and self.max_length is not None
+            and self.min_length > self.max_length
+        ):
+            raise ValueError("最小文字数は最大文字数以下にしてください")
+        return self
 
 
 class SpecificationRule(BaseModel):
@@ -34,12 +89,37 @@ class SpecificationRule(BaseModel):
     destination: str = Field(default="", max_length=1000)
 
 
+class ScreenEvent(SpecificationRule):
+    """画面イベントの処理と分岐。"""
+
+    trigger: str = Field(default="", max_length=200)
+    steps: list[ProcessingStep] = Field(default_factory=list, max_length=100)
+
+
+class ScreenState(SpecificationRule):
+    """設計対象システムの画面状態と利用者区分。"""
+
+    audience: str = Field(default="", max_length=200)
+    message: str = Field(default="", max_length=1000)
+    field_id: UUID | None = None
+    display: Literal["unchanged", "visible", "hidden"] = "unchanged"
+    access: Literal["unchanged", "enabled", "disabled", "read_only"] = "unchanged"
+    value: str = Field(default="", max_length=1000)
+
+
 class ApiSpecification(BaseModel):
     """設計段階のAPI契約。外部へのAPI実行は行わない。"""
 
     model_config = ConfigDict(extra="forbid")
     type: Literal["api"] = "api"
-    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] = "GET"
+    collection_id: UUID | None = None
+    operation: dict | None = None
+    mappings: list[DesignMapping] = Field(default_factory=list, max_length=100)
+    processing_steps: list[ProcessingStep] = Field(default_factory=list, max_length=100)
+    method: (
+        Literal["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE"]
+        | None
+    ) = "GET"
     path: str = Field(default="", max_length=1000)
     authentication: str = Field(default="", max_length=5000)
     authorization: str = Field(default="", max_length=5000)
@@ -53,22 +133,64 @@ class ApiSpecification(BaseModel):
     notes: str = Field(default="", max_length=20000)
 
 
+class RepresentativePreview(BaseModel):
+    """保存済みのモックアップ、ワイヤーフレーム、参考画像を指す。"""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["wireframe", "html", "image"]
+    target_id: UUID
+
+
 class ScreenSpecification(BaseModel):
     """画面項目、振る舞い、遷移、例外時の表示。"""
 
     model_config = ConfigDict(extra="forbid")
     type: Literal["screen"] = "screen"
+    screen_kind: ScreenKind = "other"
+    transitions: list[ScreenTransition] = Field(default_factory=list, max_length=150)
+    artboards: list[WireframeArtboard] = Field(default_factory=list, max_length=20)
+    mappings: list[DesignMapping] = Field(default_factory=list, max_length=100)
+    mockups: list[HtmlMockup] = Field(default_factory=list, max_length=15)
+    representative_preview: RepresentativePreview | None = None
     route: str = Field(default="", max_length=1000)
     audience: str = Field(default="", max_length=5000)
     reference_url: HttpUrl | None = None
     fields: list[SpecificationField] = Field(default_factory=list, max_length=200)
-    actions: list[SpecificationRule] = Field(default_factory=list, max_length=100)
-    states: list[SpecificationRule] = Field(default_factory=list, max_length=100)
+    actions: list[ScreenEvent] = Field(default_factory=list, max_length=100)
+    states: list[ScreenState] = Field(default_factory=list, max_length=100)
     notes: str = Field(default="", max_length=20000)
+
+    @model_validator(mode="after")
+    def validate_item_references(self):
+        """画面内で消失した項目への参照を検出する。"""
+        preview = self.representative_preview
+        if preview is not None and preview.kind != "image":
+            candidates = self.artboards if preview.kind == "wireframe" else self.mockups
+            if all(item.id != preview.target_id for item in candidates):
+                raise ValueError("代表プレビューのアートボード・HTMLが見つかりません")
+        field_ids = {item.id for item in self.fields}
+        event_ids = {item.id for item in self.actions}
+        state_ids = {item.id for item in self.states}
+        for transition in self.transitions:
+            if transition.event_id is not None and transition.event_id not in event_ids:
+                raise ValueError("遷移のイベントが見つかりません")
+        for state in self.states:
+            if state.field_id is not None and state.field_id not in field_ids:
+                raise ValueError("状態の対象項目が見つかりません")
+        for board in self.artboards:
+            if board.state_id is not None and board.state_id not in state_ids:
+                raise ValueError("アートボードの状態が見つかりません")
+            for item in board.components:
+                if item.field_id is not None and item.field_id not in field_ids:
+                    raise ValueError("ワイヤーフレームの画面項目が見つかりません")
+                if item.event_id is not None and item.event_id not in event_ids:
+                    raise ValueError("ワイヤーフレームのイベントが見つかりません")
+        return self
 
 
 SpecificationContent = Annotated[
-    ApiSpecification | ScreenSpecification, Field(discriminator="type")
+    ApiSpecification | ScreenSpecification | DatabaseSpecification,
+    Field(discriminator="type"),
 ]
 SpecificationStatus = Literal["draft", "in_review", "changes_requested", "approved"]
 SpecificationTarget = Literal[
@@ -87,22 +209,9 @@ class SpecificationCreate(BaseModel):
     @model_validator(mode="after")
     def unique_item_ids(self):
         """同じ指摘先UUIDを複数の行に割り当てない。"""
-        ids = [
-            item.id
-            for value in self.content.__dict__.values()
-            if isinstance(value, list)
-            for item in value
-        ]
-        if len(ids) != len(set(ids)):
-            raise ValueError("項目IDが重複しています")
-        if (
-            len(
-                json.dumps(
-                    self.content.model_dump(mode="json"), ensure_ascii=False
-                ).encode("utf-8")
-            )
-            > 500_000
-        ):
+        content = self.content.model_dump(mode="json")
+        ensure_unique_design_ids(content)
+        if json_size(content) > 500_000:
             raise ValueError("設計書の本文は500KB以内にしてください")
         return self
 
@@ -119,11 +228,12 @@ class SpecificationRead(SpecificationCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
     project_id: int
-    kind: Literal["api", "screen"]
+    kind: ArtifactKind
     status: SpecificationStatus
     version: int
     created_by: int
     updated_by: int
+    assignee_id: int | None = None
     updated_at: datetime
 
 
@@ -132,7 +242,7 @@ class SpecificationListItem(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
     id: int
-    kind: Literal["api", "screen"]
+    kind: ArtifactKind
     title: str
     summary: str
     status: SpecificationStatus
@@ -156,6 +266,15 @@ class SpecificationCommentCreate(CommentImageCreateFields):
     specification_version: int = Field(ge=1)
     field_path: str = Field(min_length=1, max_length=300)
     body: str = Field(min_length=1, max_length=5000)
+    quote: str | None = Field(default=None, min_length=1, max_length=800)
+    quote_start: int | None = Field(default=None, ge=0, le=100000)
+
+    @model_validator(mode="after")
+    def validate_quote(self):
+        """引用とUnicode code pointで数えた開始位置を同時に指定する。"""
+        if (self.quote is None) != (self.quote_start is None):
+            raise ValueError("選択範囲の引用と開始位置を両方指定してください")
+        return self
 
 
 class SpecificationCommentUpdate(BaseModel):
@@ -171,6 +290,7 @@ class SpecificationCommentRead(CommentImageReadFields):
     author_avatar_url: str | None = None
     field_path: str
     field_snapshot: str
+    quote_start: int | None = None
     specification_version: int
     body: str
     is_resolved: bool

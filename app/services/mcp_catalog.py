@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 
+from app.schemas import mcp_design as ds
 from app.schemas import mcp_tools as s
 
 
@@ -148,5 +149,90 @@ TOOLS = {
         ("task:read", "task:update"),
         "利用者が確認したプレビューのキーと確認ハッシュで15分以内に原子的に適用。版が変われば再計画。",
         True,
+    ),
+}
+
+# 初回審査で固定したカタログは維持し、ローカル開発向けに明示的に追加する。
+DESIGN_TOOLS = {
+    "list_design_artifacts": McpTool(
+        ds.DesignListInput,
+        ("document:read",),
+        "画面・API・DBの設計を検索・ページ取得。本文は含まない。",
+    ),
+    "get_design_artifact": McpTool(
+        ds.DesignArtifactInput,
+        ("document:read",),
+        "設計IDと版を指定。既定は概要。構造・原本・OpenAPI・DDLはsectionで指定する。",
+    ),
+    "create_design_artifact": McpTool(
+        ds.DesignArtifactCreate,
+        ("document:create",),
+        "画面・API・DB設計の下書きを作る。",
+        True,
+    ),
+    "update_design_artifact": McpTool(
+        ds.DesignArtifactUpdate,
+        ("document:update",),
+        "版付きで設計内容を下書きに保存する。",
+        True,
+    ),
+    "list_design_collections": McpTool(
+        s.ToolInput,
+        ("document:read",),
+        "機能グループ・API仕様セット・DBモデルを一覧取得する。",
+    ),
+    "get_design_diagram": McpTool(
+        ds.DesignDiagramInput,
+        ("document:read",),
+        "案件の図上の配置と遷移・関連をページ取得する。",
+    ),
+    "get_design_items": McpTool(
+        ds.DesignItemsInput,
+        ("document:read",),
+        "項目・遷移・処理・レイヤー・カラムなどを構成と版で絞ってページ取得する。HTML原本はget_design_artifactのmockupsを明示する。",
+    ),
+    "patch_design_artifacts": McpTool(
+        ds.DesignArtifactPatchBatch,
+        ("document:update",),
+        "利用者が確認した変更を指定の版と項目UUIDで一括保存する。いずれかに競合や不正な参照があれば全件を取り消す。",
+        True,
+    ),
+    "get_design_collection": McpTool(
+        ds.DesignCollectionInput,
+        ("document:read",),
+        "指定したグループ・API仕様セット・DBモデルの設定と版を取得する。",
+    ),
+    "create_design_collection": McpTool(
+        ds.DesignCollectionCreate,
+        ("document:create",),
+        "利用者が確認したグループ・仕様セット・DBモデルの初版を保存する。新規は版0を指定する。",
+        True,
+    ),
+    "update_design_collection": McpTool(
+        ds.DesignCollectionUpdate,
+        ("document:update",),
+        "利用者が確認したグループ・仕様セット・DBモデルの設定を版付きで更新する。",
+        True,
+    ),
+    "get_design_links": McpTool(
+        ds.DesignLinksInput,
+        ("document:read",),
+        "設計から閲覧権限がある要件・タスク・テスト・関連設計をページ取得する。",
+    ),
+    "get_design_impact": McpTool(
+        ds.DesignImpactInput,
+        ("document:read",),
+        "元の版と現在の版を比較し、権限のある影響先と確認状況をページ取得する。",
+    ),
+    "save_design_impact_decision": McpTool(
+        ds.DesignImpactWrite,
+        ("document:update",),
+        "利用者が確認した判断を元の版と候補キーで記録する。関連する設計本文は変更しない。",
+        True,
+    ),
+    "list_design_review_requests": McpTool(
+        ds.DesignReviewListInput,
+        ("document:read",),
+        "本人が送信または受信したレビュー・承認依頼と対象の固定版を取得する。",
     ),
 }

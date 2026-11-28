@@ -24,6 +24,9 @@ def body_storage(monkeypatch):
     storage = StorageService(MemoryS3Client())
     monkeypatch.setattr(body_images, "service", BodyImageService(storage))
     monkeypatch.setattr("app.services.storage.StorageService", lambda: storage)
+    monkeypatch.setattr(
+        "app.services.body_image.BodyImageService", lambda: BodyImageService(storage)
+    )
     monkeypatch.setattr(settings, "file_upload_mode", "server")
     stream = BytesIO()
     Image.new("RGB", (12, 8), "blue").save(stream, format="PNG")
@@ -133,3 +136,109 @@ def test_shared_image_requires_the_published_node_and_current_grant(
     assert response.status_code == 200, response.text
     authorize_as(client, ctx["guests"][0][0])
     assert client.get(f"{path}/{image_id}").status_code == 404
+
+
+def test_mockup_upload_uses_private_storage_and_keeps_fixed_image(
+    client, db, access_fixture, body_storage, create_test_project, assign_project_role
+):
+    """同じ案件の画像だけを埋め込み、固定後のHTML変更から画像を保つ。"""
+    ctx = access_fixture
+    project = ctx["project"]
+    root = f"/projects/{project.id}"
+    upload = client.post(
+        f"{root}/body-images/specification/upload",
+        files={"file": ("layout.png", body_storage, "image/png")},
+    )
+    assert upload.status_code == 201, upload.text
+    image_id = upload.json()["id"]
+    reference_upload = client.post(
+        f"{root}/body-images/specification/upload",
+        files={"file": ("reference.png", body_storage, "image/png")},
+    )
+    assert reference_upload.status_code == 201, reference_upload.text
+    representative = {"kind": "image", "target_id": reference_upload.json()["id"]}
+    markup = f'<img src="/api/body-images/{image_id}" alt="モックの画像">'
+    mockup = {"id": str(uuid4()), "name": "受付", "html": markup}
+    preview_path = f"{root}/design-workspace/mockup-preview"
+    preview = client.post(preview_path, json=mockup)
+    assert preview.status_code == 200, preview.text
+    assert "data:image/png;base64," in preview.json()["document"]
+    assert image_id not in preview.json()["document"]
+    assert (
+        client.post(preview_path, json={**mockup, "html": markup * 9}).status_code
+        == 400
+    )
+
+    other = create_test_project()
+    assign_project_role(user=ctx["user"], project=other, role_key="project_admin")
+    preview = client.post(
+        f"/projects/{other.id}/design-workspace/mockup-preview", json=mockup
+    )
+    assert preview.status_code == 200, preview.text
+    assert "data:image/png;" not in preview.json()["document"]
+    assert image_id not in preview.json()["document"]
+    body = {"title": "受付画面", "content": {"type": "screen", "mockups": [mockup]}}
+    assert (
+        client.post(f"/projects/{other.id}/specifications", json=body).status_code
+        == 400
+    )
+    assert (
+        client.post(
+            f"/projects/{other.id}/specifications",
+            json={
+                **body,
+                "content": {"type": "screen", "representative_preview": representative},
+            },
+        ).status_code
+        == 400
+    )
+    path = f"{root}/specifications/{ctx['spec'].id}"
+    editor = client.get(path).json()
+    original = {
+        **{key: editor[key] for key in ("title", "summary", "content", "version")},
+        "content": {
+            **editor["content"],
+            "mockups": [mockup],
+            "representative_preview": representative,
+        },
+    }
+    saved = client.patch(path, json=original)
+    assert saved.status_code == 200, saved.text
+    db.refresh(ctx["spec"])
+    assert (
+        client.delete(f"{root}/body-images/specification/{image_id}").status_code == 404
+    )
+    publication, _ = create(client, ctx)
+    ctx["publication"] = publication
+    publish(client, ctx)
+    changed = client.patch(
+        path,
+        json={
+            **original,
+            "version": saved.json()["version"],
+            "content": {
+                **original["content"],
+                "mockups": [],
+                "representative_preview": None,
+            },
+        },
+    )
+    assert changed.status_code == 200, changed.text
+
+    authorize_as(client, ctx["guests"][0][0])
+    fixed = client.get(shared_path(ctx, "/nodes")).json()
+    node = next(node for node in fixed["items"] if node["node_kind"] == "specification")
+    resource = shared_path(ctx, f"/nodes/{node['id']}/mockups/{mockup['id']}/preview")
+    preview = client.get(resource, params={"revision": fixed["authorization_revision"]})
+    assert preview.status_code == 200, preview.text
+    assert "data:image/png;base64," in preview.json()["document"]
+    assert image_id not in preview.json()["document"]
+    image = client.get(shared_path(ctx, f"/nodes/{node['id']}/body-images/{image_id}"))
+    assert image.status_code == 200 and image.content == body_storage
+    assert node["payload"]["content"]["representative_preview"] == representative
+    reference = client.get(
+        shared_path(
+            ctx, f"/nodes/{node['id']}/body-images/{representative['target_id']}"
+        )
+    )
+    assert reference.status_code == 200 and reference.content == body_storage

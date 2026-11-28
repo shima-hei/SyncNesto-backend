@@ -158,6 +158,7 @@ class Settings:
     demo_data_isolated: bool = get_bool_env("DEMO_DATA_ISOLATED")
     bff_shared_secret: str = os.getenv("BFF_SHARED_SECRET", "")
     mcp_enabled: bool = get_bool_env("MCP_ENABLED")
+    mcp_design_tools_enabled: bool = get_bool_env("MCP_DESIGN_TOOLS_ENABLED")
     mcp_development_tools_enabled: bool = get_bool_env("MCP_DEVELOPMENT_TOOLS_ENABLED")
     mcp_plugin_extended_tools_enabled: bool = get_bool_env(
         "MCP_PLUGIN_EXTENDED_TOOLS_ENABLED"

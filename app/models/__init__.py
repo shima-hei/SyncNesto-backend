@@ -20,6 +20,18 @@ from app.models.audit_log import AuditLog
 from app.models.comment_image import CommentImage
 from app.models.comment_mention import CommentMention
 from app.models.demo import DemoOwnedUser, DemoSession, DemoStartBudget, DemoUpload
+from app.models.design_review_request import (
+    DesignReviewRequest,
+    DesignReviewRequestTarget,
+)
+from app.models.design_workspace import (
+    DesignCollection,
+    DesignImpactDecision,
+    DesignMembership,
+    DesignPlacement,
+    ScreenListEditReceipt,
+    WireframePartRevision,
+)
 from app.models.document import (
     DocumentAttachment,
     DocumentLink,
@@ -213,6 +225,14 @@ __all__ = [
     "AuditLog",
     "Board",
     "BoardColumn",
+    "DesignCollection",
+    "DesignImpactDecision",
+    "DesignReviewRequest",
+    "DesignReviewRequestTarget",
+    "WireframePartRevision",
+    "DesignMembership",
+    "DesignPlacement",
+    "ScreenListEditReceipt",
     "Draft",
     "LoginAttempt",
     "Notification",

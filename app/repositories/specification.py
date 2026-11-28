@@ -5,6 +5,11 @@ from uuid import UUID
 from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.orm import Session, load_only
 
+from app.models.design_workspace import (
+    DesignCollection,
+    DesignMembership,
+    DesignPlacement,
+)
 from app.models.document import ProjectDocument
 from app.models.requirement import Requirement, RequirementDocument
 from app.models.specification import (
@@ -98,16 +103,137 @@ class SpecificationRepository:
         ).all()
         return rows, total
 
-    def revision(self, db: Session, row: Specification, actor_id: int):
+    def revision(
+        self,
+        db: Session,
+        row: Specification,
+        actor_id: int,
+        *,
+        reviewed: dict | None = None,
+    ):
+        """本文の版を追加し、承認ではレビュー版の参照を固定する。"""
         db.flush()
+        snapshot = SpecificationRead.model_validate(row).model_dump(mode="json")
+        if reviewed is not None:
+            for key in ("groups", "placements", "collection", "dependencies"):
+                if key in reviewed:
+                    snapshot[key] = reviewed[key]
+        elif row.status in {"in_review", "approved"}:
+            groups = db.execute(
+                select(DesignCollection.id, DesignCollection.name)
+                .join(
+                    DesignMembership,
+                    DesignCollection.id == DesignMembership.group_id,
+                )
+                .where(
+                    DesignMembership.project_id == row.project_id,
+                    DesignMembership.specification_id == row.id,
+                )
+            )
+            snapshot["groups"] = [
+                {"id": str(identifier), "name": name} for identifier, name in groups
+            ]
+            dependencies = self._dependencies(db, row)
+            placements = self._fixed_placements(
+                db, row.project_id, [row.id, *(item["id"] for item in dependencies)]
+            )
+            snapshot["placements"] = placements.get(row.id, [])
+            snapshot["dependencies"] = [
+                {**item, "placements": placements.get(item["id"], [])}
+                for item in dependencies
+            ]
+            collection_id = row.content.get("collection_id")
+            if collection_id is not None:
+                collection = db.scalar(
+                    select(DesignCollection).where(
+                        DesignCollection.project_id == row.project_id,
+                        DesignCollection.id == UUID(collection_id),
+                    )
+                )
+                if collection is not None:
+                    snapshot["collection"] = {
+                        "id": str(collection.id),
+                        "version": collection.version,
+                        "name": collection.name,
+                        "configuration": collection.configuration,
+                    }
         db.add(
             SpecificationRevision(
                 specification_id=row.id,
                 number=row.version,
-                snapshot=SpecificationRead.model_validate(row).model_dump(mode="json"),
+                snapshot=snapshot,
                 created_by=actor_id,
             )
         )
+
+    def _dependencies(self, db: Session, row: Specification) -> list[dict]:
+        """本文と関連表にある設計参照の版を、同じ案件から取得する。"""
+        content = row.content
+        targets = {
+            item["target_id"]
+            for key in ("transitions", "constraints", "relationships", "mappings")
+            for item in content.get(key, [])
+            if item.get("target_id") is not None
+        }
+        targets.update(
+            step["specification_id"]
+            for flow in (
+                content.get("processing_steps", []),
+                *(event.get("steps", []) for event in content.get("actions", [])),
+            )
+            for step in flow
+            if step.get("specification_id") is not None
+        )
+        links = select(SpecificationLink.related_specification_id).where(
+            SpecificationLink.specification_id == row.id,
+            SpecificationLink.related_specification_id.is_not(None),
+        )
+        table = Specification
+        candidates = db.execute(
+            select(
+                table.id,
+                table.version,
+                table.kind,
+                table.title,
+                table.content["route"].as_string().label("route"),
+                table.content["path"].as_string().label("path"),
+                table.content["physical_name"].as_string().label("physical_name"),
+            )
+            .where(
+                table.project_id == row.project_id,
+                table.deleted_at.is_(None),
+                table.id != row.id,
+                or_(table.id.in_(targets), table.id.in_(links)),
+            )
+            .order_by(table.id)
+        )
+        return [
+            {
+                "id": item.id,
+                "version": item.version,
+                "kind": item.kind,
+                "title": item.title,
+                "identifier": item.route or item.path or item.physical_name or "",
+            }
+            for item in candidates
+        ]
+
+    def _fixed_placements(
+        self, db: Session, project_id: int, ids: list[int]
+    ) -> dict[int, list[dict]]:
+        placements: dict[int, list[dict]] = {}
+        for value in db.scalars(
+            select(DesignPlacement)
+            .where(
+                DesignPlacement.project_id == project_id,
+                DesignPlacement.specification_id.in_(ids),
+            )
+            .order_by(DesignPlacement.view_key)
+        ):
+            placements.setdefault(value.specification_id, []).append(
+                dict(view=value.view_key, x=value.x, y=value.y, hidden=value.hidden)
+            )
+        return placements
 
     def revisions(self, db: Session, specification_id: int):
         return db.scalars(

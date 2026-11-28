@@ -24,9 +24,10 @@ class Specification(Base):
     """項目のUUIDを維持する構造化した設計書。"""
 
     __tablename__ = "specifications"
-    __table_args__ = {
-        "comment": db_comment("設計書", "Projectで共有するAPI・画面の仕様")
-    }
+    __table_args__ = (
+        UniqueConstraint("project_id", "id", name="uq_specifications_project_id_id"),
+        {"comment": db_comment("設計書", "Projectで共有するAPI・画面の仕様")},
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
     kind: Mapped[str] = mapped_column(String(20))
@@ -37,6 +38,9 @@ class Specification(Base):
     version: Mapped[int] = mapped_column(default=1)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     updated_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    assignee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", name="fk_specifications_assignee"), index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -84,6 +88,7 @@ class SpecificationComment(Base):
     field_path: Mapped[str] = mapped_column(String(300))
     field_snapshot: Mapped[str] = mapped_column(Text)
     field_digest: Mapped[str] = mapped_column(String(64))
+    quote_start: Mapped[int | None]
     specification_version: Mapped[int]
     body: Mapped[str] = mapped_column(Text)
     is_resolved: Mapped[bool] = mapped_column(default=False)

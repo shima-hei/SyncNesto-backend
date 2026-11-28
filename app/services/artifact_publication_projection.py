@@ -17,6 +17,7 @@ from app.schemas.artifact_publication import (
     PublicFile,
     PublicTestDesignGraph,
 )
+from app.schemas.design_content import DatabaseSpecification
 from app.schemas.specification import ApiSpecification, ScreenSpecification
 from app.services.artifact_release_snapshot import (
     MAX_SNAPSHOT_BYTES,
@@ -222,6 +223,16 @@ def build_projection(
         raise invalid_projection()
     version = release.projection_version.replace("internal-", "public-", 1)
     nodes, consumed, id_map = [], set(), {}
+    design_nodes: dict[int, dict] = {}
+    selected_designs = {
+        node.source_id for node in source_nodes if node.node_kind == "specification"
+    }
+    approved_versions = {
+        node.source_id: node.source_version
+        for node in source_nodes
+        if node.node_kind == "specification"
+        and node.payload.get("status") == "approved"
+    }
     for row in source_nodes:
         if row.id in consumed:
             continue
@@ -236,15 +247,22 @@ def build_projection(
         fields = PAYLOAD_FIELDS.get(row.node_kind)
         if row.node_kind == "requirement_document" and version == "public-preview-v2":
             fields = (*PAYLOAD_FIELDS["requirement_document"], *OBJECTIVE_FIELDS)
-        if fields is None or set(row.payload) != set(fields):
+        interior = (
+            set(row.payload) & {"design_dependencies", "design_placement"}
+            if row.node_kind == "specification"
+            else set()
+        )
+        if fields is None or set(row.payload) != (set(fields) | interior):
             raise invalid_projection()
         payload = {k: copy.deepcopy(row.payload[k]) for k in fields}
         if row.node_kind == "specification":
             content = payload["content"]
             try:
-                schema = {"api": ApiSpecification, "screen": ScreenSpecification}[
-                    payload["kind"]
-                ]
+                schema = {
+                    "api": ApiSpecification,
+                    "screen": ScreenSpecification,
+                    "database": DatabaseSpecification,
+                }[payload["kind"]]
                 schema.model_validate(content)
                 # 既存型のdefault_factoryで新しい参照UUIDを発生させない。
                 for key in (
@@ -259,22 +277,79 @@ def build_projection(
                         raise invalid_projection()
             except (KeyError, TypeError, ValidationError):
                 raise invalid_projection() from None
+            # 公開対象に含まれない設計IDを接続や処理ステップから取り除く。
+            visible_designs = selected_designs
+            if "design_dependencies" in interior:
+                try:
+                    visible_designs = {
+                        dependency["id"]
+                        for dependency in row.payload["design_dependencies"]
+                        if approved_versions.get(dependency["id"])
+                        == dependency["version"]
+                    }
+                except (KeyError, TypeError):
+                    raise invalid_projection() from None
+                if row.source_id in approved_versions:
+                    visible_designs.add(row.source_id)
+            if placement := row.payload.get("design_placement"):
+                if not (
+                    isinstance(placement, dict)
+                    and isinstance(placement.get("hidden"), bool)
+                    and all(
+                        type(placement.get(axis)) is int
+                        and 0 <= placement[axis] <= 100000
+                        for axis in ("x", "y")
+                    )
+                ):
+                    raise invalid_projection()
+                payload["diagram_position"] = {
+                    key: placement[key] for key in ("x", "y", "hidden")
+                }
+            content.pop("collection_id", None)
+            content.pop("mappings", None)
+            for board in content.get("artboards", []):
+                for layer in board.get("components", []):
+                    layer.pop("part_pin", None)
+            if "transitions" in content:
+                content["transitions"] = [
+                    item
+                    for item in content["transitions"]
+                    if item["target_id"] in visible_designs
+                ]
+            for key in ("constraints", "relationships"):
+                if key in content:
+                    content[key] = [
+                        item
+                        for item in content[key]
+                        if item.get("target_id") is None
+                        or item["target_id"] in visible_designs
+                    ]
+            for steps in (
+                content.get("processing_steps", []),
+                *(event.get("steps", []) for event in content.get("actions", [])),
+            ):
+                for step in steps:
+                    if step.get("specification_id") not in visible_designs:
+                        step.pop("specification_id", None)
         node_id = str(uuid5(identity, str(row.id)))
         id_map[node_id] = str(row.id)
-        nodes.append(
-            dict(
-                id=node_id,
-                parent_id=str(uuid5(identity, str(row.parent_id)))
-                if row.parent_id
-                else None,
-                position=row.position,
-                node_kind=row.node_kind,
-                source_version=row.source_version,
-                payload=payload,
-            )
+        node = dict(
+            id=node_id,
+            parent_id=str(uuid5(identity, str(row.parent_id)))
+            if row.parent_id
+            else None,
+            position=row.position,
+            node_kind=row.node_kind,
+            source_version=row.source_version,
+            payload=payload,
         )
+        nodes.append(node)
+        if row.node_kind == "specification" and payload["status"] == "approved":
+            design_nodes[row.source_id] = node
     for ordinal, node in enumerate(nodes):
         node["ordinal"] = ordinal
+    _add_design_diagram_links(design_nodes)
+    for node in nodes:
         node["content_digest"] = digest(node)
     ids = {n["id"] for n in nodes}
     if any(n["parent_id"] and n["parent_id"] not in ids for n in nodes):
@@ -337,3 +412,43 @@ def build_projection(
         size,
         version,
     )
+
+
+def _add_design_diagram_links(nodes: dict[int, dict]) -> None:
+    """同じ公開版に含まれる承認済み同種ノードへの接続のみを投影する。"""
+    for node in nodes.values():
+        payload = node["payload"]
+        kind, content = payload["kind"], payload["content"]
+        if kind == "screen":
+            groups = (("transition", content.get("transitions", [])),)
+        elif kind == "database":
+            groups = (
+                (
+                    "foreign_key",
+                    [
+                        constraint
+                        for constraint in content.get("constraints", [])
+                        if constraint.get("kind") == "foreign_key"
+                    ],
+                ),
+                ("logical", content.get("relationships", [])),
+            )
+        else:
+            continue
+        links = []
+        for relation, entries in groups:
+            for item in entries:
+                target = nodes.get(item.get("target_id"))
+                if target is None or target["payload"]["kind"] != kind:
+                    continue
+                links.append(
+                    dict(
+                        target_ordinal=target["ordinal"],
+                        kind=relation,
+                        name=item.get("name", ""),
+                        detail=item.get("condition", "")
+                        if relation == "transition"
+                        else (item.get("cardinality") or ""),
+                    )
+                )
+        payload["diagram_links"] = links

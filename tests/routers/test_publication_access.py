@@ -211,6 +211,49 @@ def test_only_designated_recipient_and_uniform_notfound(client, access_fixture):
     assert unknown.status_code == actual.status_code and unknown.json() == actual.json()
 
 
+def test_shared_mockup_preview_uses_fixed_html_and_current_grant(
+    client, db, access_fixture
+):
+    ctx = access_fixture
+    mockup_id = str(uuid4())
+    ctx["spec"].content = {
+        **ctx["spec"].content,
+        "mockups": [
+            {
+                "id": mockup_id,
+                "name": "受付",
+                "html": "<h1>固定した受付</h1><script>example()</script>",
+            }
+        ],
+    }
+    ctx["spec"].version += 1
+    db.commit()
+    ctx["publication"], _ = create(client, ctx)
+    publish(client, ctx)
+    ctx["spec"].content = {
+        **ctx["spec"].content,
+        "mockups": [{"id": mockup_id, "name": "受付", "html": "<h1>編集中</h1>"}],
+    }
+    ctx["spec"].version += 1
+    db.commit()
+
+    authorize_as(client, ctx["guests"][0][0])
+    page = client.get(shared_path(ctx, "/nodes")).json()
+    node = next(node for node in page["items"] if node["node_kind"] == "specification")
+    url = shared_path(ctx, f"/nodes/{node['id']}/mockups/{mockup_id}/preview")
+    revision = page["authorization_revision"]
+    response = client.get(url, params={"revision": revision})
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "private, no-store"
+    document = response.json()["document"]
+    assert "<h1>固定した受付</h1>" in document
+    assert "<script" not in document
+    assert "編集中" not in document
+    assert client.get(url, params={"revision": "0" * 64}).status_code == 409
+    authorize_as(client, ctx["guests"][1][0])
+    assert client.get(url, params={"revision": revision}).status_code == 404
+
+
 def test_revoke_one_preserves_other_and_no_history_revival(client, db, access_fixture):
     """片方の失効は他本人に影響せず、元の許可を復活できない。"""
     ctx = access_fixture

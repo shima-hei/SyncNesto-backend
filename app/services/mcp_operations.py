@@ -10,6 +10,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
 from app.core import error_messages as messages
+from app.core.config import settings
 from app.core.exceptions import (
     BadRequestError,
     ConflictError,
@@ -17,6 +18,7 @@ from app.core.exceptions import (
     NotFoundError,
     VersionConflictError,
 )
+from app.core.mcp import CLIENT_ID
 from app.core.schema_cache import model_json_schema
 from app.db.read_cache import read_cache
 from app.models.mcp import McpConnection
@@ -33,7 +35,8 @@ from app.schemas.test_collaboration import TestDesignCommentCreate
 from app.schemas.test_design import TestDesignUpdate
 from app.services.audit_log import AuditLogService
 from app.services.mcp_auth import McpAuthService
-from app.services.mcp_catalog import TOOLS, McpTool
+from app.services.mcp_catalog import DESIGN_TOOLS, TOOLS, McpTool
+from app.services.mcp_design import read_design, write_design
 from app.services.mcp_development_catalog import DEVELOPMENT_TOOLS, development_tools
 from app.services.requirement_document import RequirementDocumentService
 from app.services.requirement_item import RequirementService
@@ -113,6 +116,16 @@ class McpOperationsService:
             )
         )
 
+    @staticmethod
+    def tools(connection: McpConnection) -> dict[str, McpTool]:
+        """公開クライアントの既存契約を保ってローカルの設計操作を有効化する。"""
+        design = (
+            DESIGN_TOOLS
+            if connection.client_id == CLIENT_ID and settings.mcp_design_tools_enabled
+            else {}
+        )
+        return {**TOOLS, **development_tools(connection), **design}
+
     def catalog(self, db: Session, connection: McpConnection, user: User) -> list[dict]:
         """一覧の読み取り内だけ権限を再利用し、次の要求では再取得する。"""
         with read_cache(db):
@@ -152,7 +165,7 @@ class McpOperationsService:
                     "openWorldHint": False,
                 },
             }
-            for name, tool in {**TOOLS, **development_tools(connection)}.items()
+            for name, tool in self.tools(connection).items()
             if can_show(tool.permissions)
         ]
 
@@ -164,7 +177,7 @@ class McpOperationsService:
         operation: s.McpOperation,
     ) -> dict:
         """認可後にロックし、業務変更・監査・receiptを同時に確定する。"""
-        tool = {**TOOLS, **development_tools(connection)}.get(operation.tool)
+        tool = self.tools(connection).get(operation.tool)
         if tool is None:
             raise NotFoundError()
         if not tool.write:
@@ -207,6 +220,8 @@ class McpOperationsService:
         ):
             raise ForbiddenError()
         if not tool.write:
+            if operation.tool in DESIGN_TOOLS:
+                return read_design(db, user, operation.tool, data)
             if operation.tool in DEVELOPMENT_TOOLS:
                 from app.services.mcp_development import McpDevelopmentService
 
@@ -460,6 +475,8 @@ class McpOperationsService:
     ) -> dict:
         """操作ごとの業務検証は既存Serviceに委譲する。"""
         project_id, actor_id = data.project_id, user.id
+        if name in DESIGN_TOOLS:
+            return write_design(db, user, name, data)
         if name in DEVELOPMENT_TOOLS:
             from app.services.mcp_development import McpDevelopmentService
 

@@ -1,6 +1,6 @@
 """設計書のProject認可、版、レビューと関連付け。"""
 
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import require_project_permission
 from app.db.session import get_db
 from app.models.user import User
+from app.schemas.design_content import ArtifactKind
 from app.schemas.specification import (
     SpecificationCommentCreate,
     SpecificationCommentRead,
@@ -42,7 +43,7 @@ def list_specifications(
     project_id: int,
     db: Db,
     user: Reader,
-    kind: Literal["api", "screen"] | None = None,
+    kind: ArtifactKind | None = None,
     q: str = Query(default="", max_length=200),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),

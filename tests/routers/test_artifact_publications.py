@@ -61,6 +61,89 @@ def create(client, ctx, release=None):
     return response.json(), data
 
 
+def test_approved_design_history_publishes_only_matching_dependency_versions(
+    client, context
+):
+    project = f"/projects/{context['project'].id}"
+    specs = project + "/specifications"
+
+    def create_screen(name, transitions=None):
+        response = client.post(
+            specs,
+            json={
+                "title": name,
+                "summary": "公開時に固定する",
+                "content": {
+                    "type": "screen",
+                    "route": "/fixed",
+                    "transitions": transitions or [],
+                },
+            },
+        )
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    def approve(row):
+        response = client.patch(
+            f"{specs}/{row['id']}/status",
+            json={"version": row["version"], "status": "approved"},
+        )
+        assert response.status_code == 200, response.text
+        return {
+            "kind": "specification",
+            "id": row["id"],
+            "version": response.json()["version"],
+        }
+
+    def edit(row, frozen, title):
+        response = client.patch(
+            f"{specs}/{row['id']}",
+            json={
+                "version": frozen["version"],
+                "title": title,
+                "summary": row["summary"],
+                "content": row["content"],
+            },
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    target = create_screen("接続先の承認初版")
+    position = f"{project}/design-workspace/placements"
+    previous = {"specification_id": target["id"], "x": 360, "y": 120}
+    assert client.put(position, json={"placements": [previous]}).status_code == 200
+    target_ref = approve(target)
+    start = create_screen(
+        "起点の承認初版", [{"target_id": target["id"], "name": "次へ"}]
+    )
+    source_ref = approve(start)
+    edit(start, source_ref, "共有前の現行下書き")
+    assert (
+        client.put(
+            position, json={"placements": [{**previous, "x": 640, "version": 1}]}
+        ).status_code
+        == 200
+    )
+    newer = approve(edit(target, target_ref, "接続先の新版"))
+
+    for selected, connects in [(target_ref, True), (newer, False)]:
+        release, _ = save(
+            client, context, {"source": source_ref, "included_sources": [selected]}
+        )
+        publication, _ = create(client, context, release)
+        first, second = nodes(
+            client, publication_base(context), publication["content"]["id"]
+        )
+        assert first["payload"]["title"] == "起点の承認初版"
+        assert first["source_version"] == source_ref["version"]
+        assert bool(first["payload"]["diagram_links"]) is connects
+        assert bool(first["payload"]["content"]["transitions"]) is connects
+        assert "design_dependencies" not in first["payload"]
+        assert second["payload"]["diagram_position"]["x"] == (360 if connects else 640)
+    stale = {"source": {**source_ref, "version": 1}}
+    assert client.post(context["base"] + "/preview", json=stale).status_code == 409
+
+
 def nodes(client, base, identity, size=1):
     """全ページを取得し、ordinalと個別hashを検証する。"""
     result, cursor = [], None

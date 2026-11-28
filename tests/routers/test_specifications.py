@@ -49,9 +49,7 @@ def test_review_fix_reopen_and_history(client, context):
         },
     )
     assert comment.status_code == 201, comment.text
-    blocked = client.patch(
-        url + "/status", json={"version": 1, "status": "approved"}
-    )
+    blocked = client.patch(url + "/status", json={"version": 1, "status": "approved"})
     assert blocked.status_code == 409
     assert blocked.json()["code"] == "SPECIFICATION_UNRESOLVED_COMMENTS"
     data = update_data(row)
@@ -78,6 +76,123 @@ def test_review_fix_reopen_and_history(client, context):
         client.get(url + "/revisions/1").json()["snapshot"]["content"]["path"]
         == "/login"
     )
+
+
+def test_representative_preview_stays_in_approved_history_when_legacy_client_removes_it(
+    client, context
+):
+    _, _, base = context
+    row = create(client, base, "screen")
+    url = f"{base}/{row['id']}"
+    board = str(uuid4())
+    row["content"].update(
+        {
+            "artboards": [{"id": board, "name": "受付"}],
+            "representative_preview": {"kind": "wireframe", "target_id": board},
+        }
+    )
+    saved = client.patch(url, json=update_data(row))
+    assert saved.status_code == 200, saved.text
+    approved = client.patch(url + "/status", json={"version": 2, "status": "approved"})
+    assert approved.status_code == 200, approved.text
+    edit = update_data(approved.json())
+    edit["content"].pop("representative_preview")
+    edit["content"]["artboards"] = []
+    removed = client.patch(url, json=edit)
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["content"]["representative_preview"] is None
+    assert client.get(url + "/revisions/3").json()["snapshot"]["content"][
+        "representative_preview"
+    ] == {"kind": "wireframe", "target_id": board}
+    edit = update_data(removed.json())
+    edit["content"]["representative_preview"] = {"kind": "html", "target_id": board}
+    assert client.patch(url, json=edit).status_code == 422
+    edit["content"]["representative_preview"] = {"kind": "image", "target_id": board}
+    assert client.patch(url, json=edit).status_code == 400
+
+
+def test_mockup_review_keeps_the_selected_unicode_range_and_source_version(
+    client, context
+):
+    """本文だけの既存指摘を維持し、HTML・CSSの範囲は元版と照合する。"""
+    _, _, base = context
+    screen = create(client, base, "screen")
+    url = f"{base}/{screen['id']}"
+    identifier = str(uuid4())
+    html = "<h1>🧪受付</h1>\n<p>選択した説明</p>"
+    field_path = f"content/mockups/{identifier}/html"
+    body = update_data(screen)
+    body["content"]["mockups"] = [{"id": identifier, "html": html}]
+    first = client.patch(url, json=body).json()
+    quote = "選択した説明"
+    start = html.index(quote)
+    request = {
+        "specification_version": first["version"],
+        "field_path": field_path,
+        "body": "説明を見直してください",
+        "quote": quote,
+        "quote_start": start,
+    }
+    response = client.post(
+        url + "/comments", json={**request, "quote_start": start + 1}
+    )
+    assert response.status_code == 400, response.text
+    assert (
+        client.post(
+            url + "/comments", json={**request, "quote_start": None}
+        ).status_code
+        == 422
+    )
+    response = client.post(url + "/comments", json=request)
+    assert response.status_code == 201, response.text
+    before = response.json()
+    assert before["field_snapshot"] == quote
+    assert before["quote_start"] == start
+
+    body = update_data(first)
+    body["content"]["mockups"][0]["html"] = "<h1>差し替えた受付</h1>"
+    assert client.patch(url, json=body).status_code == 200
+    comment = client.get(url + "/comments").json()[0]
+    assert comment["anchor_changed"] is True
+    assert (comment["field_snapshot"], comment["quote_start"]) == (quote, start)
+    version = comment["specification_version"]
+    past = client.get(f"{url}/revisions/{version}").json()["snapshot"]
+    assert past["content"]["mockups"][0]["html"][start : start + len(quote)] == quote
+
+
+def test_wireframe_review_preserves_board_and_area_in_original_version(client, context):
+    _, _, base = context
+    screen = create(client, base, "screen")
+    url = f"{base}/{screen['id']}"
+    board_id = str(uuid4())
+    data = update_data(screen)
+    data["content"]["artboards"] = [
+        {"id": board_id, "name": "入力確認", "width": 480, "height": 300}
+    ]
+    saved = client.patch(url, json=data).json()
+    request = {
+        "specification_version": saved["version"],
+        "field_path": f"content/artboards/{board_id}/area/40/24/140/64",
+        "body": "入力欄を確認してください",
+    }
+    out_of_bounds = f"content/artboards/{board_id}/area/370/24/140/64"
+    assert (
+        client.post(
+            url + "/comments", json={**request, "field_path": out_of_bounds}
+        ).status_code
+        == 400
+    )
+    added = client.post(url + "/comments", json=request)
+    assert added.status_code == 201, added.text
+    assert added.json()["field_snapshot"] == "入力確認（X 40・Y 24、140 × 64）"
+    change = update_data(saved)
+    change["content"]["artboards"] = []
+    assert client.patch(url, json=change).status_code == 200
+    comment = client.get(url + "/comments").json()[0]
+    assert comment["anchor_changed"] is True
+    assert comment["field_path"] == request["field_path"]
+    history = client.get(f"{url}/revisions/{comment['specification_version']}")
+    assert history.json()["snapshot"]["content"]["artboards"][0]["id"] == board_id
 
 
 def test_uuid_anchor_survives_reordering_and_flags_removal(client, context):

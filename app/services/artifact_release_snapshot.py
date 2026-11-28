@@ -26,7 +26,7 @@ from app.models.requirement import (
     RequirementDocument,
     RequirementSection,
 )
-from app.models.specification import Specification
+from app.models.specification import Specification, SpecificationRevision
 from app.schemas.artifact_release import ArtifactPreview, ArtifactPreviewRequest
 from app.services.artifact_test_design import graph_nodes
 from app.services.test_design import TestDesignService
@@ -131,25 +131,8 @@ class ArtifactSnapshotBuilder:
                 for node in nodes:
                     self._append_node(snapshot, node)
             elif ref.kind == "specification":
-                row = db.scalar(
-                    select(Specification).where(
-                        Specification.id == ref.id,
-                        Specification.project_id == project_id,
-                        Specification.deleted_at.is_(None),
-                    )
-                )
-                self._version(row, ref.version)
-                assert row is not None
-                self._append(
-                    snapshot,
-                    "specification",
-                    row,
-                    None,
-                    index,
-                    {
-                        k: copy.deepcopy(getattr(row, k))
-                        for k in ("title", "kind", "summary", "content", "status")
-                    },
+                self._specification(
+                    db, project_id, snapshot, ref.id, ref.version, index
                 )
             elif ref.kind == "requirement_document":
                 document = self._document(db, project_id, ref.id)
@@ -231,6 +214,47 @@ class ArtifactSnapshotBuilder:
             raise NotFoundError()
         if row.version != expected:
             raise VersionConflictError({"version": row.version})
+
+    @staticmethod
+    def _specification(db, project_id, snapshot, identifier, version, position):
+        row = db.scalar(
+            select(Specification).where(
+                Specification.id == identifier,
+                Specification.project_id == project_id,
+                Specification.deleted_at.is_(None),
+            )
+        )
+        if row is None:
+            raise NotFoundError()
+        fields = ("title", "kind", "summary", "content", "status")
+        revision = SpecificationRevision
+        frozen = None
+        if row.version != version or row.status == "approved":
+            frozen = db.scalar(
+                select(revision.snapshot).where(
+                    revision.specification_id == row.id,
+                    revision.number == version,
+                    revision.snapshot["status"].as_string() == "approved",
+                )
+            )
+        if frozen is None:
+            ArtifactSnapshotBuilder._version(row, version)
+            payload = {key: copy.deepcopy(getattr(row, key)) for key in fields}
+        else:
+            payload = {key: copy.deepcopy(frozen[key]) for key in fields}
+            if "dependencies" in frozen:
+                payload["design_dependencies"] = [
+                    {"id": dependency["id"], "version": dependency["version"]}
+                    for dependency in frozen["dependencies"]
+                ]
+            if "placements" in frozen:
+                payload["design_placement"] = next(
+                    (item for item in frozen["placements"] if item["view"] == "all"),
+                    None,
+                )
+        ArtifactSnapshotBuilder._append(
+            snapshot, "specification", row, None, position, payload, version=version
+        )
 
     @staticmethod
     def _document(db: Session, project_id: int, document_id: int):
@@ -337,7 +361,7 @@ class ArtifactSnapshotBuilder:
             )
 
     @staticmethod
-    def _append(snapshot, kind, row, parent, position, payload) -> str:
+    def _append(snapshot, kind, row, parent, position, payload, *, version=None) -> str:
         """本文を切り捨てず、応答可能な大きさだけを受け入れる。"""
         key = f"{kind}:{row.id}"
         if key in snapshot.seen:
@@ -348,7 +372,9 @@ class ArtifactSnapshotBuilder:
             "position": position,
             "node_kind": kind,
             "source_id": row.id,
-            "source_version": getattr(row, "version", None),
+            "source_version": getattr(row, "version", None)
+            if version is None
+            else version,
             "payload": payload,
         }
         return ArtifactSnapshotBuilder._append_node(snapshot, node)

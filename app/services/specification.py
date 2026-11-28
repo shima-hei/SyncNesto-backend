@@ -1,6 +1,5 @@
 """設計の編集・レビュー・関連付けの業務ルール。"""
 
-import json
 from datetime import UTC, datetime
 from hashlib import sha256
 from typing import cast
@@ -25,8 +24,11 @@ from app.models.user import User
 from app.presenters.user import build_comment_author_avatar_url
 from app.repositories.specification import TARGETS, SpecificationRepository
 from app.schemas.specification import (
+    ApiSpecification,
+    ScreenSpecification,
     SpecificationCommentCreate,
     SpecificationCommentRead,
+    SpecificationContent,
     SpecificationCreate,
     SpecificationLinkCreate,
     SpecificationLinkRead,
@@ -38,9 +40,12 @@ from app.schemas.specification import (
 )
 from app.services.audit_log import AuditLogService
 from app.services.authorization import AuthorizationService
-from app.services.body_image import retain_body_images
+from app.services.body_image import MAX_MOCKUP_IMAGES, retain_body_images
 from app.services.comment_image import bind_comment_images
 from app.services.conflict import raise_if_version_conflict
+from app.services.design_mockup import mockup_image_references
+from app.services.design_paths import review_snapshot
+from app.services.design_references import check_design_references
 from app.services.storage import StorageService
 
 TARGET_PERMISSIONS = {
@@ -52,37 +57,39 @@ TARGET_PERMISSIONS = {
 }
 
 
-def field_value(row: Specification, path: str) -> str | None:
-    """項目UUIDを使ったパスを、現在の表示値へ解決する。"""
-    if path in {"title", "summary"}:
-        return getattr(row, path)
-    parts = path.split("/")
-    if parts[0] != "content":
-        return None
-    value = row.content
-    for part in parts[1:]:
-        if isinstance(value, dict) and part in value:
-            value = value[part]
-        elif isinstance(value, list):
-            value = next((item for item in value if str(item.get("id")) == part), None)
-            if value is None:
-                return None
-        else:
-            return None
-    if value is None:
-        return ""
-    if isinstance(value, (dict, list)):
-        return None
-    return (
-        value
-        if isinstance(value, str)
-        else json.dumps(value, ensure_ascii=False, sort_keys=True)
-    )
-
-
 def anchor_digest(row: Specification, path: str) -> str | None:
-    value = field_value(row, path)
+    value = review_snapshot(row, path)
     return sha256(value.encode("utf-8")).hexdigest() if value is not None else None
+
+
+def retain_specification_images(
+    db: Session,
+    project_id: int,
+    actor_id: int,
+    summary: str,
+    content: SpecificationContent,
+) -> None:
+    """設計本文とモックアップで参照する画像を同じ保存で確定する。"""
+    references = set()
+    if isinstance(content, ScreenSpecification):
+        if (
+            content.representative_preview is not None
+            and content.representative_preview.kind == "image"
+        ):
+            references.add(content.representative_preview.target_id)
+        for mockup in content.mockups:
+            images = mockup_image_references(mockup.html)
+            if len(images) > MAX_MOCKUP_IMAGES:
+                raise BadRequestError("モックアップに配置できる画像は8枚までです。")
+            references.update(images)
+    retain_body_images(
+        db,
+        project_id,
+        "specification",
+        actor_id,
+        summary,
+        additional_references=references,
+    )
 
 
 class SpecificationService:
@@ -147,7 +154,23 @@ class SpecificationService:
     def create(
         self, db: Session, project_id: int, data: SpecificationCreate, user: User
     ):
-        retain_body_images(db, project_id, "specification", user.id, data.summary)
+        row = self.stage_create(db, project_id, data, user)
+        db.commit()
+        self.audit(db, row, user.id, "created")
+        return row
+
+    def stage_create(
+        self,
+        db: Session,
+        project_id: int,
+        data: SpecificationCreate,
+        user: User,
+        *,
+        assignee_id: int | None = None,
+    ):
+        """本文と版を作り、コミットは呼び出し側に任せる。"""
+        check_design_references(db, project_id, data.content, None)
+        retain_specification_images(db, project_id, user.id, data.summary, data.content)
         row = Specification(
             project_id=project_id,
             kind=data.content.type,
@@ -156,13 +179,12 @@ class SpecificationService:
             content=data.content.model_dump(mode="json"),
             created_by=user.id,
             updated_by=user.id,
+            assignee_id=assignee_id,
             status="draft",
             version=1,
         )
         db.add(row)
         self.repository.revision(db, row, user.id)
-        db.commit()
-        self.audit(db, row, user.id, "created")
         return row
 
     def update(
@@ -175,23 +197,51 @@ class SpecificationService:
     ):
         row = self.get(db, project_id, specification_id, lock=True)
         self.check_version(row, data.version)
+        self.stage_update(db, row, data, user)
+        db.commit()
+        self.audit(db, row, user.id, "updated")
+        return row
+
+    def stage_update(
+        self, db: Session, row: Specification, data: SpecificationUpdate, user: User
+    ) -> None:
+        """版を照合済みの設計に、共通ルールで本文の変更を適用する。"""
         if row.kind != data.content.type:
             raise BadRequestError(error_messages.SPECIFICATION_KIND_IMMUTABLE)
-        retain_body_images(db, project_id, "specification", user.id, data.summary)
+        # 旧クライアントが送信を省いた追加項目を保存済み本文から補う。
+        changes = data.content.model_dump(mode="json", exclude_unset=True)
+        merged = {**row.content, **changes}
+        preview = merged.get("representative_preview")
+        if (
+            isinstance(data.content, ScreenSpecification)
+            and preview
+            and "representative_preview" not in changes
+        ):
+            source_key = {"wireframe": "artboards", "html": "mockups"}.get(
+                preview["kind"]
+            )
+            if (
+                source_key is not None
+                and source_key in changes
+                and all(
+                    item.get("id") != preview["target_id"]
+                    for item in changes[source_key]
+                )
+            ):
+                merged["representative_preview"] = None
+        content = type(data.content).model_validate(merged)
+        check_design_references(db, row.project_id, content, row.id)
+        retain_specification_images(db, row.project_id, user.id, data.summary, content)
         row.title, row.summary, row.content = (
             data.title,
             data.summary,
-            data.content.model_dump(mode="json"),
+            content.model_dump(mode="json"),
         )
-        # 承認済みの内容を変更した場合は、再確認のため下書きに戻す。
-        if row.status == "approved":
+        if row.status in {"approved", "in_review"}:
             row.status = "draft"
         row.version += 1
         row.updated_by = user.id
         self.repository.revision(db, row, user.id)
-        db.commit()
-        self.audit(db, row, user.id, "updated")
-        return row
 
     def status(
         self,
@@ -204,27 +254,58 @@ class SpecificationService:
     ):
         row = self.get(db, project_id, specification_id, lock=True)
         self.check_version(row, version)
+        self.stage_status(db, row, status, user)
+        db.commit()
+        self.audit(db, row, user.id, "status_changed")
+        return row
+
+    def stage_status(self, db: Session, row: Specification, status: str, user: User):
+        """同じルールで版を追加し、呼び出し側のトランザクション内に留める。"""
         if status in {
             "approved",
             "changes_requested",
         } and not self.authorization.has_project_permission(
-            db, user=user, project_id=project_id, permission_code="requirement:review"
+            db,
+            user=user,
+            project_id=row.project_id,
+            permission_code="requirement:review",
         ):
             raise ForbiddenError()
         if status == "approved" and self.repository.has_unresolved_comments(db, row.id):
             raise SpecificationUnresolvedCommentsError()
         if status in {"in_review", "approved"}:
-            content = row.content
+            content = SpecificationRead.model_validate(row).content
+            identifier = (
+                content.path
+                if isinstance(content, ApiSpecification)
+                else content.route
+                if isinstance(content, ScreenSpecification)
+                else content.physical_name
+            )
+            without_route = isinstance(
+                content, ScreenSpecification
+            ) and content.screen_kind in {"modal", "drawer", "layout"}
+            method_missing = (
+                isinstance(content, ApiSpecification) and content.method is None
+            )
             if (
-                not row.summary.strip()
-                or not content.get("path" if row.kind == "api" else "route", "").strip()
+                method_missing
+                or not row.summary.strip()
+                or (not identifier.strip() and not without_route)
             ):
                 raise SpecificationReviewFieldsError()
+        reviewed = (
+            self.repository.revision_number(db, row.id, row.version)
+            if row.status == "in_review" and status == "approved"
+            else None
+        )
         row.status, row.version, row.updated_by = status, row.version + 1, user.id
-        self.repository.revision(db, row, user.id)
-        db.commit()
-        self.audit(db, row, user.id, "status_changed")
-        return row
+        self.repository.revision(
+            db,
+            row,
+            user.id,
+            reviewed=reviewed.snapshot if reviewed is not None else None,
+        )
 
     def delete(
         self,
@@ -286,17 +367,39 @@ class SpecificationService:
     ):
         row = self.get(db, project_id, specification_id, lock=True)
         self.check_version(row, data.specification_version)
-        snapshot = field_value(row, data.field_path)
+        snapshot = review_snapshot(row, data.field_path)
         if snapshot is None or not data.body.strip():
             raise BadRequestError(error_messages.SPECIFICATION_COMMENT_TARGET_INVALID)
+        excerpt = (
+            snapshot.rsplit("\n", 1)[0][:800]
+            if "/area/" in data.field_path
+            and data.field_path.startswith("content/artboards/")
+            else snapshot[:800]
+        )
+        if data.quote is not None and data.quote_start is not None:
+            parts = data.field_path.split("/")
+            if (
+                row.kind != "screen"
+                or len(parts) != 4
+                or parts[:2] != ["content", "mockups"]
+                or parts[-1] not in {"html", "css"}
+                or not data.quote.strip()
+                or snapshot[data.quote_start : data.quote_start + len(data.quote)]
+                != data.quote
+            ):
+                raise BadRequestError(
+                    error_messages.SPECIFICATION_COMMENT_TARGET_INVALID
+                )
+            excerpt = data.quote
         if self.repository.comment_count(db, row.id) >= 500:
             raise BadRequestError(error_messages.SPECIFICATION_COMMENT_LIMIT)
         comment = SpecificationComment(
             specification_id=row.id,
             author_id=user.id,
             field_path=data.field_path,
-            field_snapshot=snapshot[:800],
+            field_snapshot=excerpt,
             field_digest=sha256(snapshot.encode("utf-8")).hexdigest(),
+            quote_start=data.quote_start,
             specification_version=row.version,
             body=data.body.strip(),
         )
