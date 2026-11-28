@@ -9,6 +9,18 @@ from app.schemas.design_content import ArtifactKind, json_size, validate_documen
 from app.schemas.specification import SpecificationListItem
 
 CollectionKind = Literal["group", "api_set", "db_model"]
+OpenApiComponentKind = Literal[
+    "schemas",
+    "parameters",
+    "responses",
+    "requestBodies",
+    "headers",
+    "securitySchemes",
+    "examples",
+    "callbacks",
+    "links",
+    "pathItems",
+]
 
 
 class CollectionInput(BaseModel):
@@ -37,6 +49,25 @@ class CollectionRead(CollectionInput):
 
     model_config = ConfigDict(from_attributes=True)
     id: UUID
+
+
+class OpenApiUsageItem(BaseModel):
+    """共通コンポーネントを使用中の設計の概要。"""
+
+    id: int
+    title: str
+    path: str
+    method: str | None
+    version: int
+
+
+class OpenApiUsageRead(BaseModel):
+    """使用中のAPIをセット内からページ取得する。"""
+
+    items: list[OpenApiUsageItem]
+    total: int
+    page: int
+    page_size: int
 
 
 class MembershipUpdate(BaseModel):

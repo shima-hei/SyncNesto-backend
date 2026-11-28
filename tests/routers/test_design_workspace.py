@@ -470,6 +470,17 @@ def test_openapi_import_selected_version_and_fixed_export(client, context):
     assert exported["document"] == document
 
     design = diagram(client, project, "api")["nodes"][0]
+    usage = client.get(
+        f"{base}/collections/{group['id']}/api-usage",
+        params={"category": "schemas", "name": "Equipment", "page_size": 1},
+    )
+    assert usage.status_code == 200, usage.text
+    assert usage.json()["total"] == 1 and usage.json()["items"][0]["id"] == design["id"]
+    unused = client.get(
+        f"{base}/collections/{group['id']}/api-usage",
+        params={"category": "schemas", "name": "Unused"},
+    )
+    assert unused.json()["items"] == []
     details = client.get(f"{specs}/{design['id']}").json()
     details["summary"] = "備品の検索に使う"
     edited = client.patch(f"{specs}/{design['id']}", json=update_data(details))

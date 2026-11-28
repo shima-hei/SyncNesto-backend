@@ -25,8 +25,10 @@ from app.schemas.design_workspace import (
     FormatExport,
     MembershipUpdate,
     MockupPreviewRead,
+    OpenApiComponentKind,
     OpenApiImport,
     OpenApiResult,
+    OpenApiUsageRead,
     PlacementRead,
     PlacementUpdate,
 )
@@ -45,6 +47,7 @@ from app.schemas.wireframe_part import (
     WireframePartUpdate,
 )
 from app.services.body_image import stored_mockup_preview
+from app.services.design_api_usage import usage
 from app.services.design_formats import export_ddl, export_openapi, import_specification
 from app.services.design_impact import analyze_impact, save_impact
 from app.services.design_review_request import DesignReviewService
@@ -135,6 +138,21 @@ def create_design_collection(
 ):
     """機能グループ・API仕様セット・DBモデルを作成する。"""
     return service.save_collection(db, project_id, None, data)
+
+
+@router.get("/collections/{collection_id}/api-usage", response_model=OpenApiUsageRead)
+def design_api_component_usage(
+    project_id: int,
+    collection_id: UUID,
+    db: Db,
+    user: Reader,
+    category: OpenApiComponentKind,
+    name: str = Query(min_length=1, max_length=200),
+    page: int = Query(default=1, ge=1, le=10000),
+    page_size: int = Query(default=20, ge=1, le=100),
+):
+    """共通コンポーネントを参照するAPIと版を返す。"""
+    return usage(db, project_id, collection_id, category, name, page, page_size)
 
 
 @router.patch("/collections/{collection_id}", response_model=CollectionRead)

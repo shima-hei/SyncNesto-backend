@@ -44,7 +44,7 @@ def _part_changes(db: Session, row: Specification) -> list[tuple[str, Level, str
     ]
 
 
-def _used_components(
+def used_components(
     config: dict, operation: dict, path: str
 ) -> dict[tuple[str, str], object]:
     """参照の循環を停止し、指定した操作が使うローカルの共通定義を辿る。"""
@@ -105,8 +105,8 @@ def _api_changes(db: Session, row: Specification) -> list[tuple[str, Level, str]
     if current is None or current.version == fixed["version"]:
         return []
     path = row.content.get("path", "")
-    before = _used_components(fixed["configuration"], operation, path)
-    after = _used_components(current.configuration, operation, path)
+    before = used_components(fixed["configuration"], operation, path)
+    after = used_components(current.configuration, operation, path)
     changes = []
     for category, name in sorted(before.keys() | after.keys()):
         old, new = before.get((category, name)), after.get((category, name))

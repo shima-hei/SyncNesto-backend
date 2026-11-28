@@ -85,6 +85,7 @@ Migration `e5a9c2f7b103`（親 `d4f8b1e6a902`）は4表と索引・FKを追加�
 | GET | `/review-requests/candidates` | 案件内のレビュー・設計権限を持つ依頼先 |
 | POST | `/review-requests/{request_id}/decision` | 固定版の確認・一括承認・修正依頼・取消 |
 | GET / POST / PATCH | `/collections` / `/collections/{id}` | 機能グループ・API仕様セット・DBモデル |
+| GET | `/collections/{id}/api-usage` | 指定の共通コンポーネントを使用するAPIと版 |
 | PUT | `/memberships/{specification_id}` | 設計の版を指定してグループ所属を置換 |
 | GET | `/diagram` | 本文を除いた図・一覧の共通データ。画面遷移、外部キー、論理関連を投影 |
 | GET | `/screen-list` | 検索・グループ・状態・担当者で絞り込める画面一覧と、関連要件・APIのリンク |
