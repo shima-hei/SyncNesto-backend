@@ -25,22 +25,18 @@ from app.models.mcp import McpConnection
 from app.models.user import User
 from app.repositories.mcp import McpRepository
 from app.schemas import mcp_tools as s
-from app.schemas.design_workspace import CollectionRead
 from app.schemas.mcp_development import TaskCommentCreateInput
 from app.schemas.requirement import (
     RequirementDocumentCreate,
     RequirementTargetCommentCreate,
 )
-from app.schemas.specification import SpecificationListItem
 from app.schemas.task import TaskCreate, TaskUpdate
 from app.schemas.test_collaboration import TestDesignCommentCreate
 from app.schemas.test_design import TestDesignUpdate
 from app.services.audit_log import AuditLogService
-from app.services.design_workspace import DesignWorkspaceService
 from app.services.mcp_auth import McpAuthService
 from app.services.mcp_catalog import DESIGN_TOOLS, TOOLS, McpTool
-from app.services.mcp_design import SERVICE as DESIGN_SERVICE
-from app.services.mcp_design import read_artifact
+from app.services.mcp_design import read_design, write_design
 from app.services.mcp_development_catalog import DEVELOPMENT_TOOLS, development_tools
 from app.services.requirement_document import RequirementDocumentService
 from app.services.requirement_item import RequirementService
@@ -224,6 +220,8 @@ class McpOperationsService:
         ):
             raise ForbiddenError()
         if not tool.write:
+            if operation.tool in DESIGN_TOOLS:
+                return read_design(db, user, operation.tool, data)
             if operation.tool in DEVELOPMENT_TOOLS:
                 from app.services.mcp_development import McpDevelopmentService
 
@@ -314,40 +312,6 @@ class McpOperationsService:
 
     def read(self, db: Session, name: str, data) -> dict:
         """参照結果を小さく保ち、必要な本文は明示的に取得する。"""
-        if name == "list_design_artifacts":
-            return DESIGN_SERVICE.list(
-                db,
-                data.project_id,
-                data.kind,
-                data.q,
-                data.page,
-                data.page_size,
-            ).model_dump(mode="json")
-        if name == "list_design_collections":
-            return {
-                "items": [
-                    CollectionRead.model_validate(row).model_dump(
-                        mode="json", exclude={"configuration"}
-                    )
-                    for row in DesignWorkspaceService().collections(db, data.project_id)
-                ]
-            }
-        if name == "get_design_diagram":
-            return (
-                DesignWorkspaceService()
-                .diagram(
-                    db,
-                    data.project_id,
-                    data.kind,
-                    data.group_id,
-                    data.q,
-                    data.page,
-                    data.page_size,
-                )
-                .model_dump(mode="json")
-            )
-        if name == "get_design_artifact":
-            return read_artifact(db, data)
         if name in {
             "list_requirement_sections",
             "list_requirement_comments",
@@ -511,15 +475,8 @@ class McpOperationsService:
     ) -> dict:
         """操作ごとの業務検証は既存Serviceに委譲する。"""
         project_id, actor_id = data.project_id, user.id
-        if name in {"create_design_artifact", "update_design_artifact"}:
-            row = (
-                DESIGN_SERVICE.create(db, project_id, data.data, user)
-                if name == "create_design_artifact"
-                else DESIGN_SERVICE.update(
-                    db, project_id, data.design_id, data.data, user
-                )
-            )
-            return SpecificationListItem.model_validate(row).model_dump(mode="json")
+        if name in DESIGN_TOOLS:
+            return write_design(db, user, name, data)
         if name in DEVELOPMENT_TOOLS:
             from app.services.mcp_development import McpDevelopmentService
 
